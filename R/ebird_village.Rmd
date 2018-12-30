@@ -1,0 +1,140 @@
+---
+title: 'Deforestation and Biodiversity in India'
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r "setup", include=FALSE}
+require("knitr")
+opts_knit$set(root.dir = '/Users/rmadhok/Documents/ubc/research/def_biodiv/')
+  EBIRD.GEO <- 'data/csv/' 
+NFHS4.GEO <- '/Users/rmadhok/Dropbox (CID)/IndiaPowerPlant/data/dhs/IAGE71FL/'
+DIST.GEO <- '/Users/rmadhok/Dropbox (CID)/IndiaPowerPlant/data/maps/datameet_maps/Districts/Census_2001/'
+
+# Packages
+require(rgeos)
+require(rgdal)
+require(raster)
+require(ggplot2)
+require(geosphere)
+require(dplyr)
+require(yaImpute)
+
+```
+
+
+```{r,include=F,warning=FALSE,message=FALSE}
+
+### Read DHS Geodata 
+villages <- readOGR(NFHS4.GEO, 'IAGE71FL',stringsAsFactors=F)
+villages.coords <- data.frame(coordinates(villages))
+names(villages.coords) <- c('lon','lat')
+villages.df <- data.frame(villages@data,villages.coords)
+
+# Drop villages that have no georeference
+villages.df <- villages.df[villages.df$lat!=0 & villages.df$lon!=0,]
+rm(villages.coords)
+
+#	Read Census Districts for bounding box
+districts <- readOGR(DIST.GEO,'2001_Dist',stringsAsFactors = F)
+
+```
+```{r,include=F,warning=FALSE,message=FALSE}
+
+### DHS Villages
+ggplot() +
+    geom_polygon(data = districts, aes(x=long,y=lat,group=group),fill= 'white', color = 'grey', size=.5) + 
+    geom_point(data=villages.df, aes(x=lon,y=lat), color='red', alpha=.03) +
+  coord_equal() + theme_minimal() + 
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        axis.line = element_blank(), 
+        axis.text.x = element_blank(), 
+        axis.text.y = element_blank(),  
+        axis.ticks = element_blank(), 
+        axis.title.x = element_blank(),  
+        axis.title.y = element_blank(),
+        legend.position = 'bottom',
+        legend.title=element_text(size=20) , legend.text=element_text(size=10))
+
+```
+```{r,include=F,warning=FALSE,message=FALSE}
+
+### Add eBird Sightings
+ebird <- read.csv('data/csv/ebird_sample_5.csv',stringsAsFactors=F)
+
+ggplot() +
+    geom_polygon(data = districts, aes(x=long,y=lat,group=group),fill= 'white', color = 'grey', size=.5) + 
+    geom_point(data=villages.df, aes(x=lon,y=lat), color='red', alpha=.03) +
+    geom_point(data=ebird,aes(x=LONGITUDE,y=LATITUDE), alpha=.5, size=.75) +
+  coord_equal() + theme_minimal() + 
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        axis.line = element_blank(), 
+        axis.text.x = element_blank(), 
+        axis.text.y = element_blank(),  
+        axis.ticks = element_blank(), 
+        axis.title.x = element_blank(),  
+        axis.title.y = element_blank(),
+        legend.position = 'bottom',
+        legend.title=element_text(size=20) , legend.text=element_text(size=10))
+
+```
+
+```{r,include=F,warning=FALSE,message=FALSE}
+
+# Villages close to eBird sightings -- NOT ENOUGH MEMORY TO RUN
+# km_threshold <- 50
+# distmat <- distm(ebird[c(15,14)],villages.df[21:22],distHaversine)
+
+# Village-ebird crosswalk
+# villages.ebird.xwalk <- ebird[0,]
+# villages.ebird.xwalk$DHSID <- as.character()
+# villages.ebird.xwalk$dist_km <- as.numeric()
+# for(i in 1:dim(ebird)[1]){
+#   
+#   J <- which(distmat[i,] < km_threshold*1000)
+#   for(j in J){
+#     row <- data.frame(ebird[i, ], villages.df$DHSID[j],distmat[i,j],stringsAsFactors = F)
+#     #names(row)[9] <- 'DHSID'
+#     villages.ebird.xwalk <- rbind(villages.ebird.xwalk,row)
+#   }
+# }
+
+```
+
+```{r,include=F,warning=FALSE,message=FALSE}
+
+## Villages close to eBird sightings -- WORKING METHOD
+# Set Parameters
+num.closest <- 3
+km_threshold <- 20
+
+# Compute Distance Matrix
+ann <- ann(as.matrix(villages.df[21:22]), as.matrix(ebird[c(15,14)]), k=num.closest)
+distmat <- as.data.frame(ann$knnIndexDist)
+for(i in 1:num.closest){
+  names(distmat)[i] <- paste('village_index_', i, sep='')
+  names(distmat)[i+num.closest] <- paste('distance_', i, sep='')
+}
+
+# Village-ebird crosswalk
+villages.ebird.xwalk <- ebird[0,]
+villages.ebird.xwalk$DHSID <- as.character()
+villages.ebird.xwalk$dist_km <- as.numeric()
+for(i in 1:dim(ebird)[1]){
+  
+  J <- which(distmat[i, paste(num.closest+1) : ncol(distmat)] < km_threshold*1000)
+  for(j in J){
+    row <- data.frame(ebird[i, ], 
+                      villages.df$DHSID[distmat[i,j]], 
+                      distmat[i,as.numeric(paste(j+num.closest))],stringsAsFactors = F)
+    names(row)[ncol(row)-1] <- 'DHSID'
+    names(row)[ncol(row)] <- 'dist_km'
+    villages.ebird.xwalk <- rbind(villages.ebird.xwalk,row)
+  }
+}
+
+```
