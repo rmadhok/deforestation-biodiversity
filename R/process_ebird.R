@@ -36,6 +36,7 @@ india.districts.2011 <- readOGR(paste(dist_shpf, "maps/india-district", sep=""),
 coords <- df[, 27:26]
 proj <- proj4string(india.districts.2011)
 df$c_code_2011 <- over(SpatialPoints(coords, proj4string=CRS(proj)), india.districts.2011)$c_code_11
+df <- df[!is.na(df$c_code_2011),] 
 
 # Sample from each district-year
 set.seed(12345)
