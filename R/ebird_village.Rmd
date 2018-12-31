@@ -115,6 +115,7 @@ km_threshold <- 20
 # Compute Distance Matrix
 ann <- ann(as.matrix(villages.df[21:22]), as.matrix(ebird[c(15,14)]), k=num.closest)
 distmat <- as.data.frame(ann$knnIndexDist)
+rm(ls=ann)
 for(i in 1:num.closest){
   names(distmat)[i] <- paste('village_index_', i, sep='')
   names(distmat)[i+num.closest] <- paste('distance_', i, sep='')
