@@ -43,7 +43,7 @@ set.seed(12345)
 df.sample <- stratified(df, c("c_code_2011", "YEAR"), proportion)
 
 # Drop unnecessary columns
-df.sample <- df.sample[,-c(1,2,10,11,14,16,18,19,20,21,22,24,29,31,34,39,40,41,42,43,44,45,46,47)]
+df.sample <- df.sample[,-c(1,2,10,11,14,16,18,19,20,21,22,24,29,34,39,41,42,43,44,45,46,47)]
 
 # Write
 sample.prop <- proportion*100
