@@ -178,7 +178,9 @@ destring minerals_num, replace
 foreach var of varlist proj_in_pa displacement prospecting ///
 	employment proj_in_pa_esz proj_clear_epa proj_cba ///
 	approval_prospecting proj_scheduledarea {
-		encode `var', gen(`var'_num)
+		gen `var'_num = (`var' == "yes")
+		replace `var'_num = . if mi(`var')
+		drop `var'
 		}
 
 *===============================================================================

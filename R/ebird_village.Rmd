@@ -12,6 +12,7 @@ opts_knit$set(root.dir = '/Users/rmadhok/Documents/ubc/research/def_biodiv/')
   EBIRD.GEO <- 'data/csv/' 
 NFHS4.GEO <- '/Users/rmadhok/Dropbox (CID)/IndiaPowerPlant/data/dhs/IAGE71FL/'
 DIST.GEO <- '/Users/rmadhok/Dropbox (CID)/IndiaPowerPlant/data/maps/datameet_maps/Districts/Census_2001/'
+SAVE.PATH <- '/Volumes/FreeAgent GoFlex Drive/Data/def_biodiv/'
 
 # Packages
 require(rgeos)
@@ -63,7 +64,8 @@ ggplot() +
 ```{r,include=F,warning=FALSE,message=FALSE}
 
 ### Add eBird Sightings
-ebird <- read.csv('data/csv/ebird_sample_5.csv',stringsAsFactors=F)
+proportion <- 5
+ebird <- read.csv(paste('data/csv/ebird_sample_', proportion, '.csv', sep=''), stringsAsFactors=F)
 
 ggplot() +
     geom_polygon(data = districts, aes(x=long,y=lat,group=group),fill= 'white', color = 'grey', size=.5) + 
@@ -134,7 +136,12 @@ for(i in 1:dim(ebird)[1]){
                       distmat[i,as.numeric(paste(j+num.closest))],stringsAsFactors = F)
     names(row)[ncol(row)-1] <- 'DHSID'
     names(row)[ncol(row)] <- 'dist_km'
-    villages.ebird.xwalk <- rbind(villages.ebird.xwalk,row)
+    print(paste('Inserting row: ', i))
+    write.table(row, 
+                paste(SAVE.PATH, 'villages_ebird_xwalk_', proportion, '.txt', sep=''), 
+                append=TRUE,sep="\t", 
+                row.names=FALSE)
+    #villages.ebird.xwalk <- rbind(villages.ebird.xwalk,row)
   }
 }
 
