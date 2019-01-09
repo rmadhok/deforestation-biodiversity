@@ -25,7 +25,7 @@ gl ROOT 	"/Users/rmadhok/Documents/ubc/research"
 gl DATA 	"${ROOT}/def_biodiv/data"
 
 // Modules
-local biodiversity 		0
+local biodiversity 		1
 local forest_codes		1
 
 // Settings
@@ -41,7 +41,6 @@ if `biodiversity' == 1 {
 	
 	** Read data
 	import delimited using "${DATA}/csv/ebird_sample_`sampsize'.csv", clear
-	
 	
 	** Rename
 	ren (taxonomicorder category commonname scientificname ///
@@ -82,6 +81,7 @@ if `biodiversity' == 1 {
 	
 	** Species Richness
 	bys id_event: gen species_richness = _N
+	la var species_richness "Species Richness"
 	
 	** Shannon Diversity Index
 	bys id_event: egen sum = total(count), mi
@@ -89,7 +89,8 @@ if `biodiversity' == 1 {
 	gen plnp = p*ln(p)
 	bys id_event: egen sum_plnp = total(plnp)
 	gen shannon_index = -sum_plnp
-	drop sum p plnp sum_plnp
+	drop sum p plnp sum_plnp	
+	la var shannon_index "Shannon Diversity Index"
 	
 	
 	//4. Aggregate
@@ -303,20 +304,33 @@ if `forest_codes' == 1 {
 	** Sector Indicator
 	tab proj_category, gen(proj_cat_)
 	tab proj_shape, gen(proj_shape_)
-	
-	** Store Labels
+
+	** Handle Labels
 	foreach v of varlist proj_cat_1-proj_shape_3 {
-		local lab_`v' : var lab `v'
-		}
 	
+		** Newvar Name
+		local a : var lab `v'
+		local b = subinstr("`a'", "proj_category==", "", .)
+		local b = subinstr("`b'", "proj_shape==", "", .)
+		local c = subinstr("`b'", "/", " ", .)
+		
+		** Clone
+		local newvar = subinstr("`c'", " ", "_", .)
+		clonevar "`newvar'" = `v'
+		
+		** Store Label
+		local lab_`v' = strproper("`b'")
+		local lab_`newvar' = strproper("`b'")
+	}
+
 	** Aggregate
-	collapse (sum) district_forest district_nonforest ///
+	collapse (sum)  district_forest district_nonforest approach_access-non_linear ///
 			 (mean) proj_in_pa_num proj_in_pa_esz_num proj_scheduledarea_num ///
 					proj_cat_* proj_shape_*, ///
 			 by(c_code_2011 year_month)
 	
 	** Add labels
-	foreach v of varlist proj_cat_1-proj_shape_3 {
+	foreach v of varlist proj_cat_1-proj_shape_3 approach_access-non_linear {
 		label var `v' "`lab_`v''"
 	}
 
@@ -344,11 +358,35 @@ if `forest_codes' == 1 {
 		
 	//6. Generate Variables
 	
-	** Cumulative deforestation	
-	foreach var of varlist district_forest district_nonforest {
+	foreach var of varlist district_forest district_nonforest ///
+		approach_access-non_linear {
+	
+		** Cumulative
 		sort c_code_2011 year_month
 		by c_code_2011: gen `var'_cum = sum(`var')
+		
+		** km-squared
+		if "`var'" == "district_forest" | "`var'" == "district_nonforest"{
+			gen `var'_km2 = `var' / 100
+			gen `var'_cum_km2 = `var'_cum / 100
+		}
+		
 	}
+	
+	** Label
+	foreach v of varlist approach_access-non_linear {
+		la var `v'_cum "`lab_`v''"
+	}
+	
+	la var district_forest "Deforestation (ha.)"
+	la var district_forest_cum "Cumulative Deforestation (ha.)"
+	la var district_nonforest "Non-Forest Diversion (ha.)"
+	la var district_nonforest_cum "Cumulative Non-Forest Diversion (ha.)"
+	la var district_forest_km2 "Deforestation (\(km^{2}\))"
+	la var district_forest_cum_km2 "Cumulative Deforestation (\(km^{2}\))"
+	la var district_nonforest_km2 "Non-Forest Land Diversion (\(km^{2}\))"
+	la var district_nonforest_cum_km2 "Cumulative Non-forest Land Diversion (\(km^{2}\))"
+	
 	
 	** State/district strings
 	merge m:1 c_code_2011 using "${DATA}/dta/dist_census_codes", ///
@@ -373,7 +411,7 @@ if `forest_codes' == 1 {
 	order *_2011_num state district year_month *_cum species* shannon*
 		  
 	** Write Master
-	save "${DATA}/dta/fc_ebd_master.dta", replace
+	save "${DATA}/dta/fc_ebd_master_`sampsize'.dta", replace
 	
 	
 }

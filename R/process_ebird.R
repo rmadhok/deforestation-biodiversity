@@ -24,6 +24,7 @@ df <- fread('ebd_IN_200001_201810_relOct-2018.txt')
 
 # Keep 2014-2018
 df$YEAR <- as.numeric(strftime(df[['OBSERVATION DATE']], format = "%Y"))
+df$YEARMONTH <- strftime(df[['OBSERVATION DATE']], format = "%Y-%m")
 df <- df[df$YEAR > 2013, ]
 
 # Load india 2011 districts
@@ -40,7 +41,7 @@ df <- df[!is.na(df$c_code_2011),]
 
 # Sample from each district-year
 set.seed(12345)
-df.sample <- stratified(df, c("c_code_2011", "YEAR"), proportion)
+df.sample <- stratified(df, c("c_code_2011", "YEARMONTH"), proportion)
 
 # Drop unnecessary columns
 df.sample <- df.sample[,-c(1,2,10,11,14,16,18,19,20,21,22,24,29,34,39,41,42,43,44,45,46,47)]
