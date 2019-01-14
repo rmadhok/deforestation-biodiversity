@@ -41,7 +41,7 @@ if `biodiversity' == 1 {
 	
 	** Read data
 	import delimited using "${DATA}/csv/ebird_sample_`sampsize'.csv", clear
-	
+
 	** Rename
 	ren (taxonomicorder category commonname scientificname ///
 		 subspeciescommonname subspeciesscientificname observationcount ///
@@ -77,6 +77,9 @@ if `biodiversity' == 1 {
 	drop if num_check == 0
 	drop num_check
 	
+	** Protocol - Stationary, Travelling
+	keep if inlist(protocol_code, "P21", "P22", "P23")
+	
 	//3. Diversity Indices
 	
 	** Species Richness
@@ -84,14 +87,22 @@ if `biodiversity' == 1 {
 	la var species_richness "Species Richness"
 	
 	** Shannon Diversity Index
-	bys id_event: egen sum = total(count), mi
-	gen p = count / sum
+	bys id_event: egen N = total(count), mi
+	gen p = count / N
 	gen plnp = p*ln(p)
 	bys id_event: egen sum_plnp = total(plnp)
 	gen shannon_index = -sum_plnp
-	drop sum p plnp sum_plnp	
+	drop p plnp sum_plnp	
 	la var shannon_index "Shannon Diversity Index"
 	
+	** Simpson Diversity Index
+	gen n_n_1 = count*(count-1)
+	bys id_event: egen sum_n_n_1 = total(n_n_1)
+	gen N_N_1 = N*(N - 1)
+	gen inv_index = sum_n_n_1 / N_N_1
+	gen simpson_index = 1 - inv_index
+	drop N inv_index n_n_1 N_N_1 sum_n_n_1
+	la var simpson_index "Simpson Diversity Index"
 	
 	//4. Aggregate
 	
@@ -102,7 +113,7 @@ if `biodiversity' == 1 {
 	format year_month %tmCCYY-NN
 
 	** Aggregate to district
-	collapse (mean) species_richness shannon_index, ///
+	collapse (mean) species_richness shannon_index simpson_index, ///
 			 by(c_code_2011 year_month)
 
 	//5. Balance Panel
@@ -127,7 +138,7 @@ if `biodiversity' == 1 {
 		keepus(state district) nogen
 		
 	** Write
-	order c_code_2011* state district year_month species* shannon* 
+	order c_code_2011* state district year_month species* shannon* simpson* 
 	sort c_code_2011 year_month
 	export delimited using "${DATA}/csv/ebird_dist_biodiv_`sampsize'.csv", replace
 	save "${DATA}/dta/ebird_dist_biodiv_`sampsize'.dta", replace
@@ -365,10 +376,15 @@ if `forest_codes' == 1 {
 		sort c_code_2011 year_month
 		by c_code_2011: gen `var'_cum = sum(`var')
 		
-		** km-squared
 		if "`var'" == "district_forest" | "`var'" == "district_nonforest"{
+			
+			** km2
 			gen `var'_km2 = `var' / 100
 			gen `var'_cum_km2 = `var'_cum / 100
+			
+			** log
+			gen `var'_ln = ln(`var')
+			gen `var'_cum_ln = ln(`var'_cum)
 		}
 		
 	}
@@ -379,9 +395,13 @@ if `forest_codes' == 1 {
 	}
 	
 	la var district_forest "Deforestation (ha.)"
+	la var district_forest_ln "Log Deforestation"
 	la var district_forest_cum "Cumulative Deforestation (ha.)"
+	la var district_forest_cum_ln "Log Cumulative Deforestation"
 	la var district_nonforest "Non-Forest Diversion (ha.)"
+	la var district_nonforest_ln "Log Non-Forest Diversion"
 	la var district_nonforest_cum "Cumulative Non-Forest Diversion (ha.)"
+	la var district_nonforest_cum_ln "Log Cumulative Non-Forest Diverstion"
 	la var district_forest_km2 "Deforestation (\(km^{2}\))"
 	la var district_forest_cum_km2 "Cumulative Deforestation (\(km^{2}\))"
 	la var district_nonforest_km2 "Non-Forest Land Diversion (\(km^{2}\))"
@@ -405,13 +425,13 @@ if `forest_codes' == 1 {
 	//7. Merge with eBird
 	merge 1:1 c_code_2011 year_month ///
 			  using "${DATA}/dta/ebird_dist_biodiv_`sampsize'.dta", ///
-			  keepus(species_richness shannon_index) keep(3) nogen
+			  keepus(species_richness *_index) keep(3) nogen
 			  
 	** Order
-	order *_2011_num state district year_month *_cum species* shannon*
+	order *_2011_num state district year_month *_cum species* shannon* simpson*
 		  
 	** Write Master
+	export delimited "${DATA}/csv/fc_ebd_master_`sampsize'.csv", replace
 	save "${DATA}/dta/fc_ebd_master_`sampsize'.dta", replace
-	
 	
 }

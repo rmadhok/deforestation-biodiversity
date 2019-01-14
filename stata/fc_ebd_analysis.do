@@ -48,20 +48,20 @@ if `sumstats' == 1 {
 	** Label
 	la var species_richness "Species Richness"
 	la var shannon_index "Shannon Biodiversity Index"
-	
+	la var simpson_index "Simpson Biodiversity Index"
 	
 	** Indent in latex markup
 	foreach v of varlist district_forest district_forest_cum ///
 		district_nonforest district_nonforest_cum ///
 		approach_access_cum-wind_power_cum hybrid_cum-non_linear_cum ///
-		species_richness shannon_index{ 
+		species_richness *_index{ 
 		
 			label variable `v' `"\hspace{0.2cm} `: variable label `v''"'
 			
 		}
 	
 	** Collect Data
-	local biodiversity species_richness shannon_index
+	local biodiversity species_richness shannon_index simpson_index
 	local deforestation district_forest district_nonforest ///
 						district_forest_cum district_nonforest_cum
 	unab proj_cat_num: approach_access_cum-wind_power_cum
@@ -91,7 +91,7 @@ if `sumstats' == 1 {
 	*local numbers "& (1) & (2) & (3) & (4) & (5) & (6) & (7) & (8) \\ \midrule"
 	local titles "& {N} & {Mean} & {SD} & {Min} & {q25} & {q5} & {q75} & {Max} \\ \midrule"
 	esttab using "${TABLE}/sumstats_deforest.tex", replace f ///	
-		cell((count mean(fmt(%9.3f)) sd(fmt(%9.2f)) min(fmt(%9.0f)) p25(fmt(%9.0f)) ///
+		cell((count mean(fmt(%9.2f)) sd(fmt(%9.2f)) min(fmt(%9.0f)) p25(fmt(%9.0f)) ///
 		p50(fmt(%9.0f)) p75(fmt(%9.0f)) max(fmt(%9.0f)))) width(\hsize) ///
 		refcat(district_forest "\emph{District Land Diversion}", nolabel) ///
 		posthead("`titles'") nonumbers nomtitles collabels(none) ///
@@ -101,16 +101,16 @@ if `sumstats' == 1 {
 	eststo: estpost tabstat `proj_cat_num', s(n mean sd min p25 p50 p75 max) c(s)
 	
 	esttab using "${TABLE}/sumstats_deforest.tex", append f ///
-		cell((count mean(fmt(%9.3f)) sd(fmt(%9.2f)) min(fmt(%9.0f)) p25(fmt(%9.0f)) ///
+		cell((count mean(fmt(%9.2f)) sd(fmt(%9.2f)) min(fmt(%9.0f)) p25(fmt(%9.0f)) ///
 		p50(fmt(%9.0f)) p75(fmt(%9.0f)) max(fmt(%9.0f)))) width(\hsize) ///
-		refcat(approach_access_cum "\emph{District Project Counts}", nolabel) ///
+		refcat(approach_access_cum "\emph{District Project Counts (Cumulative)}", nolabel) ///
 		collabel(none) nomtitle booktabs noobs label nonumber plain gap substitute("$" "\$")
 	
 	eststo clear
 	eststo: estpost tabstat `proj_shape_num', s(n mean sd min p25 p50 p75 max) c(s)
 		
 	esttab using "${TABLE}/sumstats_deforest.tex", append f ///
-		cell((count mean(fmt(%9.3f)) sd(fmt(%9.2f)) min(fmt(%9.0f)) p25(fmt(%9.0f)) ///
+		cell((count mean(fmt(%9.2f)) sd(fmt(%9.2f)) min(fmt(%9.0f)) p25(fmt(%9.0f)) ///
 		p50(fmt(%9.0f)) p75(fmt(%9.0f)) max(fmt(%9.0f)))) width(\hsize) ///
 		refcat(linear_cum "\emph{District Project Shape Counts}", nolabel) ///
 		collabel(none) nomtitle booktabs noobs label plain gap substitute("$" "\$")
@@ -163,7 +163,7 @@ if `analysis' == 1 {
 			estadd scalar nclust `e(N_clust)'
 			qui sum `1' if e(sample)
 			estadd scalar mean_y = r(mean)
-			estadd local dist_fe "Yes"
+			estadd local dist_fe "$\checkmark$"
 			estadd local month_fe ""
 			estadd local st_y_fe ""
 			estadd local clust "State $\times$ Year"
@@ -178,9 +178,9 @@ if `analysis' == 1 {
 			estadd scalar nclust `e(N_clust)'
 			qui sum `1' if e(sample)
 			estadd scalar mean_y = r(mean)
-			estadd local dist_fe "Yes"
+			estadd local dist_fe "$\checkmark$"
 			estadd local month_fe ""
-			estadd local st_y_fe "Yes"
+			estadd local st_y_fe "$\checkmark$"
 			estadd local clust "State $\times$ Year"
 		
 		//4. District, Month, State-Year FE
@@ -192,9 +192,9 @@ if `analysis' == 1 {
 			estadd scalar nclust `e(N_clust)'
 			qui sum `1' if e(sample)
 			estadd scalar mean_y = r(mean)
-			estadd local dist_fe "Yes"
-			estadd local month_fe "Yes"
-			estadd local st_y_fe "Yes"
+			estadd local dist_fe "$\checkmark$"
+			estadd local month_fe "$\checkmark$"
+			estadd local st_y_fe "$\checkmark$"
 			estadd local clust "State $\times$ Year"
 		
 		* Regression table
@@ -220,19 +220,19 @@ if `analysis' == 1 {
 	//Analysis
 
 	** Deforestation
-	reg_table species_richness district_forest_km2
-	reg_table shannon_index district_forest_km2
+	foreach var of varlist district_forest district_forest_cum ///
+		district_nonforest district_nonforest_cum {
+			foreach j in km2 ln {
+		
+		* OLS
+		reg_table species_richness `var'_`j'
+		reg_table shannon_index `var'_`j'
+		reg_table simpson_index `var'_`j'
+		
+		}
+	}
 	
-	** Cumulative Deforestation
-	reg_table species_richness district_forest_cum_km2
-	reg_table shannon_index district_forest_cum_km2
 	
-	** Placebo
-	reg_table species_richness district_nonforest_km2
-	reg_table shannon_index district_nonforest_km2
-	
-	reg_table species_richness district_nonforest_cum_km2
-	reg_table shannon_index district_nonforest_cum_km2
 	
 }
 
