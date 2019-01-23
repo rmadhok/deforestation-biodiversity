@@ -118,27 +118,58 @@ if `biodiversity' == 1 {
 
 	//5. Balance Panel
 	
-	** Merge with Census 
-	merge m:1 c_code_2011 using "${DATA}/dta/dist_census_codes"
+	** Tempfile
+	tempfile biodiv
+	save "`biodiv'"
+	
+	** Read Census Data
+	import delimited "${DATA}/csv/2011_india_dist.csv", clear
+	
+	** Clean
+	drop id c_code11 c_code11_n code_11
+	drop if c_code_11 == "NA"
+	ren (c_code_11 name state_ut) (c_code_2011 district state)
+	gen pop_density = tot_pop / tot_area
+	save "${DATA}/dta/2011_india_dist.dta", replace
+	keep c_code_2011 district state
+	
+	** Merge with eBird
+	merge 1:m c_code_2011 using "`biodiv'"
 	
 	** Balance Panel
 	encode c_code_2011, gen(c_code_2011_num)
 	tsset c_code_2011_num year_month
 	sort year_month 
 	gen ym = year_month[1]
-	replace year_month = ym if _m == 2
+	replace year_month = ym if _m == 1
 	tsfill, full
 
 	** Clean
 	drop c_code_2011 district state _merge ym
 	decode c_code_2011_num, gen(c_code_2011)
 	
-	** Get state/district strings
-	merge m:1 c_code_2011 using "${DATA}/dta/dist_census_codes", ///
-		keepus(state district) nogen
+	** Get Census Data
+	merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist",  nogen
+	
+	//6. Spatial Coverage
+	
+	** Tempfile
+	tempfile biodiv_full
+	save "`biodiv_full'"
+	
+	** Read Grid
+	import delimited "${DATA}/csv/count_grid_10km_sample_`sampsize'", clear
+	
+	** Spatial Coverage
+	gen bird_cell = (count > 0)
+	replace bird_cell = . if mi(count)
+	collapse (mean) coverage = bird_cell, by(c_code_2011)
+	
+	** Merge
+	merge 1:m c_code_2011 using "`biodiv_full'", nogen
 		
 	** Write
-	order c_code_2011* state district year_month species* shannon* simpson* 
+	order c_code_2011* state district year_month species* shannon* simpson* coverage
 	sort c_code_2011 year_month
 	export delimited using "${DATA}/csv/ebird_dist_biodiv_`sampsize'.csv", replace
 	save "${DATA}/dta/ebird_dist_biodiv_`sampsize'.dta", replace
@@ -303,9 +334,10 @@ if `forest_codes' == 1 {
 	** Tempfile
 	tempfile fc_district
 	save "`fc_district'"
-	
+
 	** Merge with Census
-	use "${DATA}/dta/dist_census_codes", clear
+	use "${DATA}/dta/2011_india_dist", clear
+	keep state district c_code_2011
 	replace state = lower(state)
 	replace district = lower(district)
 	merge 1:m state district using "`fc_district'", keep(3) nogen
@@ -348,7 +380,7 @@ if `forest_codes' == 1 {
 	//5. Balance Panel
 	
 	** Merge with Census
-	merge m:1 c_code_2011 using "${DATA}/dta/dist_census_codes"
+	merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist", keepus(c_code_2011)
 	
 	** Balance Panel
 	encode c_code_2011, gen(c_code_2011_num)
@@ -359,7 +391,7 @@ if `forest_codes' == 1 {
 	tsfill, full
 	
 	** Clean
-	drop c_code_2011 district state _merge ym
+	drop c_code_2011 _merge ym
 	decode c_code_2011_num, gen(c_code_2011)
 	
 	** Zeros
@@ -385,6 +417,10 @@ if `forest_codes' == 1 {
 			** log
 			gen `var'_ln = ln(`var')
 			gen `var'_cum_ln = ln(`var'_cum)
+			
+			** Inverse Hyperbolic Sine
+			gen `var'_ihs = asinh(`var')
+			gen `var'_cum_ihs = asinh(`var'_cum)
 		}
 		
 	}
@@ -396,12 +432,16 @@ if `forest_codes' == 1 {
 	
 	la var district_forest "Deforestation (ha.)"
 	la var district_forest_ln "Log Deforestation"
+	la var district_forest_ihs "IHS Deforestation"
 	la var district_forest_cum "Cumulative Deforestation (ha.)"
 	la var district_forest_cum_ln "Log Cumulative Deforestation"
+	la var district_forest_cum_ihs "IHS Cumulative Deforestation"
 	la var district_nonforest "Non-Forest Diversion (ha.)"
 	la var district_nonforest_ln "Log Non-Forest Diversion"
+	la var district_nonforest_ihs "IHS Non-Forest Diversion"
 	la var district_nonforest_cum "Cumulative Non-Forest Diversion (ha.)"
-	la var district_nonforest_cum_ln "Log Cumulative Non-Forest Diverstion"
+	la var district_nonforest_cum_ln "Log Cumulative Non-Forest Diversion"
+	la var district_nonforest_cum_ihs "IHS Cumulative Non-Forest Diversion"
 	la var district_forest_km2 "Deforestation (\(km^{2}\))"
 	la var district_forest_cum_km2 "Cumulative Deforestation (\(km^{2}\))"
 	la var district_nonforest_km2 "Non-Forest Land Diversion (\(km^{2}\))"
@@ -409,7 +449,7 @@ if `forest_codes' == 1 {
 	
 	
 	** State/district strings
-	merge m:1 c_code_2011 using "${DATA}/dta/dist_census_codes", ///
+	merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist", ///
 		keepus(state district) nogen
 	
 	** Year, Month
@@ -424,11 +464,10 @@ if `forest_codes' == 1 {
 	
 	//7. Merge with eBird
 	merge 1:1 c_code_2011 year_month ///
-			  using "${DATA}/dta/ebird_dist_biodiv_`sampsize'.dta", ///
-			  keepus(species_richness *_index) keep(3) nogen
+			  using "${DATA}/dta/ebird_dist_biodiv_`sampsize'.dta", keep(3) nogen
 			  
 	** Order
-	order *_2011_num state district year_month *_cum species* shannon* simpson*
+	order *_2011_num state district year_month *_cum species* shannon* simpson* coverage
 		  
 	** Write Master
 	export delimited "${DATA}/csv/fc_ebd_master_`sampsize'.csv", replace

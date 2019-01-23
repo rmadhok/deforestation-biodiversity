@@ -26,6 +26,12 @@ proportion <- .05
 india.districts.2011 <- readOGR(paste(dist_shpf, "maps/india-district", sep=""), 
                                 'SDE_DATA_IN_F7DSTRBND_2011', stringsAsFactors = F)
 
+# Write Attribute Data
+dist.data <- india.districts.2011@data
+write.csv(dist.data,
+          paste(save_path_head,'csv/2011_india_dist.csv',sep=''),
+          row.names = F)
+
 # Read eBird Data
 df <- fread('ebd_IN_200001_201810_relOct-2018.txt')
 
@@ -35,18 +41,17 @@ df$YEARMONTH <- strftime(df[['OBSERVATION DATE']], format = "%Y-%m")
 df <- df[df$YEAR > 2013, ]
 
 ### Identify District Census Code
-coords <- df[, 27:26]
 proj <- proj4string(india.districts.2011)
-df$c_code_2011 <- over(SpatialPoints(coords, proj4string=CRS(proj)), india.districts.2011)$c_code_11
+df$c_code_2011 <- over(SpatialPoints(df[, 27:26], proj4string=CRS(proj)), india.districts.2011)$c_code_11
 df <- df[!is.na(df$c_code_2011),]
-rm(list='coords')
 
-# Sample from each district-year
+# Sample from each district-yearmonth
 set.seed(12345)
 df.sample <- stratified(df, c("c_code_2011", "YEARMONTH"), proportion)
 
 # Drop unnecessary columns
 df.sample <- df.sample[,-c(1,2,10,11,14,16,18,19,20,21,22,24,29,34,39,41,42,43,44,45,46,47)]
+rm(list='df')
 
 # Write
 sample.prop <- proportion*100
@@ -65,11 +70,22 @@ proj4string(grid) <- proj4string(india.districts.2011) #sync coordinate systems 
 india.grid.crop <- crop(grid, extent(india.districts.2011))
 india.grid <- mask(india.grid.crop, india.districts.2011)
 
-# Count birds in each cell
-coords <- df.sample[,15:14]
-india.grid <- rasterize(coords, india.grid, fun='count')
-bird.count <- as.data.frame(india.grid, xy=TRUE)
-names(bird.count) <- c('lon', 'lat', 'count')
+# Compute Spatial Coverage
+df.sample$YEARMONTH <- as.factor(df.sample$YEARMONTH)
+bird.count <- data.frame()
+for(ym in levels(df.sample$YEARMONTH)){
+  print(ym)
+  coords <- df.sample[df.sample$YEARMONTH == ym, 15:14]
+  india.grid <- rasterize(coords, india.grid, fun='count')
+  count.df <- as.data.frame(india.grid, xy=TRUE)
+  count.df$bird.obs <- count.df[count.df$count > 0 & !is.na(count.df$count)]
+  count.df$c_code_2011 <- over(SpatialPoints(count.df[,1:2], proj4string=CRS(proj)), india.districts.2011)$c_code_11
+  row <- aggregate(count.df[,4:5], by=list(count.df$c_code_2011), FUN=mean)
+  row$yearmonth <- ym
+  bird.count <- rbind(bird.count, row)
+}
+
+names(bird.count) <- c('lon', 'lat', 'count', 'yearmonth')
 
 # Get District Codes
 bird.count$c_code_2011 <- over(SpatialPoints(bird.count[,1:2], proj4string=CRS(proj)), india.districts.2011)$c_code_11
