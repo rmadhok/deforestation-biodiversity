@@ -17,6 +17,7 @@ require(rgeos)
 require(sp)
 require(raster)
 require(splitstackshape)
+require(dplyr)
 
 #### SET PROPORTION TO RANDOMLY SAMPLE
 proportion <- .05
@@ -60,10 +61,9 @@ write.csv(df.sample,
           row.names = F)
 
 ### Spatial Coverage
-
 # Initialize Grid
 grid <- raster(extent(india.districts.2011))
-res(grid) <- .1 # grid resolution in degrees lat-lon
+res(grid) <- .02 # grid resolution in degrees lat-lon
 proj4string(grid) <- proj4string(india.districts.2011) #sync coordinate systems of gridded district and original vector data
 
 # Clip to Shapefile Extent
@@ -74,23 +74,25 @@ india.grid <- mask(india.grid.crop, india.districts.2011)
 df.sample$YEARMONTH <- as.factor(df.sample$YEARMONTH)
 bird.count <- data.frame()
 for(ym in levels(df.sample$YEARMONTH)){
-  print(ym)
+  print(paste('Computing Spatial Coverage of Date: ', ym))
+  
+  # Insert Bird Counts into Raster Cells
   coords <- df.sample[df.sample$YEARMONTH == ym, 15:14]
   india.grid <- rasterize(coords, india.grid, fun='count')
   count.df <- as.data.frame(india.grid, xy=TRUE)
-  count.df$bird.obs <- count.df[count.df$count > 0 & !is.na(count.df$count)]
+  
+  # Get District Codes
   count.df$c_code_2011 <- over(SpatialPoints(count.df[,1:2], proj4string=CRS(proj)), india.districts.2011)$c_code_11
-  row <- aggregate(count.df[,4:5], by=list(count.df$c_code_2011), FUN=mean)
-  row$yearmonth <- ym
-  bird.count <- rbind(bird.count, row)
+  count.df <- count.df[!is.na(count.df$c_code_2011),]
+  
+  # Spatial Coverage
+  count.df$bird.obs <- ifelse(is.na(count.df$layer), 0, 1)
+  dist.ym.coverage <- count.df %>%
+    group_by(c_code_2011) %>%
+    summarise(coverage=mean(bird.obs), n_cells=n())
+  dist.ym.coverage$yearmonth <- ym
+  bird.count <- rbind(bird.count, dist.ym.coverage)
 }
-
-names(bird.count) <- c('lon', 'lat', 'count', 'yearmonth')
-
-# Get District Codes
-bird.count$c_code_2011 <- over(SpatialPoints(bird.count[,1:2], proj4string=CRS(proj)), india.districts.2011)$c_code_11
-bird.count <- bird.count[!is.na(bird.count$c_code_2011),]
-bird.count$count[is.na(bird.count$count)] <- 0
 
 # Write
 grid.res <- res(grid)[1]*100
