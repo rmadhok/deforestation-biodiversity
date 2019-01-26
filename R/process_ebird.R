@@ -18,6 +18,7 @@ require(sp)
 require(raster)
 require(splitstackshape)
 require(dplyr)
+require(geosphere)
 
 #### SET PROPORTION TO RANDOMLY SAMPLE
 proportion <- .05
@@ -63,39 +64,64 @@ write.csv(df.sample,
 ### Spatial Coverage
 # Initialize Grid
 grid <- raster(extent(india.districts.2011))
-res(grid) <- .02 # grid resolution in degrees lat-lon
+res(grid) <- .1 # grid resolution in degrees lat-lon
 proj4string(grid) <- proj4string(india.districts.2011) #sync coordinate systems of gridded district and original vector data
 
-# Clip to Shapefile Extent
-india.grid.crop <- crop(grid, extent(india.districts.2011))
-india.grid <- mask(india.grid.crop, india.districts.2011)
+# Cell Counts of Birds
+bird.coords <- SpatialPoints(df.sample[, 15:14], proj4string=CRS(proj4string(grid)))
+india.grid <- rasterize(bird.coords, grid, fun='count')
+proj4string(india.grid) <- proj4string(india.districts.2011)
 
-# Compute Spatial Coverage
+# Clip to Shapefile Extent
+india.grid <- crop(india.grid, extent(india.districts.2011))
+india.grid <- mask(india.grid, india.districts.2011)
+
+# Get District Codes
+count.df <- as.data.frame(india.grid, xy=TRUE)
+cell.centroids <- SpatialPoints(count.df[,1:2], proj4string=CRS(proj))
+count.df$c_code_2011 <- over(cell.centroids, india.districts.2011)$c_code_11
+count.df <- count.df[!is.na(count.df$c_code_2011),]
+
+# Spatial Coverage
+count.df$bird.obs <- ifelse(is.na(count.df$layer), 0, 1)
+coverage.all <- count.df %>% 
+  group_by(c_code_2011) %>% 
+  summarise(coverage_all=mean(bird.obs), n_cells=n()) 
+
+# Compute Monthly Spatial Coverage
 df.sample$YEARMONTH <- as.factor(df.sample$YEARMONTH)
-bird.count <- data.frame()
+coverage <- data.frame()
 for(ym in levels(df.sample$YEARMONTH)){
   print(paste('Computing Spatial Coverage of Date: ', ym))
   
   # Insert Bird Counts into Raster Cells
-  coords <- df.sample[df.sample$YEARMONTH == ym, 15:14]
-  india.grid <- rasterize(coords, india.grid, fun='count')
-  count.df <- as.data.frame(india.grid, xy=TRUE)
+  bird.coords <- SpatialPoints(df.sample[df.sample$YEARMONTH == ym, 15:14], 
+                               proj4string=CRS(proj4string(grid)))
+  india.grid <- rasterize(bird.coords, grid, fun='count')
+  proj4string(india.grid) <- proj4string(india.districts.2011)
+  india.grid <- crop(india.grid, extent(india.districts.2011))
+  india.grid <- mask(india.grid, india.districts.2011)
   
-  # Get District Codes
-  count.df$c_code_2011 <- over(SpatialPoints(count.df[,1:2], proj4string=CRS(proj)), india.districts.2011)$c_code_11
+  # District Codes
+  count.df <- as.data.frame(india.grid, xy=TRUE)
+  cell.centroids <- SpatialPoints(count.df[,1:2], proj4string=CRS(proj))
+  count.df$c_code_2011 <- over(cell.centroids, india.districts.2011)$c_code_11
   count.df <- count.df[!is.na(count.df$c_code_2011),]
   
   # Spatial Coverage
   count.df$bird.obs <- ifelse(is.na(count.df$layer), 0, 1)
   dist.ym.coverage <- count.df %>%
     group_by(c_code_2011) %>%
-    summarise(coverage=mean(bird.obs), n_cells=n())
+    summarise(coverage=mean(bird.obs))
   dist.ym.coverage$yearmonth <- ym
-  bird.count <- rbind(bird.count, dist.ym.coverage)
+  coverage <- rbind(coverage, dist.ym.coverage)
 }
+
+# Merge
+coverage <- merge(coverage, coverage.all, by='c_code_2011')
 
 # Write
 grid.res <- res(grid)[1]*100
-write.csv(bird.count, 
-          paste(save_path_head, 'csv/count_grid_', grid.res,'km_sample_', sample.prop, '.csv', sep=""),
+write.csv(coverage, 
+          paste(save_path_head, 'csv/coverage_grid_', grid.res,'km_sample_', sample.prop, '.csv', sep=""),
           row.names = F)
