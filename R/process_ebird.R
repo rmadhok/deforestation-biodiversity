@@ -20,9 +20,13 @@ require(splitstackshape)
 require(dplyr)
 require(geosphere)
 
-#### SET PROPORTION TO RANDOMLY SAMPLE
+# Read Custom Functions
+source('/Users/rmadhok/Documents/ubc/research/def_biodiv/scripts/R/ebird_functions.R')
+
+## 1. SELECTE EBIRD SAMPLE
+
+# SET PROPORTION TO RANDOMLY SAMPLE
 proportion <- .05
-####
 
 # Load india 2011 districts
 india.districts.2011 <- readOGR(paste(dist_shpf, "maps/india-district", sep=""), 
@@ -61,7 +65,8 @@ write.csv(df.sample,
           paste(save_path_head, 'csv/ebird_sample_', sample.prop, '.csv', sep=""),
           row.names = F)
 
-### Spatial Coverage
+#2. COMPUTE DISTRICT SPATIAL COVERAGE
+
 # Initialize Grid
 grid <- raster(extent(india.districts.2011))
 res(grid) <- .1 # grid resolution in degrees lat-lon
@@ -69,21 +74,11 @@ proj4string(grid) <- proj4string(india.districts.2011) #sync coordinate systems 
 
 # Cell Counts of Birds
 bird.coords <- SpatialPoints(df.sample[, 15:14], proj4string=CRS(proj4string(grid)))
-india.grid <- rasterize(bird.coords, grid, fun='count')
-proj4string(india.grid) <- proj4string(india.districts.2011)
 
-# Clip to Shapefile Extent
-india.grid <- crop(india.grid, extent(india.districts.2011))
-india.grid <- mask(india.grid, india.districts.2011)
+# Run Coverage Function
+count.df <- spatial_coverage(bird.coords, grid)
 
-# Get District Codes
-count.df <- as.data.frame(india.grid, xy=TRUE)
-cell.centroids <- SpatialPoints(count.df[,1:2], proj4string=CRS(proj))
-count.df$c_code_2011 <- over(cell.centroids, india.districts.2011)$c_code_11
-count.df <- count.df[!is.na(count.df$c_code_2011),]
-
-# Spatial Coverage
-count.df$bird.obs <- ifelse(is.na(count.df$layer), 0, 1)
+# Aggregate to District
 coverage.all <- count.df %>% 
   group_by(c_code_2011) %>% 
   summarise(coverage_all=mean(bird.obs), n_cells=n()) 
@@ -94,26 +89,20 @@ coverage <- data.frame()
 for(ym in levels(df.sample$YEARMONTH)){
   print(paste('Computing Spatial Coverage of Date: ', ym))
   
-  # Insert Bird Counts into Raster Cells
+  # Get Bird Coordinates in year-month
   bird.coords <- SpatialPoints(df.sample[df.sample$YEARMONTH == ym, 15:14], 
                                proj4string=CRS(proj4string(grid)))
-  india.grid <- rasterize(bird.coords, grid, fun='count')
-  proj4string(india.grid) <- proj4string(india.districts.2011)
-  india.grid <- crop(india.grid, extent(india.districts.2011))
-  india.grid <- mask(india.grid, india.districts.2011)
   
-  # District Codes
-  count.df <- as.data.frame(india.grid, xy=TRUE)
-  cell.centroids <- SpatialPoints(count.df[,1:2], proj4string=CRS(proj))
-  count.df$c_code_2011 <- over(cell.centroids, india.districts.2011)$c_code_11
-  count.df <- count.df[!is.na(count.df$c_code_2011),]
+  # Run My Coverage Function
+  count.df <- spatial_coverage(bird.coords, grid)
   
-  # Spatial Coverage
-  count.df$bird.obs <- ifelse(is.na(count.df$layer), 0, 1)
+  # Aggregate to District
   dist.ym.coverage <- count.df %>%
     group_by(c_code_2011) %>%
     summarise(coverage=mean(bird.obs))
   dist.ym.coverage$yearmonth <- ym
+  
+  # Append to Master
   coverage <- rbind(coverage, dist.ym.coverage)
 }
 
@@ -124,4 +113,32 @@ coverage <- merge(coverage, coverage.all, by='c_code_2011')
 grid.res <- res(grid)[1]*100
 write.csv(coverage, 
           paste(save_path_head, 'csv/coverage_grid_', grid.res,'km_sample_', sample.prop, '.csv', sep=""),
+          row.names = F)
+
+## 3. EBIRD HOTSPOTS
+
+# Load Hotspots
+hotspots.df <- read.csv(paste(save_path_head, 'csv/ebird_hotspots_india.csv', sep=''), header=F)[,5:7]
+names(hotspots.df) <- c('latitude', 'longitude', 'name')
+
+# Get district code
+hotspots.df$c_code_2011 <- over(SpatialPoints(hotspots.df[, 2:1], proj4string=CRS(proj)), 
+                                india.districts.2011)$c_code_11
+
+# Find nearest district to hotspot for NA codes
+hotspots.na <- hotspots.df[is.na(hotspots.df$c_code_2011), ]
+hotspots.df <- hotspots.df[!is.na(hotspots.df$c_code_2011),]
+for (i in 1:dim(hotspots.na)[1]) {
+  print(paste('Finding Nearest District in Row: ', i))
+  coords <- SpatialPoints(hotspots.na[i,2:1], proj4string=CRS(proj))
+  hotspots.na[i,4] <- dist.data$c_code_11[as.data.frame(dist2Line(p = coords, 
+                                                                  india.districts.2011))$ID]
+}
+
+# Append
+hotspots.df <- rbind(hotspots.df, hotspots.na)
+
+# Write
+write.csv(hotspots.df, 
+          paste(save_path_head, 'csv/hotspots_dist_codes.csv', sep=""),
           row.names = F)
