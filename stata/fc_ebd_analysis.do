@@ -49,7 +49,12 @@ if `sumstats' == 1 {
 	la var species_richness "Species Richness"
 	la var shannon_index "Shannon Biodiversity Index"
 	la var simpson_index "Simpson Biodiversity Index"
-	la var coverage "Birding Spatial Coverage"
+	la var coverage "Birding Spatial Coverage (monthly)"
+	la var coverage_all "Birding Spatial Coverage (all)"
+	la var n_hotspots "No. of Birding Hotspots"
+	la var n_birders "No. of Birders"
+	la var n_trips "No. of Birding Trips"
+	la var bird_density_dist "Bird Density (per \(km^{2}\))"
 	la var tot_area "Total Area (\(km^{2}\))"
 	la var pop_density "Population Density (per \(km^{2}\))"
 	
@@ -57,14 +62,16 @@ if `sumstats' == 1 {
 	foreach v of varlist district_forest district_forest_cum ///
 		district_nonforest district_nonforest_cum ///
 		approach_access_cum-wind_power_cum hybrid_cum-non_linear_cum ///
-		species_richness *_index coverage tot_area pop_density { 
+		species_richness *_index coverage tot_area pop_density ///
+		bird_density_dist coverage* n_hotspots n_birders n_trips { 
 		
 			label variable `v' `"\hspace{0.2cm} `: variable label `v''"'
 			
 		}
 	
 	** Collect Data
-	local dist_vars tot_area pop_density coverage
+	local dist_vars tot_area pop_density bird_density_dist coverage_all n_hotspots
+	local trip_details n_birders n_trips
 	local biodiversity species_richness shannon_index simpson_index
 	local deforestation district_forest district_nonforest ///
 						district_forest_cum district_nonforest_cum
@@ -86,8 +93,19 @@ if `sumstats' == 1 {
 		pattern(1 1 1) prefix(\multicolumn{@span}{c}{) suffix(}) span ///
 		erepeat(\cmidrule(lr){@span})) ///
 		collabel("\specialcell{Mean}" "N", prefix({) suffix(})) ///
-		refcat(tot_area "\emph{District Geography (2008-2014)}" , nolabel) ///
+		refcat(tot_area "\emph{District Variables}" , nolabel) ///
 		nomtitle booktabs noobs label unstack nonumber gap
+		
+	** Trip Details
+	eststo clear
+	eststo A: estpost tabstat `trip_details', s(n mean sd) c(s)
+	eststo B: estpost tabstat `trip_details' if any_def, s(n mean sd) c(s)
+	eststo C: estpost tabstat `trip_details' if !any_def, s(n mean sd) c(s)
+	
+	esttab A B C using "${TABLE}/sumstats_biodiv.tex", append f main(mean) aux(sd) ///
+		cells("mean(star fmt(2)) count(fmt(0))" "sd(par fmt(2))") ///
+		width(\hsize) refcat(n_birders "\emph{Trip Details}" , nolabel) ///
+		nomtitle collabel(none) booktabs noobs label unstack nonumber plain gap
 	
 	** Biodiversity
 	eststo A: estpost tabstat `biodiversity', s(n mean sd) c(s)
@@ -96,17 +114,17 @@ if `sumstats' == 1 {
 	
 	esttab A B C using "${TABLE}/sumstats_biodiv.tex", append f main(mean) aux(sd) ///
 		cells("mean(star fmt(2)) count(fmt(0))" "sd(par fmt(2))") ///
-		width(\hsize) refcat(species_richness "\emph{Biodiversity (2008-2014)}" , nolabel) ///
+		width(\hsize) refcat(species_richness "\emph{Biodiversity}" , nolabel) ///
 		nomtitle collabel(none) booktabs noobs label unstack nonumber plain gap
 	
 	** Stitch
 	tex3pt "${TABLE}/sumstats_biodiv.tex" using ///
 		"${TABLE}/sumstats_biodiversity.tex", ///
 		replace floatplacement(htp) wide ///
-		title(Biodiversity Descriptive Statistics) ///
+		title(Biodiversity Descriptive Statistics (2014-2018)) ///
 		note("Note: Spatial coverage is the fraction of grid cells in a district" ///
 		"containing at least one bird observation over the study period using a" ///
-		"3km $\times$ 3km grid") 	
+		"10km $\times$ 10km grid") 	
 	
 	** Deforestation
 	eststo clear
@@ -144,7 +162,7 @@ if `sumstats' == 1 {
 	tex3pt "${TABLE}/sumstats_deforest.tex" using ///
 		"${TABLE}/sumstats_deforestation.tex", ///
 		replace floatplacement(htp) ///
-		title(Deforestation Descriptive Statistics) wide
+		title(Deforestation Descriptive Statistics (2014-2018)) wide
 		
 }
 

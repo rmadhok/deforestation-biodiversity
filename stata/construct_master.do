@@ -80,6 +80,10 @@ if `biodiversity' == 1 {
 	** Protocol - Stationary, Travelling
 	keep if inlist(protocol_code, "P21", "P22", "P23")
 	
+	** Unique Birders
+	bys c_code_2011 yearmonth: egen n_birders = nvals(id)
+	bys c_code_2011 yearmonth: egen n_trips = nvals(id_event)
+	
 	//3. Diversity Indices
 	
 	** Species Richness
@@ -104,23 +108,20 @@ if `biodiversity' == 1 {
 	drop N inv_index n_n_1 N_N_1 sum_n_n_1
 	la var simpson_index "Simpson Diversity Index"
 	
-	//4. Aggregate
-	
 	** Format date
-	gen date = date(date_obs, "20YMD")
-	gen month = month(date)
-	gen year_month = ym(year, month)
+	gen year_month = ym(year, month(date(date_obs, "20YMD")))
 	format year_month %tmCCYY-NN
 
-	** Aggregate to district
-	collapse (mean) species_richness shannon_index simpson_index, ///
+	//4. Aggregate to district
+	collapse (mean) species_richness shannon_index simpson_index ///
+			 (first) n_birders n_trips, ///
 			 by(c_code_2011 year_month)
+			 
 
-	//5. Balance Panel
+	tempfile biodiversity
+	save "`biodiversity'"
 	
-	** Tempfile
-	tempfile biodiv
-	save "`biodiv'"
+	//5. Balance Panel
 	
 	** Read Census Data
 	import delimited "${DATA}/csv/2011_india_dist.csv", clear
@@ -129,12 +130,11 @@ if `biodiversity' == 1 {
 	drop id c_code11 c_code11_n code_11
 	drop if c_code_11 == "NA"
 	ren (c_code_11 name state_ut) (c_code_2011 district state)
-	gen pop_density = tot_pop / tot_area
 	save "${DATA}/dta/2011_india_dist.dta", replace
 	keep c_code_2011 district state
 	
 	** Merge with eBird
-	merge 1:m c_code_2011 using "`biodiv'"
+	merge 1:m c_code_2011 using "`biodiversity'"
 	
 	** Balance Panel
 	encode c_code_2011, gen(c_code_2011_num)
@@ -148,28 +148,59 @@ if `biodiversity' == 1 {
 	drop c_code_2011 district state _merge ym
 	decode c_code_2011_num, gen(c_code_2011)
 	
-	** Get Census Data
-	merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist",  nogen
+	tempfile biodiversity_balance
+	save "`biodiversity_balance'"
 	
-	//6. Spatial Coverage
+	//6. Merge Spatial Coverage (Monthly)
 	
-	** Tempfile
-	tempfile biodiv_full
-	save "`biodiv_full'"
-	
-	** Read Grid
-	import delimited "${DATA}/csv/count_grid_10km_sample_`sampsize'", clear
-	
-	** Spatial Coverage
-	gen bird_cell = (count > 0)
-	replace bird_cell = . if mi(count)
-	collapse (mean) coverage = bird_cell, by(c_code_2011)
+	** Read
+	import delimited "${DATA}/csv/coverage_ym_grid_10km_sample_`sampsize'", clear
+
+	** Date
+	gen year_month = ym(year(date(yearmonth, "20YM")), month(date(yearmonth, "20YM")))
+	format year_month %tmCCYY-NN
+	drop yearmonth
 	
 	** Merge
-	merge 1:m c_code_2011 using "`biodiv_full'", nogen
-		
-	** Write
-	order c_code_2011* state district year_month species* shannon* simpson* coverage
+	merge 1:1 c_code_2011 year_month using "`biodiversity_balance'", nogen
+
+	tempfile biodiversity_coverage
+	save "`biodiversity_coverage'"
+	
+	//7. Add District Characteristics
+	
+	** a. Hotspots
+	import delimited "${DATA}/csv/hotspots_dist_codes", clear
+	drop if c_code_2011 == "NA"
+	
+	** District level
+	bys c_code_2011: gen n_hotspots = _N
+	bys c_code_2011: keep if _n == 1
+	keep c_code_2011 n_hotspots
+
+	tempfile hotspots
+	save "`hotspots'"
+	
+	** b. District Spatial Coverage
+	import delimited "${DATA}/csv/coverage_dist_grid_10km_sample_`sampsize'", clear
+	
+	** Merge with hotspots
+	merge 1:1 c_code_2011 using "`hotspots'", nogen
+	
+	** Merge with Census Data
+	merge 1:1 c_code_2011 using "${DATA}/dta/2011_india_dist", nogen
+	
+	** Merge with Biodiversity Panel
+	merge 1:m c_code_2011 using "`biodiversity_coverage'", nogen
+	
+	** Construct
+	gen pop_density = tot_pop / tot_area
+	gen bird_density_dist = n_birds / tot_area
+	gen bird_density_ym = n_birds_ym / tot_area
+
+	//8. Write
+	order c_code_2011* state district year_month species* shannon* simpson* ///
+		coverage* n_*
 	sort c_code_2011 year_month
 	export delimited using "${DATA}/csv/ebird_dist_biodiv_`sampsize'.csv", replace
 	save "${DATA}/dta/ebird_dist_biodiv_`sampsize'.dta", replace
@@ -467,7 +498,8 @@ if `forest_codes' == 1 {
 			  using "${DATA}/dta/ebird_dist_biodiv_`sampsize'.dta", keep(3) nogen
 			  
 	** Order
-	order *_2011_num state district year_month *_cum species* shannon* simpson* coverage
+	order *_2011_num state district year_month district_*_cum ///
+		species* shannon* simpson* coverage n_*
 		  
 	** Write Master
 	export delimited "${DATA}/csv/fc_ebd_master_`sampsize'.csv", replace
