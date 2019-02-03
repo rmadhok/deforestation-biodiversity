@@ -81,13 +81,21 @@ count.df <- spatial_coverage(bird.coords, grid)
 # Aggregate to District
 coverage.all <- count.df %>% 
   group_by(c_code_2011) %>% 
-  summarise(coverage_all=mean(bird.obs), n_cells=n()) 
+  summarise(coverage_all=mean(bird.obs), 
+            n_cells=n(), 
+            n_birds=sum(layer, na.rm=T)) 
+
+# Write
+grid.res <- res(grid)[1]*100
+write.csv(coverage.all, 
+          paste(save_path_head, 'csv/coverage_dist_grid_', grid.res,'km_sample_', sample.prop, '.csv', sep=""),
+          row.names = F)
 
 # Compute Monthly Spatial Coverage
 df.sample$YEARMONTH <- as.factor(df.sample$YEARMONTH)
-coverage <- data.frame()
+coverage.ym <- data.frame()
 for(ym in levels(df.sample$YEARMONTH)){
-  print(paste('Computing Spatial Coverage of Date: ', ym))
+  print(paste('Computing Spatial Coverage of Date:', ym))
   
   # Get Bird Coordinates in year-month
   bird.coords <- SpatialPoints(df.sample[df.sample$YEARMONTH == ym, 15:14], 
@@ -99,27 +107,24 @@ for(ym in levels(df.sample$YEARMONTH)){
   # Aggregate to District
   dist.ym.coverage <- count.df %>%
     group_by(c_code_2011) %>%
-    summarise(coverage=mean(bird.obs))
+    summarise(coverage=mean(bird.obs),
+              n_birds_ym=sum(layer, na.rm=T))
   dist.ym.coverage$yearmonth <- ym
   
   # Append to Master
-  coverage <- rbind(coverage, dist.ym.coverage)
+  coverage.ym <- rbind(coverage.ym, dist.ym.coverage)
 }
 
-# Merge
-coverage <- merge(coverage, coverage.all, by='c_code_2011')
-
 # Write
-grid.res <- res(grid)[1]*100
-write.csv(coverage, 
-          paste(save_path_head, 'csv/coverage_grid_', grid.res,'km_sample_', sample.prop, '.csv', sep=""),
+write.csv(coverage.ym, 
+          paste(save_path_head, 'csv/coverage_ym_grid_', grid.res,'km_sample_', sample.prop, '.csv', sep=""),
           row.names = F)
 
 ## 3. EBIRD HOTSPOTS
 
 # Load Hotspots
 hotspots.df <- read.csv(paste(save_path_head, 'csv/ebird_hotspots_india.csv', sep=''), header=F)[,5:7]
-names(hotspots.df) <- c('latitude', 'longitude', 'name')
+names(hotspots.df) <- c('latitude', 'longitude', 'hotspot_name')
 
 # Get district code
 hotspots.df$c_code_2011 <- over(SpatialPoints(hotspots.df[, 2:1], proj4string=CRS(proj)), 
@@ -129,7 +134,7 @@ hotspots.df$c_code_2011 <- over(SpatialPoints(hotspots.df[, 2:1], proj4string=CR
 hotspots.na <- hotspots.df[is.na(hotspots.df$c_code_2011), ]
 hotspots.df <- hotspots.df[!is.na(hotspots.df$c_code_2011),]
 for (i in 1:dim(hotspots.na)[1]) {
-  print(paste('Finding Nearest District in Row: ', i))
+  print(paste('Finding Nearest District in Row:', i))
   coords <- SpatialPoints(hotspots.na[i,2:1], proj4string=CRS(proj))
   hotspots.na[i,4] <- dist.data$c_code_11[as.data.frame(dist2Line(p = coords, 
                                                                   india.districts.2011))$ID]

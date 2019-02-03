@@ -180,53 +180,76 @@ if `analysis' == 1 {
 		set more off
 		eststo clear
 		
+		** Parse
+		local depvar : word 1 of `varlist'
+		di "`depvar'"
+		local indepvar : word 2 of `varlist'
+		di "`indepvar'"
+		local controls = substr("`varlist'", length("`depvar'") + length("`indepvar'") + 3, length("`varlist'"))
+		di "`controls'"
+		
 		** SE Clusters
 		local se_clust s_y
 	
 	
 		//1. Correlation
-		eststo: qui reg `1' `2', robust cluster(`se_clust')
+		eststo: qui reg `depvar' `indepvar' `controls', robust cluster(`se_clust')
 		
-			test _b[`2'] = 0 
+			test _b[`indepvar'] = 0 
 			estadd scalar p = r(p), replace
 			estadd scalar nclust `e(N_clust)'
-			qui sum `1' if e(sample)
+			qui sum `depvar' if e(sample)
 			estadd scalar mean_y = r(mean)
 			estadd local dist_fe ""
-			estadd local month_fe ""
+			*estadd local month_fe ""
 			estadd local st_y_fe ""
 			estadd local clust "State $\times$ Year"
 		
 		//2. District FE
-		eststo: qui reghdfe `1' `2', a(c_code_2011_num) vce(cl `se_clust')
+		eststo: qui reghdfe `depvar' `indepvar' `controls', a(c_code_2011_num) vce(cl `se_clust')
 		
-			test _b[`2'] = 0 
+			test _b[`indepvar'] = 0 
 			estadd scalar p = r(p), replace
 			estadd scalar nclust `e(N_clust)'
-			qui sum `1' if e(sample)
+			qui sum `depvar' if e(sample)
 			estadd scalar mean_y = r(mean)
 			estadd local dist_fe "$\checkmark$"
-			estadd local month_fe ""
+			*estadd local month_fe ""
 			estadd local st_y_fe ""
 			estadd local clust "State $\times$ Year"
 		
 		
 		//3. District, State-Year FE
-		eststo: qui reghdfe `1' `2', ///
+		eststo: qui reghdfe `depvar' `indepvar' `controls', ///
 			a(c_code_2011_num state_code_2011_num#year) vce(cl `se_clust')
 		
-			test _b[`2'] = 0 
+			test _b[`indepvar'] = 0 
 			estadd scalar p = r(p), replace
 			estadd scalar nclust `e(N_clust)'
-			qui sum `1' if e(sample)
+			qui sum `depvar' if e(sample)
 			estadd scalar mean_y = r(mean)
 			estadd local dist_fe "$\checkmark$"
-			estadd local month_fe ""
+			*estadd local month_fe ""
+			estadd local st_y_fe "$\checkmark$"
+			estadd local clust "State $\times$ Year"
+			
+		//4. District, State-Year FE, Controls
+		eststo: qui reghdfe `depvar' `indepvar' `controls', ///
+			a(c_code_2011_num state_code_2011_num#year) vce(cl `se_clust')
+		
+			test _b[`indepvar'] = 0 
+			estadd scalar p = r(p), replace
+			estadd scalar nclust `e(N_clust)'
+			qui sum `depvar' if e(sample)
+			estadd scalar mean_y = r(mean)
+			estadd local dist_fe "$\checkmark$"
+			*estadd local month_fe ""
 			estadd local st_y_fe "$\checkmark$"
 			estadd local clust "State $\times$ Year"
 		
+		/*
 		//4. District, Month, State-Year FE
-		eststo: qui reghdfe `1' `2', ///
+		eststo: qui reghdfe `depvar' `indepvar' `controls', ///
 			a(c_code_2011_num month state_code_2011_num#year) vce(cl `se_clust')
 		
 			test _b[`2'] = 0 
@@ -238,6 +261,7 @@ if `analysis' == 1 {
 			estadd local month_fe "$\checkmark$"
 			estadd local st_y_fe "$\checkmark$"
 			estadd local clust "State $\times$ Year"
+		*/
 		
 		* Regression table
 		local numbers "& (1) & (2) & (3) & (4) \\ \midrule"
@@ -256,6 +280,7 @@ if `analysis' == 1 {
 	//Read Data
 	use "${DATA}/dta/fc_ebd_master_5.dta", clear
 	
+	la var coverage "Spatial Coverage"
 	//Cluster
 	egen s_y = group(state_code_2011_num year)
 	
@@ -267,9 +292,9 @@ if `analysis' == 1 {
 			foreach j in km2 ln ihs {
 		
 		* OLS
-		reg_table species_richness `var'_`j'
-		reg_table shannon_index `var'_`j'
-		reg_table simpson_index `var'_`j'
+		reg_table species_richness `var'_`j' coverage
+		reg_table shannon_index `var'_`j' coverage
+		reg_table simpson_index `var'_`j' coverage
 		
 		}
 	}
