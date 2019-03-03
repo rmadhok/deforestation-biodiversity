@@ -26,7 +26,7 @@ gl DATA 	"${ROOT}/def_biodiv/data"
 gl TABLE	"${ROOT}/def_biodiv/docs/tex_doc/tables"
 
 // Modules
-local sumstats		0
+local sumstats		1
 local analysis		1
 
 *===============================================================================
@@ -45,25 +45,13 @@ if `sumstats' == 1 {
 	** Tag Districts
 	egen tag_d = tag(c_code_2011)
 	
-	** Label
-	la var species_richness "Species Richness"
-	la var shannon_index "Shannon Biodiversity Index"
-	la var simpson_index "Simpson Biodiversity Index"
-	la var coverage "Birding Spatial Coverage (monthly)"
-	la var coverage_all "Birding Spatial Coverage (all)"
-	la var n_hotspots "No. of Birding Hotspots"
-	la var n_birders "No. of Birders"
-	la var n_trips "No. of Birding Trips"
-	la var bird_density_dist "Bird Density (per \(km^{2}\))"
-	la var tot_area "Total Area (\(km^{2}\))"
-	la var pop_density "Population Density (per \(km^{2}\))"
-	
 	** Indent in latex markup
 	foreach v of varlist district_forest district_forest_cum ///
 		district_nonforest district_nonforest_cum ///
 		approach_access_cum-wind_power_cum hybrid_cum-non_linear_cum ///
-		species_richness *_index coverage tot_area pop_density ///
-		bird_density_dist coverage* n_hotspots n_birders n_trips { 
+		species_richness *_index tot_area pop_density effort_distance_km ///
+		duration_min bird_density_dist coverage* n_hotspots ///
+		n_birders n_trips { 
 		
 			label variable `v' `"\hspace{0.2cm} `: variable label `v''"'
 			
@@ -71,10 +59,9 @@ if `sumstats' == 1 {
 	
 	** Collect Data
 	local dist_vars tot_area pop_density bird_density_dist coverage_all n_hotspots
-	local trip_details n_birders n_trips
+	local trip_details n_birders n_trips effort_distance_km duration_min
 	local biodiversity species_richness shannon_index simpson_index
-	local deforestation district_forest district_nonforest ///
-						district_forest_cum district_nonforest_cum
+	local deforestation district_forest_cum district_nonforest_cum
 	unab proj_cat_num: approach_access_cum-wind_power_cum
 	local proj_shape_num linear_cum non_linear_cum hybrid_cum
 	
@@ -85,7 +72,6 @@ if `sumstats' == 1 {
 	eststo A: estpost tabstat `dist_vars' if tag_d, s(n mean sd) c(s)
 	eststo B: estpost tabstat `dist_vars' if tag_d & any_def, s(n mean sd) c(s)
 	eststo C: estpost tabstat `dist_vars' if tag_d & !any_def, s(n mean sd) c(s)
-	
 	esttab A B C using "${TABLE}/sumstats_biodiv.tex", replace f main(mean) aux(sd) ///
 		cells("mean(star fmt(2)) count(fmt(0))" "sd(par fmt(2))") ///
 		width(\hsize) mgroups("All Districts" "Deforestation Districts" ///
@@ -135,7 +121,7 @@ if `sumstats' == 1 {
 	esttab using "${TABLE}/sumstats_deforest.tex", replace f ///	
 		cell((count mean(fmt(%9.2f)) sd(fmt(%9.2f)) min(fmt(%9.0f)) p25(fmt(%9.0f)) ///
 		p50(fmt(%9.0f)) p75(fmt(%9.0f)) max(fmt(%9.0f)))) width(\hsize) ///
-		refcat(district_forest "\emph{District Land Diversion}", nolabel) ///
+		refcat(district_forest_cum "\emph{District Land Diversion}", nolabel) ///
 		posthead("`titles'") nonumbers nomtitles collabels(none) ///
 		mlabels(none) booktabs noobs label plain gap substitute("$" "\$")
 	
@@ -191,8 +177,20 @@ if `analysis' == 1 {
 		** SE Clusters
 		local se_clust s_y
 	
-	
 		//1. Correlation
+		eststo: qui reg `depvar' `indepvar', robust cluster(`se_clust')
+		
+			test _b[`indepvar'] = 0 
+			estadd scalar p = r(p), replace
+			estadd scalar nclust `e(N_clust)'
+			qui sum `depvar' if e(sample)
+			estadd scalar mean_y = r(mean)
+			estadd local dist_fe ""
+			*estadd local month_fe ""
+			estadd local st_y_fe ""
+			estadd local clust "State $\times$ Year"
+		
+		//2. Correlation + Controls
 		eststo: qui reg `depvar' `indepvar' `controls', robust cluster(`se_clust')
 		
 			test _b[`indepvar'] = 0 
@@ -205,7 +203,7 @@ if `analysis' == 1 {
 			estadd local st_y_fe ""
 			estadd local clust "State $\times$ Year"
 		
-		//2. District FE
+		//3. District FE
 		eststo: qui reghdfe `depvar' `indepvar' `controls', a(c_code_2011_num) vce(cl `se_clust')
 		
 			test _b[`indepvar'] = 0 
@@ -219,21 +217,7 @@ if `analysis' == 1 {
 			estadd local clust "State $\times$ Year"
 		
 		
-		//3. District, State-Year FE
-		eststo: qui reghdfe `depvar' `indepvar' `controls', ///
-			a(c_code_2011_num state_code_2011_num#year) vce(cl `se_clust')
-		
-			test _b[`indepvar'] = 0 
-			estadd scalar p = r(p), replace
-			estadd scalar nclust `e(N_clust)'
-			qui sum `depvar' if e(sample)
-			estadd scalar mean_y = r(mean)
-			estadd local dist_fe "$\checkmark$"
-			*estadd local month_fe ""
-			estadd local st_y_fe "$\checkmark$"
-			estadd local clust "State $\times$ Year"
-			
-		//4. District, State-Year FE, Controls
+		//4. District, State-Year FE
 		eststo: qui reghdfe `depvar' `indepvar' `controls', ///
 			a(c_code_2011_num state_code_2011_num#year) vce(cl `se_clust')
 		
@@ -248,7 +232,7 @@ if `analysis' == 1 {
 			estadd local clust "State $\times$ Year"
 		
 		/*
-		//4. District, Month, State-Year FE
+		//5. District, Month, State-Year FE
 		eststo: qui reghdfe `depvar' `indepvar' `controls', ///
 			a(c_code_2011_num month state_code_2011_num#year) vce(cl `se_clust')
 		
@@ -270,10 +254,10 @@ if `analysis' == 1 {
 			label r2 replace wrap booktabs nonotes nocons ///
 			mlabels(none) nonumbers posthead("`numbers'") ///
 			addnotes( "$\sym{*}~p<$ .1, $\sym{**}~p<$ .05, $\sym{***}~p<$.01") ///
-			stats(dist_fe st_y_fe month_fe N clust nclust r2 p, ///
-			labels(`"District FEs"' `"State $\times$ Year FEs"' `"Month FEs"' ///
+			stats(mean_y dist_fe st_y_fe N clust nclust r2 p, ///
+			labels(`"Y Mean"' `"District FEs"' `"State $\times$ Year FEs"' ///
 			`"N"' `"SE Clusters"' `"Clusters"' `"\(R^{2}\)"' `"\(p\)-value"') ///
-			fmt(0 0 0 0 0 0 3 3)) b(%5.3f) se(%5.3f) substitute("$" "\$")
+			fmt(3 0 0 0 0 0 3 3)) b(%5.3f) se(%5.3f) substitute("$" "\$")
 	end
 	
 	
@@ -281,21 +265,33 @@ if `analysis' == 1 {
 	use "${DATA}/dta/fc_ebd_master_5.dta", clear
 	
 	la var coverage "Spatial Coverage"
+
 	//Cluster
 	egen s_y = group(state_code_2011_num year)
 	
 	//Analysis
 
 	** Deforestation
-	foreach var of varlist district_forest district_forest_cum ///
-		district_nonforest district_nonforest_cum {
-			foreach j in km2 ln ihs {
+	foreach var of varlist district_forest_cum district_nonforest_cum {
+			foreach j in km2 ihs {
 		
-		* OLS
-		reg_table species_richness `var'_`j' coverage
-		reg_table shannon_index `var'_`j' coverage
-		reg_table simpson_index `var'_`j' coverage
+		* Biodiversity
+		reg_table species_richness `var'_`j' coverage temperature_mean precipitation_mean
+		reg_table shannon_index `var'_`j' coverage temperature_mean precipitation_mean
+		reg_table simpson_index `var'_`j' coverage temperature_mean precipitation_mean
 		
+		reg_table species_richness_ihs `var'_`j' coverage temperature_mean precipitation_mean
+		reg_table shannon_index_ihs `var'_`j' coverage temperature_mean precipitation_mean
+		reg_table simpson_index_ihs `var'_`j' coverage temperature_mean precipitation_mean
+		
+		* Birding
+		reg_table n_birders `var'_`j' temperature_mean precipitation_mean
+		reg_table n_trips `var'_`j' temperature_mean precipitation_mean
+		reg_table effort_distance_km `var'_`j' temperature_mean precipitation_mean
+		reg_table duration_min `var'_`j' temperature_mean precipitation_mean
+		
+		
+
 		}
 	}
 	

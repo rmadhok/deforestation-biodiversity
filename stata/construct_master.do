@@ -79,7 +79,7 @@ if `biodiversity' == 1 {
 	
 	** Protocol - Stationary, Travelling
 	keep if inlist(protocol_code, "P21", "P22", "P23")
-	
+
 	** Unique Birders
 	bys c_code_2011 yearmonth: egen n_birders = nvals(id)
 	bys c_code_2011 yearmonth: egen n_trips = nvals(id_event)
@@ -114,10 +114,10 @@ if `biodiversity' == 1 {
 
 	//4. Aggregate to district
 	collapse (mean) species_richness shannon_index simpson_index ///
+					duration_min effort_distance_km ///
 			 (first) n_birders n_trips, ///
 			 by(c_code_2011 year_month)
 			 
-
 	tempfile biodiversity
 	save "`biodiversity'"
 	
@@ -151,22 +151,25 @@ if `biodiversity' == 1 {
 	tempfile biodiversity_balance
 	save "`biodiversity_balance'"
 	
-	//6. Merge Spatial Coverage (Monthly)
+	//6. Merge Spatial Coverage (Monthly) and Weather
 	
-	** Read
-	import delimited "${DATA}/csv/coverage_ym_grid_10km_sample_`sampsize'", clear
+	foreach file in "coverage_ym_grid_10km_sample_`sampsize'" "india_weather" {
+	
+		** Read
+		import delimited "${DATA}/csv/`file'", clear
+		
+		** Formate Date
+		gen year_month = ym(year(date(yearmonth, "20YM")), month(date(yearmonth, "20YM")))
+		format year_month %tmCCYY-NN
+		drop yearmonth
+		
+		** Merge
+		merge 1:1 c_code_2011 year_month ///
+			using "`biodiversity_balance'", keep(2 3) nogen
+		
+		save "`biodiversity_balance'", replace
+	}
 
-	** Date
-	gen year_month = ym(year(date(yearmonth, "20YM")), month(date(yearmonth, "20YM")))
-	format year_month %tmCCYY-NN
-	drop yearmonth
-	
-	** Merge
-	merge 1:1 c_code_2011 year_month using "`biodiversity_balance'", nogen
-
-	tempfile biodiversity_coverage
-	save "`biodiversity_coverage'"
-	
 	//7. Add District Characteristics
 	
 	** a. Hotspots
@@ -191,13 +194,46 @@ if `biodiversity' == 1 {
 	merge 1:1 c_code_2011 using "${DATA}/dta/2011_india_dist", nogen
 	
 	** Merge with Biodiversity Panel
-	merge 1:m c_code_2011 using "`biodiversity_coverage'", nogen
+	merge 1:m c_code_2011 using "`biodiversity_balance'", nogen
+	
+	//8. Prep Variables
 	
 	** Construct
 	gen pop_density = tot_pop / tot_area
 	gen bird_density_dist = n_birds / tot_area
 	gen bird_density_ym = n_birds_ym / tot_area
-
+	
+	** Log/IHS
+	foreach var of varlist species_richness shannon_index simpson_index {
+		
+		gen `var'_ln = log(`var')
+		gen `var'_ihs = asinh(`var')
+		
+	}
+	
+	** Label
+	la var species_richness_ln "Log Species Richness"
+	la var species_richness_ihs "IHS Species Richenss"
+	la var species_richness "Species Richness"
+	la var shannon_index "Shannon Index"
+	la var shannon_index_ln "Log Shannon Index"
+	la var shannon_index_ihs "IHS Shannon Index"
+	la var simpson_index "Simpson Index"
+	la var simpson_index_ln "Log Simpson Index"
+	la var simpson_index_ihs "IHS Simpson Index"
+	la var coverage "Birding Spatial Coverage (monthly)"
+	la var coverage_all "Birding Spatial Coverage (all)"
+	la var n_hotspots "No. of Birding Hotspots"
+	la var n_birders "No. of Birders"
+	la var n_trips "No. of Birding Trips"
+	la var bird_density_dist "Bird Density (per \(km^{2}\))"
+	la var tot_area "Total Area (\(km^{2}\))"
+	la var pop_density "Population Density (per \(km^{2}\))"
+	la var temperature_mean "Mean Temperature (C)"
+	la var precipitation_mean "Mean Precipitation (mm)"
+	la var duration_min "Trip Duration (minutes)"
+	la var effort_distance_km "Trip Distance (km)"
+	
 	//8. Write
 	order c_code_2011* state district year_month species* shannon* simpson* ///
 		coverage* n_*
