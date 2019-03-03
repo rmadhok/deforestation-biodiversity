@@ -15,10 +15,14 @@ require(raster)
 require(rgdal) 
 require(sp)
 require(dplyr)
+require(geosphere)
 
 # Load india 2011 districts
 india.districts.2011 <- readOGR(paste(dist_shpf, "maps/india-district", sep=""), 
                                 'SDE_DATA_IN_F7DSTRBND_2011', stringsAsFactors = F)
+
+# Load District Data
+dist.data <- india.districts.2011@data
 
 ### Process Weather
 weather <- list('temperature', 'precipitation')
@@ -38,7 +42,7 @@ for (i in weather) {
     stack <- stack(paste(path_head, "netcdf/", i, '_' , year, '.nc', sep=""))
     
     # Resolution/Projection
-    res(stack) <- 0.5
+    res(stack) <- 0.3
     proj <- proj4string(india.districts.2011)
     proj4string(stack) <- proj  #sync coordinate systems of grid and original vector data
     
@@ -55,7 +59,7 @@ for (i in weather) {
       # Get District Codes
       proj <- proj4string(india.districts.2011)
       df.month$c_code_2011 <- over(SpatialPoints(df.month[,1:2], proj4string=CRS(proj)), india.districts.2011)$c_code_11
-      df.month <- df.month[!is.na(df.month$c_code_2011), ]
+      df.month <- df.month[!(is.na(df.month$mean) & is.na(df.month$c_code_2011)),]
 
       # Aggregate
       df.month <- df.month %>% 

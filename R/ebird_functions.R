@@ -18,11 +18,11 @@ spatial_coverage <- function(sp, grid) {
   # Function: spatial_coverage
   ## Inputs: 
   ### sp: a SpatialPoints object of bird sighting coordinates
-  ### grid: a raster of defined projected and extent
+  ### grid: a raster of defined projection and extent
   
   ## Outputs:
   ## count.df: grid-cell level data frame with centroid coordinates, district codes, 
-  ##cell bird counts and a dummy for whether a bird was seen in that cell
+  ## cell bird counts and a dummy for whether a bird was seen in that cell
   
   india.grid <- rasterize(sp, grid, fun='count')
   proj4string(india.grid) <- proj4string(india.districts.2011)
