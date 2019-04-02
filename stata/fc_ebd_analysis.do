@@ -27,7 +27,8 @@ gl TABLE	"${ROOT}/def_biodiv/docs/tex_doc/tables"
 
 // Modules
 local sumstats		1
-local analysis		1
+local plots			0
+local analysis		0
 
 *===============================================================================
 * SUMMARY STATISTICS
@@ -36,7 +37,6 @@ if `sumstats' == 1 {
 	
 	//Read
 	use "${DATA}/dta/fc_ebd_master_5.dta", clear
-	
 	//1. Format Data for Display
 	
 	** Deforestation Districts
@@ -48,22 +48,21 @@ if `sumstats' == 1 {
 	** Indent in latex markup
 	foreach v of varlist district_forest district_forest_cum ///
 		district_nonforest district_nonforest_cum ///
-		approach_access_cum-wind_power_cum hybrid_cum-non_linear_cum ///
-		species_richness *_index tot_area pop_density effort_distance_km ///
-		duration_min bird_density_dist coverage* n_hotspots ///
-		n_birders n_trips { 
+		proj_cat_1-proj_shape_3 species_richness *_index tot_area ///
+		pop_density effort_distance_km duration_min coverage* n_hotspots ///
+		n_birders n_trips veteran_frac { 
 		
 			label variable `v' `"\hspace{0.2cm} `: variable label `v''"'
 			
 		}
 	
 	** Collect Data
-	local dist_vars tot_area pop_density bird_density_dist coverage_all n_hotspots
-	local trip_details n_birders n_trips effort_distance_km duration_min
+	local dist_vars tot_area pop_density coverage_all n_hotspots
+	local trip_details n_birders n_trips veteran_frac effort_distance_km duration_min
 	local biodiversity species_richness shannon_index simpson_index
 	local deforestation district_forest_cum district_nonforest_cum
-	unab proj_cat_num: approach_access_cum-wind_power_cum
-	local proj_shape_num linear_cum non_linear_cum hybrid_cum
+	unab proj_cat_num: proj_cat_1-proj_cat_21
+	local proj_shape_num proj_shape_1 proj_shape_2 proj_shape_3
 	
 	//2. Summary Statistics
 	
@@ -131,7 +130,7 @@ if `sumstats' == 1 {
 	esttab using "${TABLE}/sumstats_deforest.tex", append f ///
 		cell((count mean(fmt(%9.2f)) sd(fmt(%9.2f)) min(fmt(%9.0f)) p25(fmt(%9.0f)) ///
 		p50(fmt(%9.0f)) p75(fmt(%9.0f)) max(fmt(%9.0f)))) width(\hsize) ///
-		refcat(approach_access_cum "\emph{District Project Counts (Cumulative)}", nolabel) ///
+		refcat(proj_cat_1 "\emph{District Project (\%)}", nolabel) ///
 		collabel(none) nomtitle booktabs noobs label nonumber plain gap substitute("$" "\$")
 	
 	eststo clear
@@ -140,7 +139,7 @@ if `sumstats' == 1 {
 	esttab using "${TABLE}/sumstats_deforest.tex", append f ///
 		cell((count mean(fmt(%9.2f)) sd(fmt(%9.2f)) min(fmt(%9.0f)) p25(fmt(%9.0f)) ///
 		p50(fmt(%9.0f)) p75(fmt(%9.0f)) max(fmt(%9.0f)))) width(\hsize) ///
-		refcat(linear_cum "\emph{District Project Shape Counts}", nolabel) ///
+		refcat(proj_shape_1 "\emph{District Project Shape (\%)}", nolabel) ///
 		collabel(none) nomtitle booktabs noobs label plain gap substitute("$" "\$")
 	
 	
@@ -150,6 +149,72 @@ if `sumstats' == 1 {
 		replace floatplacement(htp) ///
 		title(Deforestation Descriptive Statistics (2014-2018)) wide
 		
+}
+
+*===============================================================================
+* PLOTS
+*===============================================================================
+if `plots' == 1 {
+
+	//Read
+	use "${DATA}/dta/fc_ebd_master_5.dta", clear
+	drop if year == 2014
+	
+	** Deforestation Districts
+	bys c_code_2011: egen any_def = max(district_forest > 0 & district_forest!=.)
+	
+	label define labvar 1 "Development Districts" 0 "Non-Development Districts"
+	label values any_def labvar
+	
+	** Bar
+	cibar shannon_index, over1(any_def) ///
+		bargap(3) barcolor(forest_green brown) ciopts(lcolor(black)) ///
+		graphopts(title("Bird Species Diversity in Development and" "Non-Development Districts") ///
+		ytitle(Mean Shannon Index) graphregion(color(white)) bgcolor(white) ///
+		note(Note: 458 development districts and 182 non-development districts))
+		
+	graph export "/Users/rmadhok/Documents/ubc/research/def_biodiv/docs/conferences/lfs_conference/presentation/img/biodiv.png", replace
+	
+	** State-Year
+	preserve
+	
+		statsby mean_sr=r(mean) ub=r(ub) lb=r(lb), by(state year any_def) clear: ci mean shannon_index
+
+		scatter mean_sr year if state=="Andhra Pradesh" & any_def == 0, ms(O) mcolor(green) || ///
+				rcap ub lb year if state=="Andhra Pradesh" & any_def == 0, lcolor(green) || /// 
+		scatter mean_sr year if state=="Andhra Pradesh" & any_def == 1, ms(O) mcolor(brown) || ///
+				rcap ub lb year if state=="Andhra Pradesh" & any_def == 1, lcolor(brown) ///
+		title("Bird Species Diversity in Development and" "Non-Development Districts of Andhra Pradesh State") ///
+		ytitle("Mean Shannon Index") xtitle("Year") ///
+		graphregion(color(white)) bgcolor(white) ///
+		legend(label(1 "Non-Development Districts") label(2 "95% CI") label(3 "Development Districts") label(4 "95% CI")) ///
+		note(Note: 11 districts with no development; 12 districts with development)
+		
+		graph export "/Users/rmadhok/Documents/ubc/research/def_biodiv/docs/conferences/lfs_conference/presentation/img/andhra.png", replace
+		
+	
+	restore
+
+	** District
+	preserve 
+	
+		statsby mean_sr=r(mean) ub=r(ub) lb=r(lb), by(state district year any_def) clear: ci mean shannon_index
+		
+		scatter mean_sr year if district=="Rangareddy", ms(O) mcolor(green) || ///
+				rcap ub lb year if district=="Rangareddy", lcolor(green) || ///
+		scatter mean_sr year if district=="Chittoor", ms(O) mcolor(brown) || ///
+				rcap ub lb year if district=="Chittoor", lcolor(brown) ///
+		title("Bird Species Diversity in Two Districts" "of Andhra Pradesh State") ///
+		ytitle("Mean Shannon Index") xtitle("Year") ///
+		graphregion(color(white)) bgcolor(white) ///
+		legend(label(1 "Non-Development District") label(2 "95% CI") ///
+		label(3 "Development District") label(4 "95% CI")) ///
+		note(Note: mean over 12 months)
+		
+		graph export "/Users/rmadhok/Documents/ubc/research/def_biodiv/docs/conferences/lfs_conference/presentation/img/two_districts.png", replace
+				
+	restore
+			
 }
 
 *===============================================================================
@@ -204,7 +269,8 @@ if `analysis' == 1 {
 			estadd local clust "State $\times$ Year"
 		
 		//3. District FE
-		eststo: qui reghdfe `depvar' `indepvar' `controls', a(c_code_2011_num) vce(cl `se_clust')
+		eststo: qui reghdfe `depvar' `indepvar' `controls', ///
+			a(c_code_2011_num) vce(cl `se_clust')
 		
 			test _b[`indepvar'] = 0 
 			estadd scalar p = r(p), replace
@@ -253,58 +319,55 @@ if `analysis' == 1 {
 		esttab using "${TABLE}/table_`1'_`2'.tex", se star(* .1 ** .05 *** .01) ///
 			label r2 replace wrap booktabs nonotes nocons ///
 			mlabels(none) nonumbers posthead("`numbers'") ///
-			addnotes( "$\sym{*}~p<$ .1, $\sym{**}~p<$ .05, $\sym{***}~p<$.01") ///
-			stats(mean_y dist_fe st_y_fe N clust nclust r2 p, ///
-			labels(`"Y Mean"' `"District FEs"' `"State $\times$ Year FEs"' ///
+			stats(dist_fe st_y_fe N clust nclust r2 p, ///
+			labels(`"District FEs"' `"State $\times$ Year FEs"' ///
 			`"N"' `"SE Clusters"' `"Clusters"' `"\(R^{2}\)"' `"\(p\)-value"') ///
-			fmt(3 0 0 0 0 0 3 3)) b(%5.3f) se(%5.3f) substitute("$" "\$")
+			fmt(0 0 0 0 0 3 3)) b(%5.3f) se(%5.3f) substitute("$" "\$") ///
+			addnotes("$\sym{*}~p<$ .1, $\sym{**}~p<$ .05, $\sym{***}~p<$.01.")
 	end
 	
 	
-	//Read Data
+	// Read Data
 	use "${DATA}/dta/fc_ebd_master_5.dta", clear
 	
+	// Prepare Variables
+	
 	la var coverage "Spatial Coverage"
-
-	//Cluster
+	
+	** Clusters
 	egen s_y = group(state_code_2011_num year)
 	
-	//Analysis
-
-	** Deforestation
-	foreach var of varlist district_forest_cum district_nonforest_cum {
-			foreach j in km2 ihs {
-		
-		* Biodiversity
-		reg_table species_richness `var'_`j' coverage temperature_mean precipitation_mean
-		reg_table shannon_index `var'_`j' coverage temperature_mean precipitation_mean
-		reg_table simpson_index `var'_`j' coverage temperature_mean precipitation_mean
-		
-		reg_table species_richness_ihs `var'_`j' coverage temperature_mean precipitation_mean
-		reg_table shannon_index_ihs `var'_`j' coverage temperature_mean precipitation_mean
-		reg_table simpson_index_ihs `var'_`j' coverage temperature_mean precipitation_mean
-		
-		* Birding
-		reg_table n_birders `var'_`j' temperature_mean precipitation_mean
-		reg_table n_trips `var'_`j' temperature_mean precipitation_mean
-		reg_table effort_distance_km `var'_`j' temperature_mean precipitation_mean
-		reg_table duration_min `var'_`j' temperature_mean precipitation_mean
-		
-		
-
-		}
-	}
+	** Controls
+	local ctrls coverage veteran_frac temperature_mean precipitation_mean
 	
 	
+	// Analysis
+	
+	* Biodiversity
+	reg_table species_richness district_forest_cum_km2 district_nonforest_cum_km2 `ctrls'
+	reg_table shannon_index district_forest_cum_km2 district_nonforest_cum_km2 `ctrls'
+	reg_table simpson_index district_forest_cum_km2 district_nonforest_cum_km2 `ctrls'
+	
+	reg_table species_richness_ihs district_forest_cum_ihs district_nonforest_cum_km2 `ctrls'
+	reg_table shannon_index_ihs district_forest_cum_ihs district_nonforest_cum_km2 `ctrls'
+	reg_table simpson_index_ihs district_forest_cum_ihs district_nonforest_cum_km2 `ctrls'
+	
+	reg_table species_richness district_nonforest_cum_km2 district_forest_cum_km2 `ctrls'
+	reg_table shannon_index district_nonforest_cum_km2 district_forest_cum_km2 `ctrls'
+	reg_table simpson_index district_nonforest_cum_km2 district_forest_cum_km2 `ctrls'
+	
+	reg_table species_richness_ihs district_nonforest_cum_ihs district_forest_cum_km2 `ctrls'
+	reg_table shannon_index_ihs district_nonforest_cum_ihs district_forest_cum_km2 `ctrls'
+	reg_table simpson_index_ihs district_nonforest_cum_ihs district_forest_cum_km2 `ctrls'
+	
+	** Birding Activity
+	reg_table n_birders district_forest_cum_km2 district_nonforest_cum_km2 temperature_mean precipitation_mean
+	reg_table n_trips district_forest_cum_km2 district_nonforest_cum_km2 temperature_mean precipitation_mean
+	reg_table effort_distance_km district_forest_cum_km2 district_nonforest_cum_km2 temperature_mean precipitation_mean
+	reg_table duration_min district_forest_cum_km2 district_nonforest_cum_km2 temperature_mean precipitation_mean
+	reg_table coverage district_forest_cum_km2 district_nonforest_cum_km2 temperature_mean precipitation_mean
 	
 }
-
-
-
-
-
-
-
 
 
 

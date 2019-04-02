@@ -79,6 +79,24 @@ if `biodiversity' == 1 {
 	
 	** Protocol - Stationary, Travelling
 	keep if inlist(protocol_code, "P21", "P22", "P23")
+	
+	//3. Veteran Birders
+	
+	preserve
+	
+		bys year id: egen n_months = nvals(yearmonth)
+		bys year id: gen veteran = (n_months >= 6)
+		bys c_code_2011 yearmonth id: keep if _n == 1
+		collapse (sum) n_veterans = veteran, by(c_code_2011 yearmonth)
+		
+		gen year_month = ym(year(date(yearmonth, "20YM")), month(date(yearmonth, "20YM")))
+		format year_month %tmCCYY-NN
+		drop yearmonth
+		
+		tempfile veterans
+		save "`veterans'"
+		
+	restore
 
 	** Unique Birders
 	bys c_code_2011 yearmonth: egen n_birders = nvals(id)
@@ -148,10 +166,15 @@ if `biodiversity' == 1 {
 	drop c_code_2011 district state _merge ym
 	decode c_code_2011_num, gen(c_code_2011)
 	
+	//6. Merge with Monthly Datasets
+	
+	** Veterans
+	merge 1:1 c_code_2011 year_month using "`veterans'", nogen
+	
 	tempfile biodiversity_balance
 	save "`biodiversity_balance'"
 	
-	//6. Merge Spatial Coverage (Monthly) and Weather
+	** Monthly Spatial Coverage and Weather
 	
 	foreach file in "coverage_ym_grid_10km_sample_`sampsize'" "india_weather" {
 	
@@ -170,13 +193,12 @@ if `biodiversity' == 1 {
 		save "`biodiversity_balance'", replace
 	}
 
-	//7. Add District Characteristics
+	//7. Merge with District Data
 	
 	** a. Hotspots
 	import delimited "${DATA}/csv/hotspots_dist_codes", clear
 	drop if c_code_2011 == "NA"
 	
-	** District level
 	bys c_code_2011: gen n_hotspots = _N
 	bys c_code_2011: keep if _n == 1
 	keep c_code_2011 n_hotspots
@@ -202,6 +224,7 @@ if `biodiversity' == 1 {
 	gen pop_density = tot_pop / tot_area
 	gen bird_density_dist = n_birds / tot_area
 	gen bird_density_ym = n_birds_ym / tot_area
+	gen veteran_frac = n_veterans / n_birders
 	
 	** Log/IHS
 	foreach var of varlist species_richness shannon_index simpson_index {
@@ -226,6 +249,7 @@ if `biodiversity' == 1 {
 	la var n_hotspots "No. of Birding Hotspots"
 	la var n_birders "No. of Birders"
 	la var n_trips "No. of Birding Trips"
+	la var veteran_frac "Fraction Veteran Users"
 	la var bird_density_dist "Bird Density (per \(km^{2}\))"
 	la var tot_area "Total Area (\(km^{2}\))"
 	la var pop_density "Population Density (per \(km^{2}\))"
@@ -236,9 +260,9 @@ if `biodiversity' == 1 {
 	
 	//8. Write
 	order c_code_2011* state district year_month species* shannon* simpson* ///
-		coverage* n_*
+		coverage* veteran_frac n_* 
 	sort c_code_2011 year_month
-	export delimited using "${DATA}/csv/ebird_dist_biodiv_`sampsize'.csv", replace
+	*export delimited using "${DATA}/csv/ebird_dist_biodiv_`sampsize'.csv", replace
 	save "${DATA}/dta/ebird_dist_biodiv_`sampsize'.dta", replace
 	
 }
@@ -281,7 +305,7 @@ if `forest_codes' == 1 {
 	
 	//3. Merge Census Codes
 	
-	** Manual Sync Names
+	** Manually Sync Names
 	
 	* States
 	replace state = "andaman & nicobar islands" if state == "andaman and nicobar"
@@ -425,22 +449,22 @@ if `forest_codes' == 1 {
 		local c = subinstr("`b'", "/", " ", .)
 		
 		** Clone
-		local newvar = subinstr("`c'", " ", "_", .)
-		clonevar "`newvar'" = `v'
+		*local newvar = subinstr("`c'", " ", "_", .)
+		*clonevar "`newvar'" = `v'
 		
 		** Store Label
 		local lab_`v' = strproper("`b'")
-		local lab_`newvar' = strproper("`b'")
+		*local lab_`newvar' = strproper("`b'")
 	}
 
 	** Aggregate
-	collapse (sum)  district_forest district_nonforest approach_access-non_linear ///
+	collapse (sum)  district_forest district_nonforest ///
 			 (mean) proj_in_pa_num proj_in_pa_esz_num proj_scheduledarea_num ///
 					proj_cat_* proj_shape_*, ///
 			 by(c_code_2011 year_month)
 	
 	** Add labels
-	foreach v of varlist proj_cat_1-proj_shape_3 approach_access-non_linear {
+	foreach v of varlist proj_cat_1-proj_shape_3 {
 		label var `v' "`lab_`v''"
 	}
 
@@ -465,55 +489,41 @@ if `forest_codes' == 1 {
 	foreach var of varlist district_forest-proj_shape_3 {
 		replace `var' = 0 if `var' == .
 	}
-		
-	//6. Generate Variables
 	
-	foreach var of varlist district_forest district_nonforest ///
-		approach_access-non_linear {
+	//6. Generate Variables
+	foreach var of varlist district_forest district_nonforest {
 	
 		** Cumulative
 		sort c_code_2011 year_month
 		by c_code_2011: gen `var'_cum = sum(`var')
 		
-		if "`var'" == "district_forest" | "`var'" == "district_nonforest"{
+		** km2
+		gen `var'_km2 = `var' / 100
+		gen `var'_cum_km2 = `var'_cum / 100
 			
-			** km2
-			gen `var'_km2 = `var' / 100
-			gen `var'_cum_km2 = `var'_cum / 100
-			
-			** log
-			gen `var'_ln = ln(`var')
-			gen `var'_cum_ln = ln(`var'_cum)
-			
-			** Inverse Hyperbolic Sine
-			gen `var'_ihs = asinh(`var')
-			gen `var'_cum_ihs = asinh(`var'_cum)
-		}
+		** Inverse Hyperbolic Sine
+		gen `var'_ihs = asinh(`var'_km2)
+		gen `var'_cum_ihs = asinh(`var'_cum_km2)
 		
 	}
 	
 	** Label
-	foreach v of varlist approach_access-non_linear {
-		la var `v'_cum "`lab_`v''"
-	}
+	*foreach v of varlist approach_access-non_linear {
+	*	la var `v'_cum "`lab_`v''"
+	*}
 	
 	la var district_forest "Deforestation (ha.)"
-	la var district_forest_ln "Log Deforestation"
+	la var district_forest_km2 "Deforestation (\(km^{2}\))"
 	la var district_forest_ihs "IHS Deforestation"
 	la var district_forest_cum "Cumulative Deforestation (ha.)"
-	la var district_forest_cum_ln "Log Cumulative Deforestation"
+	la var district_forest_cum_km2 "Cumulative Deforestation (\(km^{2}\))"
 	la var district_forest_cum_ihs "IHS Cumulative Deforestation"
 	la var district_nonforest "Non-Forest Diversion (ha.)"
-	la var district_nonforest_ln "Log Non-Forest Diversion"
 	la var district_nonforest_ihs "IHS Non-Forest Diversion"
 	la var district_nonforest_cum "Cumulative Non-Forest Diversion (ha.)"
-	la var district_nonforest_cum_ln "Log Cumulative Non-Forest Diversion"
 	la var district_nonforest_cum_ihs "IHS Cumulative Non-Forest Diversion"
-	la var district_forest_km2 "Deforestation (\(km^{2}\))"
-	la var district_forest_cum_km2 "Cumulative Deforestation (\(km^{2}\))"
 	la var district_nonforest_km2 "Non-Forest Land Diversion (\(km^{2}\))"
 	la var district_nonforest_cum_km2 "Cumulative Non-forest Land Diversion (\(km^{2}\))"
-	
 	
 	** State/district strings
 	merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist", ///
@@ -532,13 +542,19 @@ if `forest_codes' == 1 {
 	//7. Merge with eBird
 	merge 1:1 c_code_2011 year_month ///
 			  using "${DATA}/dta/ebird_dist_biodiv_`sampsize'.dta", keep(3) nogen
+	
+	** Habitat area
+	gen habitat_area_km2 = tot_area - district_forest_km2
+	gen habitat_area_cum_km2 = tot_area - district_forest_cum_km2
+	gen habitat_area_cum_ln = ln(habitat_area_cum_km2)
+	la var habitat_area_cum_ln "Log Habitat Area (A-D)" 
 			  
 	** Order
-	order *_2011_num state district year_month district_*_cum ///
+	order *_2011_num state district year_month district_*_cum* habitat_* ///
 		species* shannon* simpson* coverage n_*
 		  
 	** Write Master
-	export delimited "${DATA}/csv/fc_ebd_master_`sampsize'.csv", replace
+	*export delimited "${DATA}/csv/fc_ebd_master_`sampsize'.csv", replace
 	save "${DATA}/dta/fc_ebd_master_`sampsize'.dta", replace
 	
 }
