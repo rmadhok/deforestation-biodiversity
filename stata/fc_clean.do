@@ -30,19 +30,23 @@ gl DATA 	"${ROOT}/def_biodiv/data"
 import delimited using "${DATA}/csv/fc_raw_use.csv", encoding("utf-8")  clear
 
 //Reduce Variable List
-drop avillage adateofsubmissionofproposals anoofpatches ///
-	atotalareaofsafetyzoneoftheminin bareainha bcurrentstatus ///
+drop adateofsubmissionofproposals anoofpatches ///
+	atotalareaofsafetyzoneoftheminin  bcurrentstatus ///
 	bdegradedforestareaonwhichcahast bstatusofapprovalofthesupremecou ///
 	cdateofapproval epresentowner iwhethertheforestlandisaquiredun ///
-	iiwhethertheareaofnonforestlando iiinoofdistrictsinvolvedforraisi ///
 	ivgender ivnoofpatches estimatedreservealongwithaccurac-v163 ///
-	bareaofnonforestorrevenueforestl iwhethernonforestorrevenueforest ///
 	mineralwisedetailsestimatedminer v177 v178 iiapprovalauthority ///
 	detailsofdivisionsinvolveddivisi-v109 iareaofforestlandproposedtobediv ///
 	bnoofsegments iinatureoftheproject
 
 
 //Clean Variable Names
+ren avillage village_ca
+ren bareainha area_ca
+ren iiinoofdistrictsinvolvedforraisi num_dist_ca
+ren iiwhethertheareaofnonforestlando area_nf_ca_less
+ren iwhethernonforestorrevenueforest nfl_rfl_ca
+ren bareaofnonforestorrevenueforestl area_nfl_ca
 ren atotalareaoftheminingleaseinha area_mine_lease
 ren amoeffileno moef_fileno
 ren astatusoftheenvironmentalclearan ec_status 
@@ -147,9 +151,11 @@ duplicates drop prop_no, force
 ** missing
 foreach var of varlist ec_status mineral_use displacement ///
 	proj_in_pa_esz proj_clear_epa proj_cba proj_scheduledarea ///
-	ua_legal_status employment  {
+	ua_legal_status employment area_ca  {
 		replace `var' = "" if `var' == "nil"
 	}
+destring area_ca, replace
+
 	
 ** zero
 foreach var of varlist forest_area_in_mine* sc_fam_disp ///
@@ -173,6 +179,15 @@ replace minerals_num = "1" if minerals_num == "one"
 replace minerals_num = "2" if minerals_num == "two"
 replace minerals_num = "3" if minerals_num == "three"
 destring minerals_num, replace
+
+//Categorize Project Type
+gen proj_cat = "electricity" if inlist(proj_category, "hydel", "sub station", "thermal", "transmission line", "village electricity", "wind power")
+replace proj_cat = "transport" if inlist(proj_category, "road", "approach access", "railway")
+replace proj_cat = "irrigation" if inlist(proj_category, "canal", "irrigation", "drinking water")
+replace proj_cat = "forest village relocation" if inlist(proj_category, "forest village conversion", "encroachments", "rehabilitation")
+replace proj_cat = "mining" if inlist(proj_category, "mining", "quarrying")
+replace proj_cat = "industry" if inlist(proj_category, "industry", "school", "dispensary/hospital")
+replace proj_cat = "other" if proj_cat == ""
 
 //Encode Binary Variables
 foreach var of varlist proj_in_pa displacement prospecting ///
