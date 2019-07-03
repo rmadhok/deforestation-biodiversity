@@ -34,15 +34,14 @@ df.precipitation <- data.frame()
 # Populate Dataframes
 for (i in weather) {
   
-  for (year in 2014:2018) {
+  for (year in 2014:2019) {
     
     print(paste('Processing ', i, ': ', year, sep=''))
     
-    # Read NetCDF
+    # Read NetCDF (0.125 x 0.125 degrees)
     stack <- stack(paste(path_head, "netcdf/", i, '_' , year, '.nc', sep=""))
-    
-    # Resolution/Projection
-    res(stack) <- 0.3
+
+    # Projection
     proj <- proj4string(india.districts.2011)
     proj4string(stack) <- proj  #sync coordinate systems of grid and original vector data
     
@@ -50,7 +49,8 @@ for (i in weather) {
     stack <- crop(stack, extent(india.districts.2011))
     stack <- mask(stack, india.districts.2011)
     
-    for (month in 1:12){
+    months <- nlayers(stack)
+    for (month in 1:months){
       
       # Dataframe
       df.month <- as.data.frame(stack[[month]], xy=TRUE)
@@ -58,9 +58,9 @@ for (i in weather) {
       
       # Get District Codes
       proj <- proj4string(india.districts.2011)
-      df.month$c_code_2011 <- over(SpatialPoints(df.month[,1:2], proj4string=CRS(proj)), india.districts.2011)$c_code_11
-      df.month <- df.month[!(is.na(df.month$mean) & is.na(df.month$c_code_2011)),]
-
+      df.month$c_code_2011 <- over(SpatialPoints(df.month[,1:2], proj4string = CRS(proj)), india.districts.2011)$c_code_11
+      df.month <- df.month[!is.na(df.month$c_code_2011),]
+  
       # Aggregate
       df.month <- df.month %>% 
         group_by(c_code_2011) %>% 
@@ -91,15 +91,17 @@ for (i in weather) {
 colnames(df.temperature)[2] <- 'temperature_mean'
 df.temperature$temperature_mean <- df.temperature$temperature_mean - 273.15
 
+# Save
+write.csv(df.temperature, 
+          paste(path_head, 'csv/india_temperature.csv', sep=""),
+          row.names = F)
+
 # Convert rainfall from meter to millimeters
 colnames(df.precipitation)[2] <- 'precipitation_mean'
 df.precipitation$precipitation_mean <- df.precipitation$precipitation_mean * 1000
 
-# Merge
-df.weather <- merge(df.temperature, df.precipitation, by=c('c_code_2011', 'yearmonth'))
-
 # Save
-write.csv(df.weather, 
-          paste(path_head, 'csv/india_weather.csv', sep=""),
+write.csv(df.precipitation, 
+          paste(path_head, 'csv/india_precipitation.csv', sep=""),
           row.names = F)
 

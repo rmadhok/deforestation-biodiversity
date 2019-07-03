@@ -28,7 +28,7 @@ spatial_coverage <- function(sp, grid) {
   proj4string(india.grid) <- proj4string(india.districts.2011)
   
   # Clip to Shapefile Extent
-  india.grid <- crop(india.grid, extent(india.districts.2011))
+  # india.grid <- crop(india.grid, extent(india.districts.2011))
   india.grid <- mask(india.grid, india.districts.2011)
   
   # Get District Codes
