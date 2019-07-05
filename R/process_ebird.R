@@ -24,7 +24,7 @@ require(ggplot2)
 # Read Custom Functions
 source('/Users/rmadhok/Documents/ubc/research/def_biodiv/scripts/R/ebird_functions.R')
 
-## 1. LOAD DATA -----
+## 1. LOAD DATA -------------------------------
 
 # Load 2011 District Map
 india.districts.2011 <- readOGR(paste(dist_shpf, "maps/india-district", sep=""),
@@ -41,6 +41,8 @@ ebird <- fread('ebd_IN_201401_201904_relApr-2019.txt')
 colnames(ebird) <- make.names(colnames(ebird))
 
 
+## 2. ATTACH DISTRICT CENSUS CODES -------------
+
 # Keep 2015-2019
 ebird$YEAR <- as.numeric(strftime(ebird$OBSERVATION.DATE, format = "%Y"))
 ebird <- ebird[ebird$YEAR > 2014, ]
@@ -55,7 +57,7 @@ ebird <- ebird[!is.na(ebird$c_code_2011), ]
 ebird <- ebird[,-c(1,2,10,11,14,16,18,19,20,21,22,24,29,34,41,42,43,44,45,46,47)]
 # n = 12,776,073
 
-## 2. CLEAN DATA -----
+## 3. FILTER DATA --------------------------------
 
 # Duration
 # ebird <- subset(ebird, DURATION.MINUTES >= 5 & DURATION.MINUTES <= 240)
@@ -82,27 +84,21 @@ ebird <- ebird %>%
   group_by(YEAR, OBSERVER.ID) %>%
   mutate(n_months = n_distinct(YEARMONTH))
 
-ebird.vet1 <-  ebird[ebird$YEAR < 2019 & ebird$n_months >= 6 , ]
+ebird.vet1 <-  ebird[ebird$YEAR < 2019 & ebird$n_months >= 5 , ]
 ebird.vet2 <- ebird[ebird$YEAR == 2019 & ebird$n_months >= 2, ]
 ebird <- rbind(ebird.vet1, ebird.vet2)
 rm(list=c('ebird.vet1', 'ebird.vet2'))
-#n=6,759,524
-
-# Incomplete Checklist
-ebird$OBSERVATION.COUNT[ebird$OBSERVATION.COUNT == 'X'] <- NA
-# ebird <- ebird %>% 
-#  group_by(SAMPLING.EVENT.IDENTIFIER) %>% 
-#  mutate(num_birds = sum(!is.na(OBSERVATION.COUNT)))
-# ebird <- ebird[ebird$num_birds > 0, ]
+#n=7,052,672 (3153 users)
 
 # Stats
 ebird <- ebird %>% 
   group_by(c_code_2011, YEARMONTH) %>% 
   mutate(n_birders = n_distinct(OBSERVER.ID))
 
-# Diversity Indices
+## 4. DIVERSITY INDICES -----------------------------
 
 # Species Richness
+ebird$OBSERVATION.COUNT[ebird$OBSERVATION.COUNT == 'X'] <- NA
 ebird <- ebird %>% 
   group_by(SAMPLING.EVENT.IDENTIFIER) %>% 
   mutate(species_richness = n())
@@ -138,7 +134,7 @@ ggplot() +
         legend.title=element_blank())
 ggsave(paste(save_path_head, 'docs/tex_doc/fig/ebird_all.png', sep=''), width=8,height=6)
 
-## AGGREGATE
+## 5. AGGREGATE TO DISTRICT-MONTH -----------------------------
 
 # Sampling Event Level
 ebird.full <- distinct(ebird, SAMPLING.EVENT.IDENTIFIER, .keep_all = T)
@@ -147,24 +143,7 @@ ebird.full <- distinct(ebird, SAMPLING.EVENT.IDENTIFIER, .keep_all = T)
 write.csv(ebird.full,
           paste(save_path_head, 'data/csv/ebird_triplevel.csv', sep=""),
           row.names = F)
-# n = 486,049 users
-
-# Histogram
-cols <- c('Mean'='red', 'Median' = 'blue')
-ggplot(ebird.full, aes(ebird.full$species_richness)) + 
-  geom_histogram(aes(y=..density..), binwidth = 3) +
-  geom_vline(aes(xintercept = mean(species_richness), colour='Mean'), size=0.5) +
-  geom_vline(aes(xintercept = median(species_richness), colour='Median'), size=0.5) +
-  ggtitle('Histogram of Trip-level Species Richness') +
-  xlab('Species Richness') + 
-  ylab('Density') +
-  scale_colour_manual(values=cols) +
-  theme(panel.grid.major = element_blank(), 
-        panel.grid.minor = element_blank(), 
-        axis.line = element_blank(), 
-        axis.ticks = element_blank())
-ggsave(paste(save_path_head, 'docs/tex_doc/fig/density_triplevel.png', sep=''), width=8,height=6)
-
+# n = 508,185 trips
 
 # Aggregate
 ebird.full <- ebird.full %>%
@@ -188,7 +167,7 @@ write.csv(ebird.full,
           row.names = F)
 rm(list='ebird.full')
 
-## 3. COMPUTE DISTRICT SPATIAL COVERAGE -----
+## 6. SPATIAL COVERAGE ------------------------------------
 
 # Initialize Grid
 grid <- raster(extent(india.districts.2011))
