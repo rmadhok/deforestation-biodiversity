@@ -56,6 +56,23 @@ ggplot() +
         legend.title=element_text(size=20) , legend.text=element_text(size=10))
 ggsave(paste(SAVE.PATH, 'ebird_', proportion, '_all_2017.pdf', sep=''), width=8,height=6)
 
+
+# Histogram - triplevel data
+cols <- c('Mean'='red', 'Median' = 'blue')
+ggplot(ebird.full, aes(ebird.full$species_richness)) + 
+  geom_histogram(aes(y=..density..), binwidth = 3) +
+  geom_vline(aes(xintercept = mean(species_richness), colour='Mean'), size=0.5) +
+  geom_vline(aes(xintercept = median(species_richness), colour='Median'), size=0.5) +
+  ggtitle('Histogram of Trip-level Species Richness') +
+  xlab('Species Richness') + 
+  ylab('Density') +
+  scale_colour_manual(values=cols) +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        axis.line = element_blank(), 
+        axis.ticks = element_blank())
+ggsave(paste(save_path_head, 'docs/tex_doc/fig/density_triplevel.png', sep=''), width=8,height=6)
+
 #   2. Biodiviersity (2017)
 
 # Index
