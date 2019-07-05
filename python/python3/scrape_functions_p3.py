@@ -70,18 +70,20 @@ def scrapeTables(page):
 				table_data = [[td.text for td in rows[i].findAll('td')] for i in range(len(rows))][2:]
 				table_data = [row for row in table_data if len(row) == 4] #Only table rows with 4 columns - eliminates bottom row (total)
 
+				#if len(table_data[0]) > 1:
+
+				#table_data = table_data[:-1]
+
 				df = pd.DataFrame(table_data, columns=keys)
+				#df = df.iloc[2:].reset_index(drop=True)
 
-				# Only non-empty tables
-				if len(df.index) > 0 :
+				#reshape wide
+				df = df.unstack().to_frame().sort_index(level=1).T
+				df.columns = df.columns.map('{0[0]}_{0[1]}'.format)
 
-					#reshape wide
-					df = df.unstack().to_frame().sort_index(level=1).T
-					df.columns = df.columns.map('{0[0]}_{0[1]}'.format)
-
-					#convert to temp dictionary and populate main
-					temp = df.to_dict('record')[0]
-					item_table.update(temp)
+				#convert to temp dictionary and populate main
+				temp = df.to_dict('record')[0]
+				item_table.update(temp)
 
 	else:
 		item_table = {'No Report': 'True'}
@@ -108,7 +110,7 @@ def scrapeTimeline(page):
 	values = [col.text for col in cols]
 
 	#convert to dictionary
-	item_timeline = dict(zip(keys, values))
+	item_timeline = dict(list(zip(keys, values)))
 	return item_timeline
 
 def getFormData(page):

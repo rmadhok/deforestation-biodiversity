@@ -17,7 +17,6 @@ import requests
 from   bs4 import BeautifulSoup
 import os
 import pandas as pd
-import urllib
 import mechanize
 import time
 from func_timeout import func_timeout, FunctionTimedOut
@@ -25,7 +24,7 @@ from scrape_functions import *
 
 ## Set Parameters
 # Set Directory for Writing Data
-dir = '/Users/rmadhok/Documents/ubc/research/def_biodiv/data/csv'
+dir = '/home/rmadhok/projects/def-sgulati/rmadhok/def_biodiv/data'
 # Set top URL to follow and scrape
 url = 'http://forestsclearance.nic.in/'            
 
@@ -129,7 +128,6 @@ for page in range(2, lastPage + 1):
 
 	
 	try:
-		
 		if page % 5 == 0:
 
 			#Export to CSV

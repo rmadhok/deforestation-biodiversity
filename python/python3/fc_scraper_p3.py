@@ -17,10 +17,9 @@ import requests
 from   bs4 import BeautifulSoup
 import os
 import pandas as pd
-import urllib
+import urllib.request, urllib.parse, urllib.error
 import mechanize
 import time
-from func_timeout import func_timeout, FunctionTimedOut
 from scrape_functions import *
 
 ## Set Parameters
@@ -90,7 +89,7 @@ page_no = int(table.find('tr', {'class': 'pagi'}).span.text)
 rows = table.findAll('tr')
 for row in rows[1:len(rows)-2]:
 
-	print 'Scraping Project ' + str(rows.index(row)) + ' From Page 1...'
+	print('Scraping Project ' + str(rows.index(row)) + ' From Page 1...')
 	
 	#Create data containers
 	project_data = []
@@ -124,13 +123,12 @@ VIEWSTATE, GENERATOR, VALIDATION = getFormData(r.content)
 
 #Scrape remaining pages
 pageDelay = [50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600]
-lastPage = 651
+lastPage = 641
 for page in range(2, lastPage + 1):
 
 	
 	try:
-		
-		if page % 5 == 0:
+		if page % 10 == 0:
 
 			#Export to CSV
 			os.chdir(dir)
@@ -138,32 +136,32 @@ for page in range(2, lastPage + 1):
 			df.to_csv('fc_raw2.csv', encoding = 'utf-8')
 
 		if page in pageDelay:
-			print "Sleeping for 5 mins..."
+			print("Sleeping for 5 mins...")
 			time.sleep(300)
 
-		r = func_timeout(600, 
-			requests.post, 
-			args=(url + 'Online_Status.aspx', 
-				cookies, 
-				{'ctl00$ScriptManager1': 'ctl00$ContentPlaceHolder1$UpdatePanel1|ctl00$ContentPlaceHolder1$Button1',
-				'ctl00$ContentPlaceHolder1$RadioButtonList1': 'New',
-				'__EVENTARGUMENT': 'Page${}'.format(page),
-				'__EVENTTARGET': 'ctl00$ContentPlaceHolder1$grdevents',
-				'__VIEWSTATE': VIEWSTATE,
-				'__VIEWSTATEGENERATOR': GENERATOR,
-				'__VIEWSTATEENCRYPTED': '',
-				'__EVENTVALIDATION': VALIDATION,
-				'ctl00$ContentPlaceHolder1$ddlyear': '-All Years-',
-				'ctl00$ContentPlaceHolder1$ddl1': 'Select',
-				'ctl00$ContentPlaceHolder1$ddl3': 'Select',
-				'ctl00$ContentPlaceHolder1$ddlcategory': '-Select All-',
-				'ctl00$ContentPlaceHolder1$DropDownList1': '-Select All-',
-				'ctl00$ContentPlaceHolder1$txtsearch': '',
-				'ctl00$ContentPlaceHolder1$HiddenField1': '',
-				'ctl00$ContentPlaceHolder1$HiddenField2': '',
-				'__ASYNCPOST': 'false',}
-				)
-			)
+		r = requests.post(
+		url + 'Online_Status.aspx',
+		cookies=cookies,
+		data = {
+			'ctl00$ScriptManager1': 'ctl00$ContentPlaceHolder1$UpdatePanel1|ctl00$ContentPlaceHolder1$Button1',
+			'ctl00$ContentPlaceHolder1$RadioButtonList1': 'New',
+		    '__EVENTARGUMENT': 'Page${}'.format(page),
+		    '__EVENTTARGET': 'ctl00$ContentPlaceHolder1$grdevents',
+		    '__VIEWSTATE': VIEWSTATE,
+		    '__VIEWSTATEGENERATOR': GENERATOR,
+		    '__VIEWSTATEENCRYPTED': '',
+		    '__EVENTVALIDATION': VALIDATION,
+		    'ctl00$ContentPlaceHolder1$ddlyear': '-All Years-',
+		    'ctl00$ContentPlaceHolder1$ddl1': 'Select',
+		    'ctl00$ContentPlaceHolder1$ddl3': 'Select',
+		    'ctl00$ContentPlaceHolder1$ddlcategory': '-Select All-',
+		    'ctl00$ContentPlaceHolder1$DropDownList1': '-Select All-',
+		    'ctl00$ContentPlaceHolder1$txtsearch': '',
+		    'ctl00$ContentPlaceHolder1$HiddenField1': '',
+		    'ctl00$ContentPlaceHolder1$HiddenField2': '',
+		    '__ASYNCPOST': 'false',
+			}
+		)
 
 		#Soupify
 		soup = BeautifulSoup(r.content, 'lxml')
@@ -173,7 +171,7 @@ for page in range(2, lastPage + 1):
 		for row in rows[1:len(rows)-2]:
 
 			try:
-				print 'Scraping Project ' + str(rows.index(row)) + ' From Page ' + str(page) + '...'
+				print('Scraping Project ' + str(rows.index(row)) + ' From Page ' + str(page) + '...')
 				#Create data containers
 				project_data = []
 				item = {}
@@ -183,14 +181,8 @@ for page in range(2, lastPage + 1):
 				cols = row.findAll('td')
 				report_url = cols[10].find('a')['href']
 				if report_url.startswith('viewreport'):
-					
 					#Scrape Report Data
-					report_page = func_timeout(
-						600,
-						requests.get,
-						args=(url + report_url)
-						)
-					
+					report_page = requests.get(url + report_url)
 					item.update(scrapeReport(report_page.content))
 					
 					#Scrape report tables
@@ -205,26 +197,16 @@ for page in range(2, lastPage + 1):
 				project_data.append(item)
 				data += project_data
 
-			except FunctionTimedOut:
-				print "Project Link was Hanging. Moving to next one..."
-				time.sleep(200)
-				continue
-
 			except:
-				print "Could not reach project link. Moving to next project..."
+				print("Could not reach project link. Moving to next project...")
 				time.sleep(300)
 				continue
 
 		#Get form data for next page post request
 		VIEWSTATE, GENERATOR, VALIDATION = getFormData(r.content)
 
-	except FunctionTimedOut:
-		print "Page was hanging. Moving to next one..."
-		time.sleep(200)
-		continue
-
 	except:
-		print "Could not reach page. Trying next one..."
+		print("Could not reach page. Trying next one...")
 		time.sleep(300)
 		continue
 

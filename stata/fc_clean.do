@@ -23,6 +23,7 @@ set maxvar 10000
 gl ROOT 	"/Users/rmadhok/Documents/ubc/research"
 gl DATA 	"${ROOT}/def_biodiv/data"
 
+
 *===============================================================================
 *CLEAN VARIABLE NAMES
 *===============================================================================
@@ -30,107 +31,77 @@ gl DATA 	"${ROOT}/def_biodiv/data"
 import delimited using "${DATA}/csv/fc_raw_use.csv", encoding("utf-8")  clear
 
 //Reduce Variable List
-drop adateofsubmissionofproposals anoofpatches ///
-	atotalareaofsafetyzoneoftheminin  bcurrentstatus ///
-	bdegradedforestareaonwhichcahast bstatusofapprovalofthesupremecou ///
-	cdateofapproval epresentowner iwhethertheforestlandisaquiredun ///
-	ivgender ivnoofpatches estimatedreservealongwithaccurac-v163 ///
-	mineralwisedetailsestimatedminer v177 v178 iiapprovalauthority ///
-	detailsofdivisionsinvolveddivisi-v109 iareaofforestlandproposedtobediv ///
-	bnoofsegments iinatureoftheproject
-
+drop adateofsubmissionofproposals astatusoftheenvironmentalclearan ///
+	bdegradedforestareaonwhichcahast benvironmentalclearancefileno ///
+	careaofnonforestorrevenueforestl ddateofgrantofenvironmentalclear ///
+	iienvironmentalclearancefileno *_ccopyofkmlfile* *_dkhasra* *_epresentowner ///
+	page_no *_fcopyofownership* *_gcopyofmouagree* cdateofapproval ///
+	v10 *_hcopyofnonencumber* *_avillage villageswisebreakupsno* 
 
 //Clean Variable Names
-ren avillage village_ca
-ren bareainha area_ca
-ren iiinoofdistrictsinvolvedforraisi num_dist_ca
-ren iiwhethertheareaofnonforestlando area_nf_ca_less
-ren iwhethernonforestorrevenueforest nfl_rfl_ca
-ren bareaofnonforestorrevenueforestl area_nfl_ca
-ren atotalareaoftheminingleaseinha area_mine_lease
-ren amoeffileno moef_fileno
-ren astatusoftheenvironmentalclearan ec_status 
 ren atotalnumberoffamilies fam_num
 ren awhetherprojectorapartthereofisl proj_in_pa
-ren bareaofforestlandlocatedinthemin forest_area_in_mine
-ren benvironmentalclearancefileno ec_fileno 
+ren bareaofnonforestorrevenueforestl ca_nfl_rfl_area
 ren bnumberofscheduledcastefamilies sc_fam_disp
 ren cnumberofscheduletribesfamilies st_fam_disp
-ren dtotalareaoftheminingleaseinha area_mine_lease2
-ren ddateofgrantofenvironmentalclear date_ec_granted
 ren dnumberofotherfamilies other_fam_disp
-ren eareaofforestlandlocatedinthemin forest_area_in_mine2
 ren iproposalno prop_no
-ren idateofapprovalofminingplan date_miningplan_approve
 ren iinstalledpowergenerationcapacit power_cap
-ren inoofminerals minerals_num
-ren iproposeduseofthemineralspropose mineral_use
 ren iwhetherprojectinvolvesdisplacem displacement
-ren iwhetherdetailedprospectingtoass prospecting
+ren iwhethernonforestorrevenueforest  ca_nfl_rfl
 ren iwhethertheprojectislikelytogene employment
 ren iwhethertheprojectorapartthereof proj_in_pa_esz
-ren iwhethertheprojectrequirescleara proj_clear_epa
-ren iwhethertheprojectrequirescostbe proj_cba
-ren iwhetherapprovalundertheforestco approval_prospecting
-ren v41 proj_scheduledarea
+ren v21 proj_scheduledarea
 ren iipermanentregularemploymentnumb perm_emp
-ren iienvironmentalclearancefileno ec_fileno2
-ren iistatusofapprovalofthestandingc status_sc_nbwl
-ren iitotalcommandareaoftheprojectin command_area
+ren iinatureoftheproject proj_nature
+ren iiwhethertheareaofnonforestlando ca_area_less_div
+ren iiinoofdistrictsinvolvedforraisi ca_num_districts
 ren iiitemporaryemploymentnumberofpe temp_emp
-ren ivstate state 
+ren ivstate state
 ren ixnonforestlandrequiredforthispr proj_area_nonforest
 ren vcategoryoftheproposal proj_category
-ren vnatureofminingundergroundopenca mining_nature
 ren vishapeofforestlandproposedtobed proj_shape
 ren viiestimatedcostoftheprojectrupe proj_cost
-ren viiiareaofforestlandproposedford proj_area_forest_div
-ren xtotalperiodforwhichtheforestlan proj_time
+ren viiiareaofforestlandproposedford proj_area_forest
 ren xiiilegalstatusofuseragency ua_legal_status
-ren (mineralwisedetailsminerals_0 mineralwisedetailsminerals_1 ///
-	mineralwisedetailsminerals_2) (min_name_0 min_name_1 min_name_2)
-ren (mineralwisedetailsestimatedlifeo v174 v175) (min_life_0 min_life_1 min_life_2)
-ren (mineralwisedetailstotalestimated v183 v184) ///
-	(min_total_est_extraction_0 min_total_est_extraction_1 min_total_est_extraction_2)
-ren (mineralwisedetailsestimatedreser v165 v166) ///
-	(min_est_reserve_nonforest_0 min_est_reserve_nonforest_1 min_est_reserve_nonforest_2)
-ren (mineralwisedetailsestimatedannua v171 v172) ///
-	(min_est_yr_extraction_0 min_est_yr_extraction_1 min_est_yr_extraction_2)
-ren (v179 v180 v181) (min_est_reserve_forest_0 min_est_reserve_forest_1 min_est_reserve_forest_2) 	
-order min_*, before(boreholesdrilledforprospectingno)
-
 
 //Rename land-wise variables
 
-**boreholes,  districts
-foreach v of varlist boreholesdrilledforprospectingno-v139{
+** Districts
+ds, has(varlabel *Copy* *copy*)
+drop `r(varlist)'
+
+foreach v of varlist districtwisebreakupdistrictname_-v527 {
    local x : variable label `v'
    local y = subinstr("`x'", " ", "", .)
-   local z = substr("`y'", 30, .)
-   ren `v' `z'
+   local y = subinstr("`y'", "(ha.)", "", .)
+   local y = subinstr("`y'", "wisebreakup", "", .)
+   local y = subinstr("`y'", "-", "", .)
+   ren `v' `y'
 }
 
 **villages
-foreach v of varlist villageswisebreakupvillage_0-v1396{
+foreach v of varlist villageswisebreakupforestlandha_-v2143 {
    local x : variable label `v'
    local y = subinstr("`x'", " ", "", .)
-   local z = substr("`y'", 10, .)
-   ren `v' `z'
+   local y = subinstr("`y'", "(ha.)", "", .)
+   local y = subinstr("`y'", "wisebreakup", "", .)
+   local y = subinstr("`y'", "-", "", .)
+   ren `v' `y'
 }
-ren gnoofboreholesinforestland* num_bh_forest*
-ren gdiametersininchforestland* bh_diam_forest*
-ren gdiametersininchnonforestland* bh_diam_nonforest*
-ren gnoofboreholesinnonforestland* num_bh_nonforest*
-ren me_* district_*
-ren ha_* district_forest_*
-ren andha_* district_nonforest_*
-ren isebreakupvillage* village*
-ren isebreakupforestlandha* village_forest*
-ren isebreakupnonforestlandha* village_nonforest*
 
+ren DistrictDistrictName* district*
+ren DistrictForestLand* district_forest*
+ren DistrictNonForestLand* district_nonforest*
+ren villageswisebreakup* *
+ren VillagesForestLand* village_forest*
+ren VillagesNonForestLand* village_nonforest*
+ren district# ca_district_#
+ren district#_bareainha ca_district_forest_#
 *===============================================================================
 * DATA CLEANING
 *===============================================================================
+
 //Drop Missing Rows
 egen nmcount = rownonmiss(_all), strok
 drop if nmcount == 0
@@ -149,39 +120,30 @@ duplicates drop prop_no, force
 //Manage NIL Values
 
 ** missing
-foreach var of varlist ec_status mineral_use displacement ///
-	proj_in_pa_esz proj_clear_epa proj_cba proj_scheduledarea ///
-	ua_legal_status employment area_ca  {
+foreach var of varlist displacement proj_in_pa* proj_scheduledarea ///
+	ua_legal_status employment  {
+		
 		replace `var' = "" if `var' == "nil"
+	
 	}
-destring area_ca, replace
 
+ds ca_district_forest*, has(type string)
+foreach var of varlist `r(varlist)' ca_nfl_rfl_area{
+	replace `var' = "" if `var' == "nil"
+	destring `var', replace
+}
 	
 ** zero
-foreach var of varlist forest_area_in_mine* sc_fam_disp ///
-	st_fam_disp other_fam_disp area_mine_lease2 power_cap ///
-	minerals_num command_area proj_cost {
+foreach var of varlist sc_fam_disp st_fam_disp other_fam_disp ///
+	power_cap proj_cost ca_num_districts {
+		
 		replace `var' = "0" if `var' == "nil"
 		destring `var', replace
-		}
 		
-//Consolidate
-replace area_mine_lease = area_mine_lease2 if area_mine_lease == .
-drop area_mine_lease2
-replace forest_area_in_mine = forest_area_in_mine2 if forest_area_in_mine == .
-drop forest_area_in_mine
-ren forest_area_in_mine2 forest_area_in_mine
-replace ec_fileno = ec_fileno2 if ec_fileno == ""
-drop ec_fileno2
-
-//String-Numeric 
-replace minerals_num = "1" if minerals_num == "one"
-replace minerals_num = "2" if minerals_num == "two"
-replace minerals_num = "3" if minerals_num == "three"
-destring minerals_num, replace
+		}
 
 //Categorize Project Type
-gen proj_cat = "electricity" if inlist(proj_category, "hydel", "sub station", "thermal", "transmission line", "village electricity", "wind power")
+gen proj_cat = "electricity" if inlist(proj_category, "hydel", "sub station", "thermal", "transmission line", "village electricity", "wind power", "solar power")
 replace proj_cat = "transport" if inlist(proj_category, "road", "approach access", "railway")
 replace proj_cat = "irrigation" if inlist(proj_category, "canal", "irrigation", "drinking water")
 replace proj_cat = "forest village relocation" if inlist(proj_category, "forest village conversion", "encroachments", "rehabilitation")
@@ -190,12 +152,13 @@ replace proj_cat = "industry" if inlist(proj_category, "industry", "school", "di
 replace proj_cat = "other" if proj_cat == ""
 
 //Encode Binary Variables
-foreach var of varlist proj_in_pa displacement prospecting ///
-	employment proj_in_pa_esz proj_clear_epa proj_cba ///
-	approval_prospecting proj_scheduledarea {
+foreach var of varlist displacement employment proj_in_pa* ///
+	proj_scheduledarea ca_nfl_rfl ca_area_less_div {
+		
 		gen `var'_num = (`var' == "yes")
 		replace `var'_num = . if mi(`var')
 		drop `var'
+		
 		}
 
 *===============================================================================
@@ -210,19 +173,17 @@ save "`temp'"
 import delimited "${DATA}/csv/fc_records.csv", clear
 
 //Sync to FC data
-** Reduce/Rename
 keep proposal_no area_applied proposal_status date_of_recomm date_from_ua_to_nodal
 ren (proposal_no area_applied proposal_status date_from_ua_to_nodal date_of_recomm) ///
-	(prop_no proj_area_forest_div2 prop_status date_submitted date_recomm)
+	(prop_no proj_area_forest2 prop_status date_submitted date_recomm)
 	
 ** Sync merge ID
-replace prop_no=trim(itrim(lower(prop_no)))
+replace prop_no = trim(itrim(lower(prop_no)))
+replace prop_status = trim(itrim(lower(prop_status)))
 duplicates drop prop_no, force
 
 // Merge 
-merge 1:1 prop_no using "`temp'"
-drop if _merge == 1
-drop _merge
+merge 1:1 prop_no using "`temp'", keep(2 3) nogen
 
 //Format Dates
 gen date_submit = date(date_submitted,"DM20Y")
@@ -230,9 +191,6 @@ gen date_rec = date(date_recomm, "DM20Y")
 format date_submit date_rec %td
 
 //Save
-order state prop_no prop_status date_submit date_rec proj_area_forest_div* proj*
+order state prop_no prop_status date_submit date_rec proj_area_forest* proj*
 sort state prop_no
 save "${DATA}/dta/fc_clean.dta", replace
-
-
-
