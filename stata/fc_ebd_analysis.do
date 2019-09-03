@@ -21,9 +21,9 @@ set maxvar 10000
 set matsize 10000
 
 //Set Directory Paths
-gl ROOT 	"/Users/rmadhok/Documents/ubc/research"
-gl DATA 	"${ROOT}/def_biodiv/data"
-gl TABLE	"${ROOT}/def_biodiv/docs/tex_doc/"
+gl ROOT 	"/Users/rmadhok/Dropbox (Personal)/def_biodiv"
+gl DATA 	"${ROOT}/data"
+gl TABLE	"${ROOT}/docs/tex_doc/"
 
 // Modules
 local sumstats		0
@@ -62,10 +62,9 @@ if `sumstats' == 1 {
 	la var district_forest_nl_cum "Non-Linear"
 	la var district_forest_pa_cum "In Protected Area"
 	
-	
 	foreach v of varlist district_forest_cum district_forest_*_cum ///
-		ca_district_forest *_mean tot_area pop_density coverage* ///
-		n_hotspots n_birders n_trips { 
+		tot_area s_* sh_* si_* pop_density coverage* n_hotspots ///
+		distance_mean duration_mean n_birders n_trips { 
 		
 			label variable `v' `"\hspace{0.2cm} `: variable label `v''"'
 			
@@ -73,9 +72,9 @@ if `sumstats' == 1 {
 	
 	** Collect Data
 	local dist_vars tot_area pop_density coverage_all n_hotspots
-	local trip_details n_birders n_trips effort_distance_km_mean duration_min_mean
-	local biodiversity species_richness_mean shannon_index_mean simpson_index_mean
-	unab deforestation: district_forest_cum district_forest_*_cum ca_district_forest
+	local trip_details n_birders n_trips distance_mean duration_mean
+	local biodiversity s_richness_mean s_richness_d sh_index_mean sh_index_d si_index_mean si_index_d
+	unab deforestation: district_forest_cum district_forest_*_cum
 	
 	//2. Summary Statistics
 	
@@ -112,13 +111,13 @@ if `sumstats' == 1 {
 	
 	esttab A B C using "${TABLE}/tables/sumstats_biodiv.tex", append f main(mean) aux(sd) ///
 		cells("mean(star fmt(2)) count(fmt(0))" "sd(par fmt(2))") ///
-		width(\hsize) refcat(species_richness_mean "\emph{Biodiversity}" , nolabel) ///
+		width(\hsize) refcat(s_richness_mean "\emph{Biodiversity}" , nolabel) ///
 		nomtitle collabel(none) booktabs noobs label unstack nonumber plain gap
 	
 	** Stitch
 	tex3pt "${TABLE}/tables/sumstats_biodiv.tex" using ///
 		"${TABLE}/tables/sumstats_biodiversity.tex", ///
-		replace floatplacement(htp) wide ///
+		replace floatplacement(!htpb) wide ///
 		title(Biodiversity Descriptive Statistics (2014-2018)) ///
 		note("Note: Spatial coverage is the fraction of grid cells in a district" ///
 		"containing at least one bird observation over the study period using a" ///
@@ -133,11 +132,10 @@ if `sumstats' == 1 {
 	esttab using "${TABLE}/tables/sumstats_deforest.tex", replace ///	
 		cell((count mean(fmt(%9.2f)) sd(fmt(%9.2f)) p50(fmt(%9.0f)) min(fmt(%9.0f)) ///
 		max(fmt(%9.0f)))) width(\hsize) ///
-		refcat(district_forest_c1_cum "\emph{By Project Type}" ///
-		district_forest_s1_cum "\emph{By Project Shape}" ///
-		ca_district_forest "\emph{CAMPA}" , nolabel) posthead("`titles'" "`numbers'") ///
-		nonumbers nomtitles collabels(none) mlabels(none) booktabs noobs ///
-		gap label substitute("$" "\$")
+		refcat(district_forest_elec_cum "\emph{By Project Type}" ///
+		district_forest_hyb_cum "\emph{By Project Shape}", nolabel) ///
+		posthead("`titles'" "`numbers'") nonumbers nomtitles collabels(none) ///
+		mlabels(none) booktabs noobs gap label substitute("$" "\$")
 		
 }
 
@@ -212,303 +210,275 @@ if `plots' == 1 {
 *===============================================================================
 if `analysis' == 1 {
 	
-	//Regression Program
-	capture program drop reg_table
-	program define reg_table
-		
-		** Syntax
-		syntax varlist
-		set more off
-		eststo clear
-		
-		** Parse
-		local depvar : word 1 of `varlist'
-		di "`depvar'"
-		local indepvar : word 2 of `varlist'
-		di "`indepvar'"
-		local controls = substr("`varlist'", length("`depvar'") + length("`indepvar'") + 3, length("`varlist'"))
-		di "`controls'"
-	
-		** SE Clusters
-		local se_clust clust
-		
-		//1. Correlation + Controls
-		eststo: qui reg `depvar' `indepvar' `controls' [aweight=n_trips], robust cluster(`se_clust')
-		
-			test _b[`indepvar'] = 0 
-			estadd scalar p = r(p), replace
-			estadd scalar nclust `e(N_clust)'
-			qui sum `depvar' if e(sample)
-			estadd scalar mean_y = r(mean)
-			estadd local dist_fe ""
-			estadd local smonth_fe ""
-			estadd local year_fe ""
-			estadd local st_y_fe ""
-			estadd local clust "State $\times$ Year"
-		
-		//2. District FE
-		eststo: qui reghdfe `depvar' `indepvar' `controls' [aweight=n_trips], ///
-			a(c_code_2011_num) vce(cl `se_clust')
-		
-			test _b[`indepvar'] = 0 
-			estadd scalar p = r(p), replace
-			estadd scalar nclust `e(N_clust)'
-			qui sum `depvar' if e(sample)
-			estadd scalar mean_y = r(mean)
-			estadd local dist_fe "$\checkmark$"
-			estadd local smonth_fe ""
-			estadd local year_fe ""
-			estadd local st_y_fe ""
-			estadd local clust "State $\times$ Year"
-		
-		
-		//3. District, State-Year FE
-		eststo: qui reghdfe `depvar' `indepvar' `controls' [aweight=n_trips], ///
-			a(c_code_2011_num state_code_2011_num#year) vce(cl `se_clust')
-		
-			test _b[`indepvar'] = 0 
-			estadd scalar p = r(p), replace
-			estadd scalar nclust `e(N_clust)'
-			qui sum `depvar' if e(sample)
-			estadd scalar mean_y = r(mean)
-			estadd local dist_fe "$\checkmark$"
-			estadd local smonth_fe ""
-			estadd local year_fe ""
-			estadd local st_y_fe "$\checkmark$"
-			estadd local clust "State $\times$ Year"
-		
-	
-		//4. District, State-month, Year FE
-		eststo: qui reghdfe `depvar' `indepvar' `controls' [aweight=n_trips], ///
-			a(c_code_2011_num state_code_2011_num#month year) vce(cl `se_clust')
-		
-			test _b[`2'] = 0 
-			estadd scalar p = r(p), replace
-			estadd scalar nclust `e(N_clust)'
-			qui sum `1' if e(sample)
-			estadd scalar mean_y = r(mean)
-			estadd local dist_fe "$\checkmark$"
-			estadd local smonth_fe "$\checkmark$"
-			estadd local year_fe "$\checkmark$"
-			estadd local st_y_fe ""
-			estadd local clust "State $\times$ Year"
-		
-		
-		* Regression table
-		local numbers "& (1) & (2) & (3) & (4) \\ \midrule"
-		
-		esttab using "${TABLE}/tables/table_`1'_`2'.tex", se star(* .1 ** .05 *** .01) ///
-			label r2 replace wrap booktabs nonotes nocons ///
-			mlabels(none) nonumbers posthead("`numbers'") ///
-			stats(dist_fe st_y_fe smonth_fe year_fe N clust nclust r2 p, ///
-			labels(`"District FEs"' `"State $\times$ Year FEs"' `"State $\times$ Month FEs"' ///
-			`"Year FE"' `"N"' `"SE Clusters"' `"Clusters"' `"\(R^{2}\)"' `"\(p\)-value"') ///
-			fmt(0 0 0 0 0 0 0 3 3)) b(%5.3f) se(%5.3f) substitute("$" "\$") ///
-			addnotes("$\sym{*}~p<$ .1, $\sym{**}~p<$ .05, $\sym{***}~p<$.01.")
-		eststo clear
-	
-	end
-	
-	/*-----------------
-	ANALYSIS
-	------------------*/
-	
-	//1. ALL PROJECTS
-	
-	* Set Control Vectors	
-	local ctrls coverage temperature_mean precipitation_mean
-	local ctrls_ihs coverage_ihs temperature_mean_ihs precipitation_mean_ihs
-		
-	* Read
+	//1. Species Diversity on Deforestation
+
 	use "${DATA}/dta/fc_ebd.dta", clear
-	*drop if state_code_2011_num == 1 //Drop J&K
+	local controls district_nonforest_cum_ihs coverage_ihs temperature_mean_ihs precipitation_mean_ihs
+	
+	** Per User and All User
+	foreach var in s_richness sh_index si_index {
 		
-	egen clust = group(state_code_2011_num year)
-	
-	** All Projects
-	
-	reg_table species_richness_mean district_forest_cum_km2 district_nonforest_cum_km2 ca_district_forest_cum_km2 `ctrls'
-	reg_table shannon_index_mean district_forest_cum_km2 district_nonforest_cum_km2 ca_district_forest_cum_km2 `ctrls'
-	reg_table simpson_index_mean district_forest_cum_km2 district_nonforest_cum_km2 ca_district_forest_cum_km2 `ctrls'
-	
-	reg_table species_richness_mean_ihs district_forest_cum_ihs district_nonforest_cum_ihs ca_district_forest_cum_ihs `ctrls_ihs'
-	reg_table shannon_index_mean_ihs district_forest_cum_ihs district_nonforest_cum_ihs ca_district_forest_cum_ihs `ctrls_ihs'
-	reg_table simpson_index_mean_ihs district_forest_cum_ihs district_nonforest_cum_ihs ca_district_forest_cum_ihs `ctrls_ihs'
-	
-	* Birding Activity
-	reg_table n_birders district_forest_cum_km2 district_nonforest_cum_km2 ca_district_forest_cum_km2 temperature_mean precipitation_mean
-	reg_table n_trips district_forest_cum_km2 district_nonforest_cum_km2 ca_district_forest_cum_km2 temperature_mean precipitation_mean
-	reg_table effort_distance_km_mean district_forest_cum_km2 district_nonforest_cum_km2 ca_district_forest_cum_km2 temperature_mean precipitation_mean
-	reg_table duration_min_mean district_forest_cum_km2 district_nonforest_cum_km2 ca_district_forest_cum_km2 temperature_mean precipitation_mean
-	
-	** Economic Activity
-	*reg_table mean_lights district_forest_cum_km2 district_nonforest_cum_km2 temperature_mean precipitation_mean
-		
-	//2. By Project Type
-	
-	foreach depvar of varlist species_richness_mean_ihs shannon_index_mean_ihs simpson_index_mean_ihs {
-	
-		eststo: qui reghdfe `depvar' district_forest_elec_cum_ihs district_nonforest_elec_cum_ihs ca_district_forest_elec_cum_ihs `ctrls_ihs' [aweight=n_trips], ///
-				a(c_code_2011_num state_code_2011_num#month year) vce(cl state_code_2011_num#year)
-	
-			}
-	esttab using "${TABLE}/tables/table_projtype.tex", replace f wrap ///
-		keep(district_forest_elec_cum_ihs) label noobs booktabs nonotes ///
-		nocons nomtitles mlabels("{Species Richness}" "{Shannon}" "{Simpson}") ///
-		b(%5.3f) se star(* .1 ** .05 *** .01) se(%5.3f) substitute("$" "\$")
-	eststo clear
-	
-	foreach i in ind irr mine o tran pa hyb lin nl {
-		
-		foreach depvar of varlist species_richness_mean_ihs shannon_index_mean_ihs simpson_index_mean_ihs {
+		foreach j in mean d {
 			
-			eststo: qui reghdfe `depvar' district_forest_`i'_cum_ihs district_nonforest_`i'_cum_ihs ca_district_forest_`i'_cum_ihs `ctrls_ihs' [aweight=n_trips], ///
-				a(c_code_2011_num state_code_2011_num#month year) vce(cl state_code_2011_num#year)
-	
-				}	
-		esttab using "${TABLE}/tables/table_projtype.tex", append f ///
-			keep(district_forest_`i'_cum_ihs) noobs wrap label booktabs ///
-			nonotes nocons nolines mlabels(none) nonumbers se b(%5.3f) ///
-			se(%5.3f) star(* .1 ** .05 *** .01) substitute("$" "\$")
-		eststo clear
-	}
-		
-	foreach depvar of varlist species_richness_mean_ihs shannon_index_mean_ihs simpson_index_mean_ihs {
-	
-		eststo: qui reghdfe `depvar' district_forest_fvr_cum_ihs district_nonforest_fvr_cum_ihs `ctrls_ihs' [aweight=n_trips], ///
-				a(c_code_2011_num state_code_2011_num#month year) vce(cl state_code_2011_num#year)
-	
-			test _b[district_forest_fvr_cum_ihs] = 0 
-			estadd scalar p = r(p), replace
-			estadd scalar nclust `e(N_clust)'
-			qui sum `depvar' if e(sample)
-			estadd scalar mean_y = r(mean)
-			estadd local dist_fe "$\checkmark$"
-			estadd local smonth_fe "$\checkmark$"
-			estadd local year_fe "$\checkmark$"
-			estadd local st_y_fe ""
-			estadd local clust "{State $\times$ Year}"
-	}
-	esttab using "${TABLE}/tables/table_projtype.tex", append f ///
-		wrap keep(district_forest_fvr_cum_ihs) label r2 booktabs nonotes ///
-		nocons nomtitles nolines stats(dist_fe st_y_fe smonth_fe year_fe N clust nclust r2, ///
-		labels(`"District FEs"' `"State $\times$ Year FEs"' `"State $\times$ Month FEs"' ///
-		`"Year FE"' `"N"' `"SE Clusters"' `"Clusters"' `"\(R^{2}\)"') ///
-		fmt(0 0 0 0 0 0 0 3)) b(%5.3f) se star(* .1 ** .05 *** .01) se(%5.3f) ///
-		substitute("$" "\$") prefoot(\hline)
-	eststo clear
+			* District FE
+			eststo: qui reghdfe `var'_`j'_ihs district_forest_cum_ihs `controls', ///
+				a(c_code_2011_num) vce(cl state_code_2011_num#year)
+				
+				test _b[district_forest_cum_ihs] = 0 
+				estadd scalar p = r(p), replace
+				estadd scalar nclust `e(N_clust)'
+				estadd local dist_fe "$\checkmark$"
+				estadd local smonth_fe ""
+				estadd local year_fe ""
+				estadd local st_y_fe ""
+				estadd local clust "State $\times$ Year"
 			
-	tex3pt "${TABLE}/tables/table_projtype.tex" using "${TABLE}/tables/stacktable_projtype.tex", ///
-		replace wide fontsize(small) land ///
-		title("Impact of Deforestation on Species Diversity by Project Type (2015-2019)") ///
-		note("$\sym{*}~p<$ .1, $\sym{**}~p<$ .05, $\sym{***}~p<$.01." ///
-		"All specifications include controls for spatial coverage, mean temperature, and mean rainfall.")
-	
-	//3. Mean vs. Median
-	
-	foreach depvar in species_richness shannon_index simpson_index {
-		
-		foreach stat in mean md {
-		
-			eststo: qui reghdfe `depvar'_`stat'_ihs district_forest_cum_ihs ///
-				district_nonforest_cum_ihs ca_district_forest_cum_ihs ///
-				`ctrls_ihs' [aweight=n_trips], ///
+			* State-Year FE
+			eststo: qui reghdfe `var'_`j'_ihs district_forest_cum_ihs `controls', ///
+				a(c_code_2011_num state_code_2011_num#year) ///
+				vce(cl state_code_2011_num#year)
+				
+				test _b[district_forest_cum_ihs] = 0 
+				estadd scalar p = r(p), replace
+				estadd scalar nclust `e(N_clust)'
+				estadd local dist_fe "$\checkmark$"
+				estadd local smonth_fe ""
+				estadd local year_fe ""
+				estadd local st_y_fe "$\checkmark$"
+				estadd local clust "State $\times$ Year"
+				
+			* State-Month, Year FE
+			eststo: qui reghdfe `var'_`j'_ihs district_forest_cum_ihs `controls', ///
 				a(c_code_2011_num state_code_2011_num#month year) ///
 				vce(cl state_code_2011_num#year)
-	
+				
 				test _b[district_forest_cum_ihs] = 0 
 				estadd scalar p = r(p), replace
 				estadd scalar nclust `e(N_clust)'
 				estadd local dist_fe "$\checkmark$"
 				estadd local smonth_fe "$\checkmark$"
 				estadd local year_fe "$\checkmark$"
+				estadd local st_y_fe ""
+				estadd local clust "State $\times$ Year"
+			}
+			
+		esttab using "${TABLE}/tables/`var'_deforest.tex", replace ///
+			wrap nocons stats(dist_fe st_y_fe smonth_fe year_fe N clust ///
+			nclust r2 p, labels(`"District FEs"' `"State $\times$ Year FEs"' ///
+			`"State $\times$ Month FEs"' `"Year FE"' `"N"' `"SE Clusters"' ///
+			`"Clusters"' `"\(R^{2}\)"' `"\(p\)-value"') fmt(0 0 0 0 0 0 0 3 3)) ///
+			mgroups("Per Trip" "All Trips", pattern(1 0 0 1 0 0) ///
+			prefix(\multicolumn{@span}{c}{) suffix(}) span ///
+			erepeat(\cmidrule(lr){@span})) nomtitles star(* .1 ** .05 *** .01) ///
+			label nonotes booktabs se b(%5.3f) se(%5.3f) width(\hsize)
+		eststo clear
+	}
+	
+	** OLS AND WLS
+	foreach j in mean d {
+		
+		foreach var in s_richness sh_index si_index {
+		
+			* OLS
+			eststo: qui reghdfe `var'_`j'_ihs district_forest_cum_ihs `controls', ///
+				a(c_code_2011_num state_code_2011_num#month year) ///
+				vce(cl state_code_2011_num#year)
+				
+				test _b[district_forest_cum_ihs] = 0 
+				estadd scalar p = r(p), replace
+				estadd scalar nclust `e(N_clust)'
+				estadd local dist_fe "$\checkmark$"
+				estadd local smonth_fe "$\checkmark$"
+				estadd local year_fe "$\checkmark$"
+				estadd local st_y_fe ""
+				estadd local clust "State $\times$ Year"
+			
+			* WLS
+			eststo: qui reghdfe `var'_`j'_ihs district_forest_cum_ihs ///
+				`controls'[aweight = n_trips], ///
+				a(c_code_2011_num state_code_2011_num#month year) ///
+				vce(cl state_code_2011_num#year)
+				
+				test _b[district_forest_cum_ihs] = 0 
+				estadd scalar p = r(p), replace
+				estadd scalar nclust `e(N_clust)'
+				estadd local dist_fe "$\checkmark$"
+				estadd local smonth_fe "$\checkmark$"
+				estadd local year_fe "$\checkmark$"
+				estadd local st_y_fe ""
+				estadd local clust "State $\times$ Year"
+			}
+		
+		esttab using "${TABLE}/tables/`j'_deforest_weighted.tex", replace ///
+			wrap nocons stats(dist_fe st_y_fe smonth_fe year_fe N clust ///
+			nclust r2 p, labels(`"District FEs"' `"State $\times$ Year FEs"' ///
+			`"State $\times$ Month FEs"' `"Year FE"' `"N"' `"SE Clusters"' ///
+			`"Clusters"' `"\(R^{2}\)"' `"\(p\)-value"') fmt(0 0 0 0 0 0 0 3 3)) ///
+			mgroups("Species Richness" "Shannon Index" "Simpson Index", ///
+			pattern(1 0 1 0 1 0) prefix(\multicolumn{@span}{c}{) suffix(}) span ///
+			erepeat(\cmidrule(lr){@span})) mlabels("OLS" "WLS" "OLS" "WLS" "OLS" "WLS") ///
+			nomtitles star(* .1 ** .05 *** .01) label nonotes booktabs ///
+			se b(%5.3f) se(%5.3f) width(\hsize)
+		eststo clear	
+	}
+		
+	//2. Species Diversity on Deforestation by Project Type
+	
+	foreach j in mean d {
+	
+		* Electricity
+		foreach var in s_richness sh_index si_index {
+	
+			eststo: qui reghdfe `var'_`j'_ihs district_forest_elec_cum_ihs ///
+				district_nonforest_elec_cum_ihs `controls', ///
+				a(c_code_2011_num state_code_2011_num#month year) ///
+				vce(cl state_code_2011_num#year)
+			eststo: qui reghdfe `var'_`j'_ihs district_forest_elec_cum_ihs ///
+				district_nonforest_elec_cum_ihs `controls' [aweight=n_trips], ///
+				a(c_code_2011_num state_code_2011_num#month year) ///
+				vce(cl state_code_2011_num#year)
+			}
+			esttab using "${TABLE}/tables/`j'_forest_projectwise.tex", replace ///
+				f wrap keep(district_forest_elec_cum_ihs) ///
+				mgroups("Species Richness" "Shannon Index" "Simpson Index", ///
+				pattern(1 0 1 0 1 0) prefix(\multicolumn{@span}{c}{) suffix(}) span ///
+				erepeat(\cmidrule(lr){@span})) mlabels("OLS" "WLS" "OLS" "WLS" "OLS" "WLS") ///
+				label noobs booktabs nonotes nocons nomtitles b(%5.3f) se ///
+				star(* .1 ** .05 *** .01) se(%5.3f) 
+			eststo clear
+	
+		* All Other Types
+		foreach i in ind irr mine o tran fvr pa hyb lin {
+		
+			foreach var in s_richness sh_index si_index {
+			
+				eststo: qui reghdfe `var'_`j'_ihs district_forest_`i'_cum_ihs ///
+					district_nonforest_`i'_cum_ihs `controls', ///
+					a(c_code_2011_num state_code_2011_num#month year) ///
+					vce(cl state_code_2011_num#year)
+				eststo: qui reghdfe `var'_`j'_ihs district_forest_`i'_cum_ihs ///
+					district_nonforest_`i'_cum_ihs `controls' [aweight=n_trips], ///
+					a(c_code_2011_num state_code_2011_num#month year) ///
+					vce(cl state_code_2011_num#year)
+					}	
+			esttab using "${TABLE}/tables/`j'_forest_projectwise.tex", append f ///
+				keep(district_forest_`i'_cum_ihs) noobs wrap label booktabs ///
+				nomtitles nonotes nocons nolines mlabels(none) nonumbers se ///
+				b(%5.3f) se(%5.3f) star(* .1 ** .05 *** .01)
+			eststo clear
+		}
+		
+		* Non-Linear
+		foreach var in s_richness sh_index si_index {
+	
+			eststo: qui reghdfe `var'_`j'_ihs district_forest_nl_cum_ihs ///
+				district_nonforest_nl_cum_ihs `controls', ///
+				a(c_code_2011_num state_code_2011_num#month year) ///
+				vce(cl state_code_2011_num#year)
+				
+				test _b[district_forest_nl_cum_ihs] = 0 
+				estadd scalar nclust `e(N_clust)'
+				estadd local dist_fe "$\checkmark$"
+				estadd local smonth_fe "$\checkmark$"
+				estadd local year_fe "$\checkmark$"
+				estadd local clust "{State $\times$ Year}"
+			
+			eststo: qui reghdfe `var'_`j'_ihs district_forest_nl_cum_ihs ///
+				district_nonforest_nl_cum_ihs `controls' [aweight=n_trips], ///
+				a(c_code_2011_num state_code_2011_num#month year) ///
+				vce(cl state_code_2011_num#year)
+	
+				test _b[district_forest_nl_cum_ihs] = 0 
+				estadd scalar nclust `e(N_clust)'
+				estadd local dist_fe "$\checkmark$"
+				estadd local smonth_fe "$\checkmark$"
+				estadd local year_fe "$\checkmark$"
 				estadd local clust "{State $\times$ Year}"
 			}
-		}
+		esttab using "${TABLE}/tables/`j'_forest_projectwise.tex", append f ///
+			wrap keep(district_forest_nl_cum_ihs) stats(dist_fe smonth_fe ///
+			year_fe N clust nclust r2, labels(`"District FEs"' ///
+			`"State $\times$ Month FEs"' `"Year FE"' `"N"' `"SE Clusters"' ///
+			`"Clusters"' `"\(R^{2}\)"') fmt(0 0 0 0 0 0 3)) label r2 booktabs ///
+			nonotes nocons nomtitles nolines mlabels(none) b(%5.3f) se ///
+			star(* .1 ** .05 *** .01) se(%5.3f) prefoot(\hline)
+		eststo clear
 	
-	esttab using "${TABLE}/tables/table_mean_md.tex", replace wrap nocons ///
-		stats(dist_fe smonth_fe year_fe N clust ///
-		nclust r2 p, labels(`"District FEs"' `"State $\times$ Month FEs"' ///
-		`"Year FEs"' `"N"' `"SE Clusters"' `"Clusters"' `"\(R^{2}\)"' ///
-		`"\$p\$-value"') fmt(0 0 0 0 0 0 3 3)) label ///
-		mgroups("Species Richness" "Shannon Index" "Simpson Index", ///
-		pattern(1 0 1 0 1 0) prefix(\multicolumn{@span}{c}{) suffix(}) span ///
-		erepeat(\cmidrule(lr){@span})) mlabel("Mean" "Median" "Mean" "Median" ///
-		"Mean" "Median") nomtitles star(* .1 ** .05 *** .01) ///
-		nonotes booktabs se b(%5.3f) se(%5.3f) width(\hsize)
-	eststo clear
+	tex3pt "${TABLE}/tables/`j'_forest_projectwise.tex" using "${TABLE}/tables/`j'_deforest_projwise.tex", ///
+		replace wide fontsize(small) land ///
+		title("Impact of Deforestation on Species Diversity by Project Type (2015-2019)") ///
+		note("$\sym{*}~p<$ .1, $\sym{**}~p<$ .05, $\sym{***}~p<$.01." ///
+		"All specifications include controls for spatial coverage, mean temperature, and mean rainfall.")
+	}
 	
-	//4. Lags
+	//3. Lags
 	
-	foreach depvar in species_richness shannon_index simpson_index {
-		
-		foreach stat in mean md {
+	foreach j in mean d {
+	
+		foreach var in s_richness sh_index si_index {
 			
 			* Model
-			eststo: qui reghdfe `depvar'_`stat'_ihs district_forest_cum_ihs ///
-				district_nonforest_cum_ihs ca_district_forest_cum_ihs ///
-				`ctrls_ihs' [aweight=n_trips], ///
+			eststo: qui reghdfe `var'_`j'_ihs district_forest_cum_ihs ///
+				district_nonforest_cum_ihs `controls' [aweight=n_trips], ///
 				a(c_code_2011_num state_code_2011_num#month year) ///
 				vce(cl state_code_2011_num#year)
 			
 			* Store Coeff
-			gen `depvar'_`stat'_df_b_l0 = _b[district_forest_cum_ihs]
+			gen `var'_df_`j'_b_l0 = _b[district_forest_cum_ihs]
 			
 			* Store CI
-			gen `depvar'_`stat'_df_ciu_l0 = _b[district_forest_cum_ihs] - invttail(e(df_r),0.025)*_se[district_forest_cum_ihs]
-			gen `depvar'_`stat'_df_cil_l0 = _b[district_forest_cum_ihs] + invttail(e(df_r),0.025)*_se[district_forest_cum_ihs]
+			gen `var'_df_`j'_ciu_l0 = _b[district_forest_cum_ihs] - invttail(e(df_r),0.025)*_se[district_forest_cum_ihs]
+			gen `var'_df_`j'_cil_l0 = _b[district_forest_cum_ihs] + invttail(e(df_r),0.025)*_se[district_forest_cum_ihs]
 			
 			}
 		}
-	esttab using "${TABLE}/tables/table_lags.tex", replace f wrap ///
-		keep(district_forest_cum_ihs) stats(N, labels("N") fmt(0)) ///
-		label booktabs nonotes nocons nomtitles nolines posthead(\hline) ///
-		mgroups("Species Richness" "Shannon Index" "Simpson Index", ///
-		pattern(1 0 1 0 1 0) prefix(\multicolumn{@span}{c}{) suffix(}) span ///
-		erepeat(\cmidrule(lr){@span})) mlabel("{Mean}" "{Median}" "{Mean}" "{Median}" ///
-		"{Mean}" "{Median}") b(%5.3f) se star(* .1 ** .05 *** .01) ///
-		se(%5.3f) substitute("$" "\$")
-	eststo clear
-	
+		esttab using "${TABLE}/tables/bio_def_lag.tex", replace f wrap ///
+			keep(district_forest_cum_ihs) stats(N, labels("N") fmt(0)) ///
+			mgroups("Per Trip" "All Trips", ///
+			pattern(1 0 0 1 0 0) prefix(\multicolumn{@span}{c}{) suffix(}) span ///
+			erepeat(\cmidrule(lr){@span})) mlabels("{Species Richness}" ///
+			"{Shannon Index}" "{Simpson Index}" "{Species Richness}" ///
+			"{Shannon Index}" "{Simpson Index}") label booktabs nonotes nocons ///
+			nomtitles nolines posthead(\hline) b(%5.3f) se ///
+			star(* .1 ** .05 *** .01) se(%5.3f) 
+		eststo clear
 	
 	foreach i of numlist 1/12 {
 		
-		foreach depvar in species_richness shannon_index simpson_index {
-			
-			foreach stat in mean md {
+		foreach j in mean d {
+	
+			foreach var in s_richness sh_index si_index {
 		
 				* Model
-				eststo: qui reghdfe `depvar'_`stat'_ihs district_forest_cum_ihs_l`i' ///
-					district_nonforest_cum_ihs_l`i' ca_district_forest_cum_ihs_l`i' ///
-					`ctrls_ihs' [aweight=n_trips], ///
+				eststo: qui reghdfe `var'_`j'_ihs district_forest_cum_ihs_l`i' ///
+					district_nonforest_cum_ihs_l`i' `controls' [aweight=n_trips], ///
 					a(c_code_2011_num state_code_2011_num#month year) ///
 					vce(cl state_code_2011_num#year)
 					
 				* Store Coeff
-				gen `depvar'_`stat'_df_b_l`i' = _b[district_forest_cum_ihs_l`i']
+				gen `var'_df_`j'_b_l`i' = _b[district_forest_cum_ihs_l`i']
 			
 				* Store CI
-				gen `depvar'_`stat'_df_ciu_l`i' = _b[district_forest_cum_ihs_l`i'] - invttail(e(df_r),0.025)*_se[district_forest_cum_ihs_l`i']
-				gen `depvar'_`stat'_df_cil_l`i' = _b[district_forest_cum_ihs_l`i'] + invttail(e(df_r),0.025)*_se[district_forest_cum_ihs_l`i']
+				gen `var'_df_`j'_ciu_l`i' = _b[district_forest_cum_ihs_l`i'] - invttail(e(df_r),0.025)*_se[district_forest_cum_ihs_l`i']
+				gen `var'_df_`j'_cil_l`i' = _b[district_forest_cum_ihs_l`i'] + invttail(e(df_r),0.025)*_se[district_forest_cum_ihs_l`i']
 	
 				}
 			}
 		
-		esttab using "${TABLE}/tables/table_lags.tex", append f wrap ///
+		esttab using "${TABLE}/tables/bio_def_lag.tex", append f wrap ///
 			keep(district_forest_cum_ihs_l`i') label booktabs /// 
 			stats(N, labels("N") fmt(0))  nolines posthead(\hline) ///
 			nonotes nocons mlabels(none) nonumbers se b(%5.3f) ///
-			se(%5.3f) star(* .1 ** .05 *** .01) substitute("$" "\$")
+			se(%5.3f) star(* .1 ** .05 *** .01)
 		eststo clear
 	}
 			
-	tex3pt "${TABLE}/tables/table_lags.tex" using "${TABLE}/tables/table_lagspec.tex", ///
+	tex3pt "${TABLE}/tables/bio_def_lag.tex" using "${TABLE}/tables/bio_def_lagspec.tex.tex", ///
 		replace wide fontsize(small) ///
 		title("Impact of Lagged Deforestation on Species Diversity (2015-2019)") ///
 		note("$\sym{*}~p<$ .1, $\sym{**}~p<$ .05, $\sym{***}~p<$.01." ///
 		"All specifications include district, state-month, and year fixed effects." ///
 		"All regressions include controls for spatial coverage, mean temperature, and mean rainfall.")
-	
 
 	** Coefficient Plot
 	preserve
@@ -518,41 +488,39 @@ if `analysis' == 1 {
 		keep if _n == 1
 		gen id = _n
 		
-		reshape long species_richness_mean_df_b_l species_richness_md_df_b_l ///
-			species_richness_mean_df_ciu_l species_richness_md_df_ciu_l ///
-			species_richness_mean_df_cil_l species_richness_md_df_cil_l ///
-			shannon_index_mean_df_b_l shannon_index_md_df_b_l ///
-			shannon_index_mean_df_ciu_l shannon_index_md_df_ciu_l ///
-			shannon_index_mean_df_cil_l shannon_index_md_df_cil_l ///
-			simpson_index_mean_df_b_l simpson_index_md_df_b_l ///
-			simpson_index_mean_df_ciu_l simpson_index_md_df_ciu_l ///
-			simpson_index_mean_df_cil_l simpson_index_md_df_cil_l, ///
+		reshape long s_richness_df_mean_b_l s_richness_df_d_b_l ///
+			s_richness_df_mean_ciu_l s_richness_df_d_ciu_l ///
+			s_richness_df_mean_cil_l s_richness_df_d_cil_l ///
+			sh_index_df_mean_b_l sh_index_df_d_b_l ///
+			sh_index_df_mean_ciu_l sh_index_df_d_ciu_l ///
+			sh_index_df_mean_cil_l sh_index_df_d_cil_l ///
+			si_index_df_mean_b_l si_index_df_d_b_l ///
+			si_index_df_mean_ciu_l si_index_df_d_ciu_l ///
+			si_index_df_mean_cil_l si_index_df_d_cil_l, ///
 			i(id) j(lag)
 			
 		ren *_l *
 		
 		* Plot
-		foreach var in species_richness simpson_index {
+		foreach var in s_richness si_index {
 			
-			foreach stat in mean md {
+			foreach j in mean d {
 		
-				twoway rarea `var'_`stat'_df_ciu `var'_`stat'_df_cil lag, ///
+				twoway rarea `var'_df_`j'_ciu `var'_df_`j'_cil lag, ///
 						sort color(gs14) || ///
-					scatter `var'_`stat'_df_b lag || ///
+					scatter `var'_df_`j'_b lag || ///
 					function y = 0, range(lag) color(gs8) ///
 						xtitle("Lag (months)") xlabel(0(1)12) ///
 						graphregion(color(white)) bgcolor(white) ///
 						legend(order(1 "95% CI" 2 "Coefficient"))
 			
-				graph export "${TABLE}/fig/`var'_`stat'_df_lag.png", replace
+				graph export "${TABLE}/fig/`var'_`j'_df_lag.png", replace
 			
 			}
 		}
 	
 	restore
 	
-		
-
 }
 
 

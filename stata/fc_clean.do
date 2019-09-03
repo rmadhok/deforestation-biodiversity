@@ -20,8 +20,8 @@ set more off
 set maxvar 10000
 
 //Set Directory Paths
-gl ROOT 	"/Users/rmadhok/Documents/ubc/research"
-gl DATA 	"${ROOT}/def_biodiv/data"
+gl ROOT 	"/Users/rmadhok/Dropbox (Personal)/def_biodiv"
+gl DATA 	"${ROOT}/data"
 
 
 *===============================================================================
@@ -97,7 +97,7 @@ ren villageswisebreakup* *
 ren VillagesForestLand* village_forest*
 ren VillagesNonForestLand* village_nonforest*
 ren district# ca_district_#
-ren district#_bareainha ca_district_forest_#
+ren district#_bareainha ca_district_nfl_#
 *===============================================================================
 * DATA CLEANING
 *===============================================================================
@@ -127,7 +127,7 @@ foreach var of varlist displacement proj_in_pa* proj_scheduledarea ///
 	
 	}
 
-ds ca_district_forest*, has(type string)
+ds ca_district_nfl*, has(type string)
 foreach var of varlist `r(varlist)' ca_nfl_rfl_area{
 	replace `var' = "" if `var' == "nil"
 	destring `var', replace

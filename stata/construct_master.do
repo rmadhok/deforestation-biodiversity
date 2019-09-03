@@ -21,35 +21,31 @@ set maxvar 10000
 set matsize 10000
 
 //Set Directory Paths
-gl ROOT 	"/Users/rmadhok/Documents/ubc/research"
-gl DATA 	"${ROOT}/def_biodiv/data"
-gl DO		"${ROOT}/def_biodiv/scripts/stata"
+gl ROOT 	"/Users/rmadhok/Dropbox (Personal)/def_biodiv"
+gl DATA 	"${ROOT}/data"
+gl DO		"${ROOT}/scripts/stata"
 
 // Modules
 local biodiv_unbalanced		1
 local district_forest		1
-local district_campa		1
-
-// Settings
-* Percent random sample of eBird population (set to 5 or 10%)
-* local sampsize			5
+local district_campa		0
 
 *===============================================================================
 * BIODIVERSITY INDICATORS
 *===============================================================================
 if `biodiv_unbalanced' == 1 {
 	
-	//1. Clean Unbalanced Panel
+	*------ UNBALANCED DISTRICT-MONTH PANEL
 	
-	** Read data
-	import delimited using "${DATA}/csv/ebird_full.csv", clear
+	//1. Read
+	import delimited using "${DATA}/csv/ebird_all.csv", clear
 
 	* ----------
 	* 597 districts with bird sightings
 	*------------
 	
 	** Replace Missing
-	foreach var of varlist simpson* duration* effort_distance* {
+	foreach var of varlist si* duration* distance* {
 		
 		replace `var' = "" if `var' == "NA"
 		destring `var', replace
@@ -84,7 +80,7 @@ if `biodiv_unbalanced' == 1 {
 		
 		save "`biodiversity'", replace
 	}
-	
+
 	//3. Merge with District Data
 	
 	** a. Hotspots
@@ -98,45 +94,44 @@ if `biodiv_unbalanced' == 1 {
 	tempfile hotspots
 	save "`hotspots'"
 	
-	** b. District Spatial Coverage
+	** b. Spatial Coverage, census names
 	import delimited "${DATA}/csv/coverage_dist_grid_8km", clear
-	
-	** Merge with hotspots
 	merge 1:1 c_code_2011 using "`hotspots'", keep(1 3) nogen
-	
-	** Merge with Census Data
-	merge 1:1 c_code_2011 using "${DATA}/dta/2011_india_dist", nogen
-	
-	** Merge with Biodiversity Panel
+	merge 1:1 c_code_2011 using "${DATA}/dta/2011_india_dist", ///
+		keepus(state district tot_pop tot_area) nogen
 	merge 1:m c_code_2011 using "`biodiversity'", keep(3) nogen
 	
-	//6. Prep Variables
+	//4. Prep Variables
 	
 	** Log/IHS
-	foreach var of varlist species_richness* shannon_index* simpson_index* ///
+	foreach var of varlist s_richness* sh_index* si_index* ///
 		coverage temperature_mean precipitation_mean {
-		
-		*gen `var'_ln = log(`var')
-		gen `var'_ihs = asinh(`var')
-		
+			
+			gen `var'_ihs = asinh(`var')
 	}
 	
-	** Construct
+	** Label
 	gen pop_density = tot_pop / tot_area
 	la var tot_area "District Area (\(km^{2}\))"
 	la var pop_density "Population Density (per \(km^{2}\))"
 	la var coverage_all "Spatial Coverage"
 	la var n_hotspots "Number of Birding Hotspots"
-	la var duration_min_mean "Duration (min)"
-	la var effort_distance_km_mean "Distance (km)"
+	la var duration_mean "Duration (min)"
+	la var distance_mean "Distance (km)"
 	la var n_birders "Number of Birders"
 	la var n_trips "Number of Trips"
-	la var species_richness_mean_ihs "IHS Species Richenss"
-	la var species_richness_mean "Species Richness"
-	la var shannon_index_mean "Shannon Index"
-	la var shannon_index_mean_ihs "IHS Shannon Index"
-	la var simpson_index_mean "Simpson Index"
-	la var simpson_index_mean_ihs "IHS Simpson Index"
+	la var s_richness_mean_ihs "IHS Species Richenss (per user)"
+	la var s_richness_mean "Species Richness (per user)"
+	la var s_richness_d "Species Richness (all users)"
+	la var s_richness_d_ihs "IHS Species Richness (all users)"
+	la var sh_index_mean "Shannon Index (per user)"
+	la var sh_index_mean_ihs "IHS Shannon Index (per user) "
+	la var sh_index_d "Shannon Index (all users)"
+	la var sh_index_d_ihs "IHS Shannon Index (all users)"
+	la var si_index_mean "Simpson Index (per user)"
+	la var si_index_mean_ihs "IHS Simpson Index (per user)"
+	la var si_index_d "Simpson Index (all users)"
+	la var si_index_d_ihs "IHS Simpson Index (all users)"
 	la var coverage "Spatial Coverage"
 	la var coverage_ihs "Spatial Coverage"
 	la var temperature_mean "Temperature (C)"
@@ -144,11 +139,32 @@ if `biodiv_unbalanced' == 1 {
 	la var precipitation_mean "Precipitation (mm)"
 	la var precipitation_mean_ihs "Precipitation (mm)"
 	
-	//10. Write
+	//5. Write
 	order c_code_2011* state district year_month ///
-		species* shannon* simpson* coverage* n_* 
+		s_richness* sh* si* coverage* n_* 
 	sort c_code_2011 year_month
-	save "${DATA}/dta/ebird_dist_biodiv_unbalanced.dta", replace	
+	save "${DATA}/dta/ebird_dist_biodiv_unbalanced", replace
+	
+	* ------------ TRIP-LEVEL DATA
+	
+	* Read
+	import delimited using "${DATA}/csv/ebird_triplevel.csv", clear 
+	
+	* Clean
+	drop effortareaha n_birders
+	ren (samplingeventidentifier durationminutes effortdistancekm) ///
+		(trip_id duration distance)
+	destring duration distance, replace force
+	
+	* Format Date
+	gen year_month = ym(year(date(yearmonth, "20YM")), month(date(yearmonth, "20YM")))
+	format year_month %tmCCYY-NN
+	drop yearmonth
+	
+	* Save
+	order trip_id c_code_2011 year_month protocoltype
+	sort c_code_2011 year_month
+	save "${DATA}/dta/ebird_triplevel", replace
 
 }
 
@@ -218,7 +234,6 @@ if `district_forest' == 1 {
 	
 	** Land Diversion by Project Type
 	local projlist `" "Electricity" "Forest Village Relocation" "Industry" "Irrigation" "Mining" "Other" "Transport" "'
-	*local count : word count `projlist'
 	local i = 1
 	
 	foreach j in elec fvr ind irr mine o tran {
@@ -318,12 +333,10 @@ if `district_forest' == 1 {
 		by c_code_2011: gen `var'_cum = sum(`var')
 		
 		** km2
-		*gen `var'_km2 = `var' / 100
 		gen `var'_cum_km2 = `var'_cum / 100
 		la var `var'_cum_km2 "Cum. `vlab'"
 			
 		** Inverse Hyperbolic Sine
-		*gen `var'_ihs = asinh(`var'_km2)
 		gen `var'_cum_ihs = asinh(`var'_cum_km2)
 		la var `var'_cum_ihs "Cum. `vlab'"
 		
@@ -343,9 +356,33 @@ if `district_forest' == 1 {
 	gen state_code_2011 = substr(c_code_2011, 1, 3)
 	encode state_code_2011, gen(state_code_2011_num)
 	
-	//7. save
-	order c_code_2011* state_code_2011* state district year_month
+	* Lags
+	foreach var of varlist *forest_cum_ihs {
+	
+		foreach i of numlist 1/12 {
+		
+			bys c_code_2011: gen `var'_l`i' = `var'[_n - `i']
+			la var `var'_l`i' "`i' Month"
+		
+		}
+	}
+	
+	//7. Save
+	
+	* Forest Clearance
 	save "${DATA}/dta/fc_dist_ym", replace
+
+	* Merge with district-level ebird
+	merge 1:1 c_code_2011 year_month using "${DATA}/dta/ebird_dist_biodiv_unbalanced", keep(3) nogen
+	order c_code_2011* state_code_2011* state district year_month district*
+	save "${DATA}/dta/fc_ebd", replace
+	
+	* Merge with trip-level ebird
+	use "${DATA}/dta/fc_dist_ym", clear
+	merge 1:m c_code_2011 year_month using "${DATA}/dta/ebird_triplevel", keep(3) nogen
+	sort c_code_2011 year_month
+	order *_code_2011 state district trip_id year_month duration distance
+	save "${DATA}/dta/fc_ebd_trip", replace
 	
 }
 
@@ -381,10 +418,10 @@ if `district_campa' == 1 {
 	//2. Campa District Project Level
 	
 	** Reshape
-	reshape long ca_district_ ca_district_forest_ , i(prop_no) j(dist_id)
+	reshape long ca_district_ ca_district_nfl_ , i(prop_no) j(dist_id)
 	
 	** Clean
-	ren (ca_district_ ca_district_forest_) (district ca_district_forest)
+	ren (ca_district_ ca_district_nfl_) (district ca_district_nfl)
 	drop if district == ""
 	foreach val of numlist 137 140 189 191 237 239 {	
 		replace district = subinstr(district, "`=char(`val')'", "", .)
@@ -414,20 +451,18 @@ if `district_campa' == 1 {
 	
 	** Land Diversion by Project Type
 	local projlist `" "Electricity" "Industry" "Irrigation" "Mining" "Other" "Transport" "'
-	*local projlist `" "Electricity" "Forest Village Relocation" "Industry" "Irrigation" "Mining" "Other" "Transport" "'
-	*local count : word count `projlist'
 	local i = 1
 	
 	foreach j in elec ind irr mine o tran {
 		
 		* Forest Area
-		gen forest_`j' = ca_district_forest if proj_cat_`i' == 1
-		bys c_code_2011 year_month: egen ca_district_forest_`j' = total(forest_`j')
-		drop forest_`j'
+		gen ca_nfl_`j' = ca_district_nfl if proj_cat_`i' == 1
+		bys c_code_2011 year_month: egen ca_district_nfl_`j' = total(ca_nfl_`j')
+		drop ca_nfl_`j'
 		
 		* Label
 		local type : word `i' of `projlist'
-		la var ca_district_forest_`j' "Comp. Afforestation (`type')" 
+		la var ca_district_nfl_`j' "Comp. Afforestation (`type')" 
 		
 		local ++i
 	
@@ -439,39 +474,39 @@ if `district_campa' == 1 {
 	
 	foreach j in hyb lin nl {
 	
-		gen forest_`j' = ca_district_forest if proj_shape_`i' == 1
-		bys c_code_2011 year_month: egen ca_district_forest_`j' = total(forest_`j')
-		drop forest_`j'
+		gen ca_nfl_`j' = ca_district_nfl if proj_shape_`i' == 1
+		bys c_code_2011 year_month: egen ca_district_nfl_`j' = total(ca_nfl_`j')
+		drop ca_nfl_`j'
 		
 		* Label
 		local type : word `i' of `shapelist'
-		la var ca_district_forest_`j' "Comp. Afforestation (`type')" 
+		la var ca_district_nfl_`j' "Comp. Afforestation (`type')" 
 		
 		local ++i
 		
 	}
 	
 	** Land Diversion in Protected Area
-	gen forest_pa = ca_district_forest if proj_in_pa_esz_num == 1
-	bys c_code_2011 year_month: egen ca_district_forest_pa = total(forest_pa)
-	la var ca_district_forest_pa "Comp. Afforestation (Protected Area)"
-	drop forest_pa
+	gen ca_nfl_pa = ca_district_nfl if proj_in_pa_esz_num == 1
+	bys c_code_2011 year_month: egen ca_district_nfl_pa = total(ca_nfl_pa)
+	la var ca_district_nfl_pa "Comp. Afforestation (Protected Area)"
+	drop ca_nfl_pa
 	
 	** Save Labels
-	foreach v of varlist ca_district_forest* {
+	foreach v of varlist ca_district_nfl* {
 		local lab_`v' : var lab `v'
 	}
 
 	** Aggregate
-	collapse (sum)  ca_district_forest ///
-			 (first) ca_district_forest_*, ///
+	collapse (sum)  ca_district_nfl ///
+			 (first) ca_district_nfl_*, ///
 			 by(c_code_2011 year_month)
 	
 	** Label
-	foreach v of varlist ca_district_forest_* {
+	foreach v of varlist ca_district_nfl_* {
 		la var `v' "`lab_`v''"
 	}
-	la var ca_district_forest "Comp. Afforestation"
+	la var ca_district_nfl "Comp. Afforestation"
 	
 	//5. Balance Panel
 	
@@ -503,15 +538,12 @@ if `district_campa' == 1 {
 		** Cumulative
 		sort c_code_2011 year_month
 		by c_code_2011: gen `var'_cum = sum(`var')
-		*la var `var'_cum "Cum. `vlab'"
 		
 		** km2
-		*gen `var'_km2 = `var' / 100
 		gen `var'_cum_km2 = `var'_cum / 100
 		la var `var'_cum_km2 "Cum. `vlab'"
 			
 		** Inverse Hyperbolic Sine
-		*gen `var'_ihs = asinh(`var'_km2)
 		gen `var'_cum_ihs = asinh(`var'_cum_km2)
 		la var `var'_cum_ihs "Cum. `vlab'"
 		
@@ -542,6 +574,8 @@ if `district_campa' == 1 {
 		replace `var' = `var'[_n-1] if _m == 2
 		
 		}
+
+	
 	drop _merge
 	
 	* Lags
