@@ -119,9 +119,11 @@ ebird <- ebird %>%
 
 # Trip-level (n=510,991 trips)
 ebird_trip <- distinct(ebird, SAMPLING.EVENT.IDENTIFIER, .keep_all = T)
-ebird_trip <- ebird_trip %>% dplyr::select(OBSERVER.ID,SAMPLING.EVENT.IDENTIFIER, PROTOCOL.TYPE, DURATION.MINUTES, 
-                                    EFFORT.DISTANCE.KM, EFFORT.AREA.HA, YEARMONTH, c_code_2011,
-                                    s_richness, sh_index, si_index)
+ebird_trip <- ebird_trip %>% 
+  dplyr::select(OBSERVER.ID,SAMPLING.EVENT.IDENTIFIER, PROTOCOL.TYPE, DURATION.MINUTES, 
+                EFFORT.DISTANCE.KM, YEARMONTH, c_code_2011, s_richness, sh_index, si_index) %>%
+  rename(distance = EFFORT.DISTANCE.KM, duration = DURATION.MINUTES)
+
 ebird_ntrips <- ebird_trip %>% 
   group_by(c_code_2011, YEARMONTH) %>% 
   summarize(n_trips = n(), n_birders = n_distinct(OBSERVER.ID))
@@ -134,8 +136,8 @@ write.csv(ebird_trip,
 # Aggregate
 ebird_trip <- ebird_trip %>%
   group_by(c_code_2011, YEARMONTH) %>%
-  summarise_at(vars(s_richness, sh_index, si_index), 
-               list(mean, md = median), na.rm=T)
+  summarise_at(vars(s_richness, sh_index, si_index, duration, distance), 
+               list(mean = mean, md = median), na.rm = T)
 ebird_trip <- merge(ebird_trip, ebird_ntrips, by=c('c_code_2011','YEARMONTH'))
 rm(list='ebird_ntrips')
 
