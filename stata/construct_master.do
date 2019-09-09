@@ -39,24 +39,16 @@ if `biodiv_unbalanced' == 1 {
 	
 	//1. Read
 	import delimited using "${DATA}/csv/ebird_all.csv", clear
+	// 600 districts with bird sightings
 
-	* ----------
-	* 597 districts with bird sightings
-	*------------
-	
 	** Replace Missing
-	foreach var of varlist si* duration* distance* {
-		
-		replace `var' = "" if `var' == "NA"
-		destring `var', replace
-		
-	}
-	
+	destring si* duration* distance*, replace force
+
 	** Format date
 	gen year_month = ym(year(date(yearmonth, "20YM")), month(date(yearmonth, "20YM")))
 	format year_month %tmCCYY-NN
 	sort c_code_2011 year_month
-			 
+		 
 	tempfile biodiversity
 	save "`biodiversity'"
 	
@@ -80,58 +72,40 @@ if `biodiv_unbalanced' == 1 {
 		
 		save "`biodiversity'", replace
 	}
-
+	
 	//3. Merge with District Data
-	
-	** a. Hotspots
-	import delimited "${DATA}/csv/hotspots_dist_codes", clear
-	drop if c_code_2011 == "NA"
-	
-	bys c_code_2011: gen n_hotspots = _N
-	bys c_code_2011: keep if _n == 1
-	keep c_code_2011 n_hotspots
-
-	tempfile hotspots
-	save "`hotspots'"
-	
-	** b. Spatial Coverage, census names
-	import delimited "${DATA}/csv/coverage_dist_grid_8km", clear
-	merge 1:1 c_code_2011 using "`hotspots'", keep(1 3) nogen
+	import delimited "${DATA}/csv/coverage_dist_grid_8km", clear // spatial coverage
 	merge 1:1 c_code_2011 using "${DATA}/dta/2011_india_dist", ///
 		keepus(state district tot_pop tot_area) nogen
 	merge 1:m c_code_2011 using "`biodiversity'", keep(3) nogen
-	
+
 	//4. Prep Variables
 	
 	** Log/IHS
 	foreach var of varlist s_richness* sh_index* si_index* ///
-		coverage temperature_mean precipitation_mean {
-			
+		duration* distance* coverage temperature* precipitation* {	
 			gen `var'_ihs = asinh(`var')
 	}
-	
+
 	** Label
 	gen pop_density = tot_pop / tot_area
 	la var tot_area "District Area (\(km^{2}\))"
 	la var pop_density "Population Density (per \(km^{2}\))"
 	la var coverage_all "Spatial Coverage"
-	la var n_hotspots "Number of Birding Hotspots"
-	la var duration_mean "Duration (min)"
-	la var distance_mean "Distance (km)"
 	la var n_birders "Number of Birders"
 	la var n_trips "Number of Trips"
-	la var s_richness_mean_ihs "IHS Species Richenss (per user)"
-	la var s_richness_mean "Species Richness (per user)"
-	la var s_richness_d "Species Richness (all users)"
-	la var s_richness_d_ihs "IHS Species Richness (all users)"
-	la var sh_index_mean "Shannon Index (per user)"
-	la var sh_index_mean_ihs "IHS Shannon Index (per user) "
-	la var sh_index_d "Shannon Index (all users)"
-	la var sh_index_d_ihs "IHS Shannon Index (all users)"
-	la var si_index_mean "Simpson Index (per user)"
-	la var si_index_mean_ihs "IHS Simpson Index (per user)"
-	la var si_index_d "Simpson Index (all users)"
-	la var si_index_d_ihs "IHS Simpson Index (all users)"
+	
+	local lablist `" "Species Richness" "Shannon Index" "Simpson Index" "'
+	local i = 1
+	foreach j in s_richness sh_index si_index {	
+		local lab : word `i' of `lablist'
+		la var `j'_mean "`lab' (per user)"
+		*la var `j'_mean_ihs "IHS `lab' (per user)"
+		la var `j'_d "`lab' (all users)"
+		*la var `j'_d_ihs "IHS `lab' (all users)"
+		local ++i
+	}
+	
 	la var coverage "Spatial Coverage"
 	la var coverage_ihs "Spatial Coverage"
 	la var temperature_mean "Temperature (C)"
@@ -141,29 +115,75 @@ if `biodiv_unbalanced' == 1 {
 	
 	//5. Write
 	order c_code_2011* state district year_month ///
-		s_richness* sh* si* coverage* n_* 
+		s_richness* sh* si* duration* distance* coverage* n_* 
 	sort c_code_2011 year_month
 	save "${DATA}/dta/ebird_dist_biodiv_unbalanced", replace
+
 	
 	* ------------ TRIP-LEVEL DATA
 	
 	* Read
 	import delimited using "${DATA}/csv/ebird_triplevel.csv", clear 
-	
+
 	* Clean
-	drop effortareaha n_birders
-	ren (samplingeventidentifier durationminutes effortdistancekm) ///
-		(trip_id duration distance)
-	destring duration distance, replace force
+	ren samplingeventidentifier trip_id
+	destring duration distance si_index, replace force
+	drop if c_code_2011 == "NA"
+	gen state_code_2011 = substr(c_code_2011, 1, 3)
 	
 	* Format Date
 	gen year_month = ym(year(date(yearmonth, "20YM")), month(date(yearmonth, "20YM")))
 	format year_month %tmCCYY-NN
 	drop yearmonth
 	
+	tempfile biodiv_trip
+	save "`biodiv_trip'"
+	
+	* Merge coverage, weather
+	foreach file in "coverage_ym_grid_8km" "india_precipitation" "india_temperature" {
+	
+		import delimited "${DATA}/csv/`file'", clear
+		gen year_month = ym(year(date(yearmonth, "20YM")), month(date(yearmonth, "20YM")))
+		format year_month %tmCCYY-NN
+		drop yearmonth
+		
+		** Merge
+		merge 1:m c_code_2011 year_month ///
+			using "`biodiv_trip'", keep (2 3) nogen
+		
+		save "`biodiv_trip'", replace
+	}
+
+	* Transform
+	foreach var of varlist s_richness *_index *_mean coverage {
+		gen `var'_ihs = asinh(`var')
+	}
+	bys observerid: gen n_trips_user = _N
+	bys observerid: egen n_states_user = nvals(state_code_2011)
+	bys observerid: egen n_dist_user = nvals(c_code_2011)
+	bys observerid: egen n_ym_user = nvals(year_month)
+	drop state_code_2011
+	
+	* Label
+	la var n_ym_user "No. Year-months per User"
+	la var n_dist_user "No. Districts per User"
+	la var n_states_user "No. States per User"
+	la var n_trips_user "No. Trips per User"
+	la var s_richness_ihs "Species Richness"
+	la var sh_index_ihs "Shannon Index"
+	la var si_index_ih "Simpson Index"
+	la var coverage "Spatial Coverage"
+	la var coverage_ihs "Spatial Coverage"
+	la var temperature_mean "Temperature (C)"
+	la var temperature_mean_ihs "Temperature (C)"
+	la var precipitation_mean "Precipitation (mm)"
+	la var precipitation_mean_ihs "Precipitation (mm)"
+	la var duration "Duration (min)"
+	la var distance "Distance (km)"
+	
 	* Save
-	order trip_id c_code_2011 year_month protocoltype
-	sort c_code_2011 year_month
+	order observerid trip_id c_code_2011 year_month protocoltype
+	sort c_code_2011 observerid year_month
 	save "${DATA}/dta/ebird_triplevel", replace
 
 }
@@ -318,13 +338,10 @@ if `district_forest' == 1 {
 	drop c_code_2011 _merge ym
 	decode c_code_2011_num, gen(c_code_2011)
 	
-	** Zeros
-	foreach var of varlist district_forest-district_nonforest_pa {
-		replace `var' = 0 if `var' == .
-	}
-	
 	//6. Generate Variables
 	foreach var of varlist district_forest-district_nonforest_pa {
+		
+		replace `var' = 0 if `var' == .
 		
 		local vlab : var lab `var'
 	
@@ -334,7 +351,7 @@ if `district_forest' == 1 {
 		
 		** km2
 		gen `var'_cum_km2 = `var'_cum / 100
-		la var `var'_cum_km2 "Cum. `vlab'"
+		la var `var'_cum_km2 "Cum. `vlab' (\(km^{2}\))"
 			
 		** Inverse Hyperbolic Sine
 		gen `var'_cum_ihs = asinh(`var'_cum_km2)
@@ -380,8 +397,8 @@ if `district_forest' == 1 {
 	* Merge with trip-level ebird
 	use "${DATA}/dta/fc_dist_ym", clear
 	merge 1:m c_code_2011 year_month using "${DATA}/dta/ebird_triplevel", keep(3) nogen
-	sort c_code_2011 year_month
-	order *_code_2011 state district trip_id year_month duration distance
+	sort observerid year_month
+	order *_code_2011 state district observerid trip_id year_month s_richness *_index
 	save "${DATA}/dta/fc_ebd_trip", replace
 	
 }
