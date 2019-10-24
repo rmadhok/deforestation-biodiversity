@@ -191,6 +191,7 @@ gen date_rec = date(date_recomm, "DM20Y")
 format date_submit date_rec %td
 
 //Save
+drop village* // reduce file size
 order state prop_no prop_status date_submit date_rec proj_area_forest* proj*
 sort state prop_no
 save "${DATA}/dta/fc_clean.dta", replace
