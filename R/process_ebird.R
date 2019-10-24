@@ -63,8 +63,6 @@ rm(list='ebird_oob')
 
 ## 3. FILTER DATA ----------------------------------------------------------------------
 
-# ebird <- subset(ebird, DURATION.MINUTES >= 5 & DURATION.MINUTES <= 240)
-
 # All species reported (n=12,281,846)
 ebird <- filter(ebird, ALL.SPECIES.REPORTED == 1)
 # Protocol (stationary, travelling, historical, banding, random) (n=12,252,132)
@@ -87,22 +85,26 @@ ebird_vet2 <- ebird %>% filter(YEAR == 2019, n_months >= 2)
 ebird <- rbind(ebird_vet1, ebird_vet2)
 rm(list=c('ebird_vet1', 'ebird_vet2'))
 
-# Plot
-# ggplot() +
-#   geom_polygon(data = india.districts.2011, aes(x=long,y=lat,group=group),fill= 'white', color = 'grey', size=.5) + 
-#   geom_point(data=ebird, aes(x=LONGITUDE,y=LATITUDE), color='red', alpha=.03) +
-#   coord_equal() + theme_minimal() + 
-#   theme(panel.grid.major = element_blank(), 
-#         panel.grid.minor = element_blank(), 
-#         axis.line = element_blank(), 
-#         axis.text.x = element_blank(), 
-#         axis.text.y = element_blank(),  
-#         axis.ticks = element_blank(), 
-#         axis.title.x = element_blank(),  
-#         axis.title.y = element_blank(),
-#         legend.position = 'bottom',
-#         legend.title=element_blank())
-# ggsave(paste(save_path_head, 'docs/tex_doc/fig/ebird_all.png', sep=''), width=8,height=6)
+# Unique Species per yearmonth (for plot)
+n_species_ym <- ebird %>%
+  group_by(YEARMONTH) %>%
+  summarize(n_species = n_distinct(TAXONOMIC.ORDER), 
+            year=first(YEAR))
+
+# Save 
+write.csv(n_species_ym,
+          paste(save_path_head, 'data/csv/n_species_ym.csv', sep=""),
+          row.names = F)
+
+# Unique Species per Year (plot)
+n_species_yr <- ebird %>%
+  group_by(YEAR) %>%
+  summarize(n_species = n_distinct(TAXONOMIC.ORDER))
+
+# Save 
+write.csv(n_species_yr,
+          paste(save_path_head, 'data/csv/n_species_yr.csv', sep=""),
+          row.names = F)
 
 ## 4. DIVERSITY INDICES ------------------------------------------------------------------
 
