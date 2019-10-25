@@ -34,13 +34,13 @@ ebird$YEAR <- year(ebird$OBSERVATION.DATE)
 ebird$YEARMONTH <- format(ebird$OBSERVATION.DATE, "%Y-%m")
 ebird <- filter(ebird, YEAR > 2014)
 
-## 2. OVERLAY DISTRICT CENSUS CODES -----------------------------------------------------
+## 2. ATTACH DISTRICT CENSUS CODES -----------------------------------------------------
 
-# Load Distric Map
+# Load districts
 india_districts <- st_read(paste(dist_shp, "maps/india-district", sep=""), 
                            'SDE_DATA_IN_F7DSTRBND_2011', stringsAsFactors = F)
 
-# Overlay (point-in-poly)
+# Get district code of bird (Point-in-Poly)
 ebird$c_code_2011 <- as.data.frame(st_join(st_as_sf(ebird, 
                                                     coords = c('LONGITUDE', 'LATITUDE'), 
                                                     crs = 4326), 
@@ -80,6 +80,10 @@ rm(list=c('ebird_dd', 'ebird_m', 'ebird_nm'))
 ebird <- ebird %>%
   group_by(OBSERVER.ID, YEAR) %>%
   mutate(n_months = n_distinct(YEARMONTH))
+#ebird_vet1 <- ebird %>% filter(YEAR < 2019, n_months >= 5)
+#ebird_vet2 <- ebird %>% filter(YEAR == 2019, n_months >= 2)
+#ebird <- rbind(ebird_vet1, ebird_vet2)
+#rm(list=c('ebird_vet1', 'ebird_vet2'))
 
 # Unique Species per yearmonth (for plot)
 n_species_ym <- ebird %>%
@@ -116,28 +120,47 @@ ebird <- ebird %>%
 # Trip-level (n=621,944 trips, 11,939 users)
 ebird_trip <- ebird %>% 
   distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
-  dplyr::select(OBSERVER.ID, SAMPLING.EVENT.IDENTIFIER, YEAR,
-                DURATION.MINUTES, EFFORT.DISTANCE.KM, YEARMONTH, 
-                n_months, c_code_2011, s_richness, sh_index, si_index) %>%
+  dplyr::select(OBSERVER.ID,SAMPLING.EVENT.IDENTIFIER, PROTOCOL.TYPE, DURATION.MINUTES, 
+                EFFORT.DISTANCE.KM, YEARMONTH, c_code_2011, s_richness, sh_index, si_index) %>%
   rename(distance = EFFORT.DISTANCE.KM, duration = DURATION.MINUTES)
 
-# User-district-month
-ebird_user <- ebird_trip %>%
-  group_by(OBSERVER.ID, c_code_2011, YEARMONTH) %>%
-  mutate(n_trips=n()) %>%
-  summarize(s_richness=mean(s_richness, na.rm=T),
-            sh_index=mean(sh_index, na.rm=T),
-            si_index=mean(si_index,na.rm=T),
-            duation=mean(duration, na.rm=T),
-            distance=mean(distance,na.rm=T),
-            year=first(YEAR),
-            n_trips=first(n_trips),
-            n_mon_yr=first(n_months))
+ebird_ntrips <- ebird_trip %>% 
+  group_by(c_code_2011, YEARMONTH) %>% 
+  summarize(n_trips = n(), n_birders = n_distinct(OBSERVER.ID))
 
-write.csv(ebird_user,
-          paste(save_path_head, 'data/csv/ebird_user.csv', sep=""),
+# Save 
+write.csv(ebird_trip,
+          paste(save_path_head, 'data/csv/ebird_triplevel.csv', sep=""),
           row.names = F)
 
+# Aggregate
+ebird_trip <- ebird_trip %>%
+  group_by(c_code_2011, YEARMONTH) %>%
+  summarise_at(vars(s_richness, sh_index, si_index, duration, distance), 
+               list(mean = mean, md = median), na.rm = T)
+ebird_trip <- merge(ebird_trip, ebird_ntrips, by=c('c_code_2011','YEARMONTH'))
+rm(list='ebird_ntrips')
+
+# ------ Species diversity across all users in district-month
+
+# Species counts
+ebird_dist <- ebird %>%
+  group_by(c_code_2011, YEARMONTH, TAXONOMIC.ORDER) %>%
+  summarize(count = sum(OBSERVATION.COUNT, na.rm = T))
+
+# Diversity indices
+ebird_didx <- ebird_dist %>%
+  group_by(c_code_2011, YEARMONTH) %>%
+  summarize(s_richness_d = n(),
+            sh_index_d = -sum((count / sum(count, na.rm = T))*log(count / sum(count, na.rm = T)), na.rm = T),
+            si_index_d = 1 - ((sum(count*(count - 1), na.rm = T)) / (sum(count, na.rm = T)*(sum(count, na.rm = T) - 1))))
+ebird_all <- merge(ebird_trip, ebird_didx, by=c('c_code_2011', 'YEARMONTH'))
+
+# Write
+write.csv(ebird_all,
+          paste(save_path_head, 'data/csv/ebird_all.csv', sep=""),
+          row.names = F)
+rm(list=c('ebird_trip','ebird_all', 'ebird_didx', 'ebird_dist'))
 
 ## 5. SPATIAL COVERAGE ------------------------------------
 
@@ -145,11 +168,12 @@ write.csv(ebird_user,
 india_districts_shp <- readOGR(paste(dist_shp, "maps/india-district", sep=""),
                                 'SDE_DATA_IN_F7DSTRBND_2011', stringsAsFactors = F)
 grid <- raster(extent(india_districts_shp))
-res(grid) <- .05 # grid resolution in degrees lat-lon
+res(grid) <- .08 # grid resolution in degrees lat-lon
 proj4string(grid) <- proj4string(india_districts_shp)
 
 # Cell Counts of Birds
 bird_coords <- SpatialPoints(ebird[, 12:11], proj4string = crs(grid))
+#bird_coords <- st_as_sf(ebird[, 12:11], coords = c('LONGITUDE', 'LATITUDE'), crs = 4326)
 count_df <- spatial_coverage(bird_coords, grid)
 
 # Aggregate to District

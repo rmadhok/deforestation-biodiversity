@@ -162,28 +162,28 @@ program define reg_trip
 	local ctrls = substr("`varlist'", length("`depvar'") + length("`indepvar'") + 3, length("`varlist'"))
 	di "`ctrls'"
 
-	eststo: qui reghdfe `depvar' `indepvar' `ctrls', ///
+	eststo: qui reghdfe `depvar' `indepvar' `ctrls' [aweight=n_trips_dym], ///
 		a(user_id) vce(r)
 		estadd local user_fe "$\checkmark$"
 		estadd local dist_fe ""
 		estadd local st_y_fe ""
 		estadd local st_m_fe ""
 		estadd local year_fe ""
-	eststo: qui reghdfe `depvar' `indepvar' `ctrls', ///
+	eststo: qui reghdfe `depvar' `indepvar' `ctrls' [aweight=n_trips_dym], ///
 		a(user_id c_code_2011_num) vce(r)
 		estadd local user_fe "$\checkmark$"
 		estadd local dist_fe "$\checkmark$"
 		estadd local st_y_fe ""
 		estadd local st_m_fe ""
 		estadd local year_fe ""
-	eststo: qui reghdfe `depvar' `indepvar' `ctrls', ///
+	eststo: qui reghdfe `depvar' `indepvar' `ctrls' [aweight=n_trips_dym], ///
 		a(user_id c_code_2011_num state_code_2011_num#year) vce(r)
 		estadd local user_fe "$\checkmark$"
 		estadd local dist_fe "$\checkmark$"
 		estadd local st_y_fe "$\checkmark$"
 		estadd local st_m_fe ""
 		estadd local year_fe ""
-	eststo: qui reghdfe `depvar' `indepvar' `ctrls', ///
+	eststo: qui reghdfe `depvar' `indepvar' `ctrls' [aweight=n_trips_dym], ///
 		a(user_id c_code_2011_num state_code_2011_num#month year) vce(r)
 		estadd local user_fe "$\checkmark$"
 		estadd local dist_fe "$\checkmark$"
@@ -301,8 +301,7 @@ if `main_analysis' == 1 {
 	use "${DATA}/dta/fc_ebd_trip.dta", clear
 	local u_ctrls coverage_ihs tree_cover_mean_ihs temperature_mean_ihs precipitation_mean_ihs
 	la_var_tex dist_f_cum_ihs dist_nf_cum_ihs `u_ctrls'
-	
-	/*
+
 	//1. Species Richness on Deforestation
 
 	reg_trip s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `u_ctrls'
@@ -313,7 +312,7 @@ if `main_analysis' == 1 {
 		fmt(0 0 0 0 0 0 3)) nocons nomtitles star(* .1 ** .05 *** .01) label ///
 		nonotes booktabs se b(%5.3f) se(%5.3f) width(\hsize)
 	eststo clear
-	
+
 	//2. SLX
 	
 	local slx_b dist_f_cum_ihs_slx_bc dist_nf_cum_ihs_slx_bc tree_cover_mean_ihs_slx_bc 
@@ -368,7 +367,7 @@ if `main_analysis' == 1 {
 		star(* .1 ** .05 *** .01) label nonotes booktabs mlabels(none) ///
 		nonumbers se b(%5.3f) se(%5.3f) width(\hsize)
 	eststo clear
-*/
+
 	//2. Species Richness on Project-Wise Deforestation
 	
 	la var dist_f_cum_ihs "All Projects"
