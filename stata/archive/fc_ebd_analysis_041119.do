@@ -25,7 +25,7 @@ gl ROOT 	"/Users/rmadhok/Dropbox (Personal)/def_biodiv"
 gl DATA 	"${ROOT}/data"
 gl TABLE	"${ROOT}/docs/tex_doc/"
 
-// Module
+// Modules
 local sumstats			0
 local main_analysis		0
 local robustness		1
@@ -135,38 +135,43 @@ program define reg_user
 	local ctrls = substr("`varlist'", length("`depvar'") + length("`indepvar'") + 3, length("`varlist'"))
 	di "`ctrls'"
 
-	eststo: qui reghdfe `depvar' `indepvar' `ctrls' [aweight=n_trips], ///
+	eststo: qui reghdfe `depvar' `indepvar' `ctrls', ///
 		a(user_id) vce(r)
 		estadd local user_fe "$\checkmark$"
+		estadd local dist_fe ""
+		estadd local st_y_fe ""
+		estadd local st_m_fe ""
+		estadd local year_fe ""
 	eststo: qui reghdfe `depvar' `indepvar' `ctrls', ///
 		a(user_id c_code_2011_num) vce(r)
 		estadd local user_fe "$\checkmark$"
 		estadd local dist_fe "$\checkmark$"
-	eststo: qui reghdfe `depvar' `indepvar' `ctrls' [aweight=n_trips], ///
+		estadd local st_y_fe ""
+		estadd local st_m_fe ""
+		estadd local year_fe ""
+	eststo: qui reghdfe `depvar' `indepvar' `ctrls', ///
 		a(user_id c_code_2011_num state_code_2011_num#year) vce(r)
 		estadd local user_fe "$\checkmark$"
 		estadd local dist_fe "$\checkmark$"
 		estadd local st_y_fe "$\checkmark$"
-	eststo: qui reghdfe `depvar' `indepvar' `ctrls' [aweight=n_trips], ///
+		estadd local st_m_fe ""
+		estadd local year_fe ""
+	eststo: qui reghdfe `depvar' `indepvar' `ctrls', ///
 		a(user_id c_code_2011_num state_code_2011_num#month year) vce(r)
 		estadd local user_fe "$\checkmark$"
 		estadd local dist_fe "$\checkmark$"
+		estadd local st_y_fe ""
 		estadd local st_m_fe "$\checkmark$"
 		estadd local year_fe "$\checkmark$"
-	eststo: qui reghdfe `depvar' `indepvar' `ctrls' [aweight=n_trips], ///
-		a(user_id#year c_code_2011_num state_code_2011_num#month) vce(r)
-		estadd local user_y_fe "$\checkmark$"
-		estadd local dist_fe "$\checkmark$"
-		estadd local st_m_fe "$\checkmark$"
 end
 
 // Saturated
 capture program drop reg_sat
 program define reg_sat
-	
-	syntax varlist
-	set more off
 
+	syntax varlist, weighted(string)
+	set more off
+	
 	** Parse
 	local depvar : word 1 of `varlist'
 	di "`depvar'"
@@ -175,11 +180,22 @@ program define reg_sat
 	local ctrls = substr("`varlist'", length("`depvar'") + length("`indepvar'") + 3, length("`varlist'"))
 	di "`ctrls'"
 
-	qui reghdfe `depvar' `indepvar' `ctrls' [aweight=n_trips], ///
-		a(user_id#year c_code_2011_num state_code_2011_num#month) vce(r)
-		estadd local user_y_fe "$\checkmark$"
-		estadd local dist_fe "$\checkmark$"
-		estadd local st_m_fe "$\checkmark$" 
+	if "`weighted'" == "yes" {
+		eststo: qui reghdfe `depvar' `indepvar' `ctrls' [aweight=n_trips], ///
+			a(user_id c_code_2011_num state_code_2011_num#month year) vce(r)
+			estadd local user_fe "$\checkmark$"
+			estadd local dist_fe "$\checkmark$"
+			estadd local st_m_fe "$\checkmark$"
+			estadd local year_fe "$\checkmark$"
+	}
+	if "`weighted'" == "no" {
+		eststo: qui reghdfe `depvar' `indepvar' `ctrls', ///
+			a(user_id c_code_2011_num state_code_2011_num#month year) vce(r)
+			estadd local user_fe "$\checkmark$"
+			estadd local dist_fe "$\checkmark$"
+			estadd local st_m_fe "$\checkmark$"
+			estadd local year_fe "$\checkmark$"
+	} 
 end
 
 // Drop Outliers
@@ -212,48 +228,52 @@ if `main_analysis' == 1 {
 	
 	* Read
 	use "${DATA}/dta/fc_ebd_user_main", clear
-	local ctrls coverage tree_cover_mean_ihs temperature_mean precipitation_mean
+	local ctrls coverage_ihs tree_cover_mean_ihs temperature_mean_ihs precipitation_mean_ihs
+
+	* Outliers
 	drop_outliers	
 	
 	//1. Species Richness on Deforestation
 	reg_user s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `ctrls'
 	esttab using "${TABLE}/tables/s_richness.tex", replace ///
-		keep(dist* coverage* tree*) stats(user_fe user_y_fe dist_fe st_y_fe ///
-		st_m_fe year_fe N r2, labels(`"User FEs"' `"User $\times$ Year FEs"' ///
-		`"District FEs"' `"State $\times$ Year FEs"' `"State $\times$ Month FEs"' ///
-		`"Year FE"' `"N"' `"\(R^{2}\)"') fmt(0 0 0 0 0 0 0 3)) nocons nomtitles ///
-		star(* .1 ** .05 *** .01) label nonotes booktabs se b(%5.3f) ///
-		se(%5.3f) width(\hsize)
+		keep(dist* coverage* tree*) stats(user_fe dist_fe st_y_fe st_m_fe ///
+		year_fe N r2, labels(`"User FEs"' `"District FEs"' `"State $\times$ Year FEs"' ///
+		`"State $\times$ Month FEs"' `"Year FE"' `"N"' `"\(R^{2}\)"') ///
+		fmt(0 0 0 0 0 0 3)) nocons nomtitles star(* .1 ** .05 *** .01) label ///
+		nonotes booktabs se b(%5.3f) se(%5.3f) width(\hsize)
 	eststo clear
-	//2. Species Diversity on Birding Activity
 	
-	preserve
-	la_var_tex dist_f_cum_km2 dist_nf_cum_km2 `ctrls'
+	//2. Species Diversity on Birding Activity
+	local ba_ctrls dist_nf_cum_km2 coverage tree_cover_mean temperature_mean precipitation_mean
+	la_var_tex dist_f_cum_km2 `ba_ctrls'
 	
 	* Panel A: Duration
-	reg_user duration dist_f_cum_km2 dist_nf_cum_km2 `ctrls' 
+	reg_user duration dist_f_cum_km2 `ba_ctrls' 
 	esttab using "${TABLE}/tables/birding_activity.tex", replace f ///
-		keep(dist* coverage* tree*) stats(user_fe user_y_fe dist_fe st_y_fe st_m_fe ///
-		year_fe N r2, labels(`"User FEs"' `"User $\times$ Year FEs"' ///
-		`"District FEs"' `"State $\times$ Year FEs"' `"State $\times$ Month FEs"' ///
-		`"Year FE"' `"N"' `"\(R^{2}\)"') fmt(0 0 0 0 0 0 0 3)) nocons ///
-		refcat(dist_f_cum_km2 "\emph{Panel A: Duration (min)}", nolabel) ///
-		nomtitles star(* .1 ** .05 *** .01) label nonotes booktabs se ///
-		b(%5.3f) se(%5.3f) width(\hsize)
+		keep(dist* coverage* tree*) stats(user_fe dist_fe st_y_fe st_m_fe ///
+		year_fe N r2, labels(`"User FEs"' `"District FEs"' `"State $\times$ Year FEs"' ///
+		`"State $\times$ Month FEs"' `"Year FE"' `"N"' `"\(R^{2}\)"') ///
+		fmt(0 0 0 0 0 0 3)) nocons refcat(dist_f_cum_km2 ///
+		"\emph{Panel A: Duration (min)}", nolabel) nomtitles ///
+		star(* .1 ** .05 *** .01) label nonotes booktabs se b(%5.3f) ///
+		se(%5.3f) width(\hsize)
 	eststo clear	
 	// Panel B: Distance
-	reg_user distance dist_f_cum_km2 dist_nf_cum_km2 `ctrls' 
+	reg_user distance dist_f_cum_km2 `ba_ctrls' 
 	esttab using "${TABLE}/tables/birding_activity.tex", append f ///
-		keep(dist* coverage* tree*) stats(user_fe user_y_fe dist_fe st_y_fe st_m_fe ///
-		year_fe N r2, labels(`"User FEs"' `"User $\times$ Year FEs"' ///
-		`"District FEs"' `"State $\times$ Year FEs"' `"State $\times$ Month FEs"' ///
-		`"Year FE"' `"N"' `"\(R^{2}\)"') fmt(0 0 0 0 0 0 0 3)) nocons ///
-		refcat(dist_f_cum_km2 "\emph{Panel B: Distance (km)}", nolabel) ///
-		nomtitles star(* .1 ** .05 *** .01) label nonotes booktabs ///
-		mlabels(none) nonumbers se b(%5.3f) se(%5.3f) width(\hsize)
+		keep(dist* coverage* tree*) stats(user_fe dist_fe st_y_fe st_m_fe ///
+		year_fe N r2, labels(`"User FEs"' `"District FEs"' `"State $\times$ Year FEs"' ///
+		`"State $\times$ Month FEs"' `"Year FE"' `"N"' `"\(R^{2}\)"') ///
+		fmt(0 0 0 0 0 0 3)) nocons refcat(dist_f_cum_km2 ///
+		"\emph{Panel B: Distance (km)}", nolabel) nomtitles ///
+		star(* .1 ** .05 *** .01) label nonotes booktabs mlabels(none) ///
+		nonumbers se b(%5.3f) se(%5.3f) width(\hsize)
 	eststo clear
-	
+
 	//3. Species Richness on Project-Wise Deforestation
+	
+	preserve
+	la var dist_f_cum_ihs "All Projects"
 	unab projvars: dist_f_*_cum_ihs
 	la_var_tex `projvars'
 		
@@ -280,12 +300,12 @@ if `main_analysis' == 1 {
 	* Non-linear projects
 	reg_user s_richness_ihs dist_f_nl_cum_ihs dist_nf_nl_cum_ihs `ctrls'
 	esttab using "${TABLE}/tables/projwise_s_richness.tex", append f ///
-		keep(dist_f_nl_cum_ihs) stats(user_fe user_y_fe dist_fe st_y_fe ///
-		st_m_fe year_fe N, labels(`"User FEs"' `"User $\times$ Year FEs"' ///
-		`"District FEs"' `"State $\times$ Year FEs"' `"State $\times$ Month FEs"' ///
-		`"Year FE"' `"N"') fmt(0 0 0 0 0 0 0)) nocons nomtitles label nolines ///
-		nonotes booktabs star(* .1 ** .05 *** .01) se b(%5.3f) se(%5.3f) ///
-		width(\hsize) prefoot(\hline)
+		keep(dist_f_nl_cum_ihs) stats(user_fe dist_fe st_y_fe ///
+		st_m_fe year_fe N, labels(`"User FEs"' `"District FEs"' ///
+		`"State $\times$ Year FEs"' `"State $\times$ Month FEs"' ///
+		`"Year FE"' `"N"') fmt(0 0 0 0 0 0 0)) nocons nomtitles ///
+		label nolines nonotes booktabs star(* .1 ** .05 *** .01) se b(%5.3f) ///
+		se(%5.3f) width(\hsize) prefoot(\hline)
 	eststo clear
 	restore
 	
@@ -293,10 +313,10 @@ if `main_analysis' == 1 {
 	foreach proj in elec irr mine o tran fvr pa lin nl {
 		
 		eststo `proj': qui reghdfe s_richness_ihs dist_f_`proj'_cum_ihs ///
-			dist_nf_`proj'_cum_ihs `ctrls' [aweight=n_trips], ///
-			a(user_id#year c_code_2011_num state_code_2011_num#month) vce(r)
+			dist_nf_`proj'_cum_ihs `u_ctrls', ///
+			a(user_id c_code_2011_num state_code_2011_num#month year) vce(r)
+
 		}
-		
 	set scheme s2color
 	coefplot (elec \ irr \ mine \ o \ tran \ fvr \ pa \ lin \ nl), ///
 		keep(dist_f*) xline(0, lcolor(gs10)) msymbol(D) msize(small) ///
@@ -309,181 +329,200 @@ if `main_analysis' == 1 {
 * ROBUSTNESS CHECKS
 *===============================================================================
 if `robustness' == 1 {
-	
+
 	* Read
 	use "${DATA}/dta/fc_ebd_user_main", clear
 	drop_outliers
 
-	* Controls
-	local ctrls coverage tree_cover_mean_ihs temperature_mean precipitation_mean
-	local ctrls_a `ctrls' all_species_prop user_trend
-	local slx_b dist_f_cum_ihs_slx_bc dist_nf_cum_ihs_slx_bc tree_cover_mean_ihs_slx_bc
-	/*
-	//1. Additional Controls and FE
-	eststo: reg_sat s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `ctrls' // Main
-	eststo: reg_sat s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `ctrls' all_species_prop // veteran
-	eststo: reg_sat s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `ctrls' all_species_prop user_trend // time-trend
-	eststo: reghdfe s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `ctrls_a' n_mon_yr, ///
-		a(user_id#month c_code_2011_num state_code_2011_num#year) vce(r)
-			estadd local user_m_fe "$\checkmark$"
-			estadd local dist_fe "$\checkmark$"
-			estadd local st_y_fe "$\checkmark$"
-
+	* Collect controls
+	local ctrls coverage_ihs tree_cover_mean_ihs temperature_mean_ihs precipitation_mean_ihs
+	local ctrls_a coverage_ihs tree_cover_mean_ihs temperature_mean_ihs precipitation_mean_ihs all_species_prop_ihs n_mon_yr_ihs user_trend
+	local slx_b dist_f_cum_ihs_slx_bc dist_nf_cum_ihs_slx_bc tree_cover_mean_ihs_slx_bc 
+	la_var_tex dist_f_cum_ihs dist_nf_cum_ihs `ctrls' `slx_b'
+	
+	//1. Additional Controls
+	la var user_trend "Time Trend"
+	reg_sat s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `ctrls', weighted(no) // Main
+	reg_sat s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `ctrls' all_species_prop_ihs n_mon_yr_ihs, weighted(no) //Veterans
+	reg_sat s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `ctrls' all_species_prop_ihs n_mon_yr_ihs user_trend, weighted(no) //Time-trend
+	
 	esttab using "${TABLE}/tables/rchecks_controls.tex", replace ///
-		drop(temp* precip* _cons) stats(user_y_fe dist_fe st_m_fe st_y_fe  ///
-		user_m_fe N r2, labels(`"User $\times$ Year FEs"' `"District FEs"' ///
-		`"State $\times$ Month FEs"' `"State $\times$ Year FEs"' ///
-		`"User $\times$ Month FEs"' `"N"' `"\(R^{2}\)"') ///
-		fmt(0 0 0 0 0 0 3)) mgroups("Additional Controls" "Additional FEs", ///
-		pattern(1 0 0 1) prefix(\multicolumn{@span}{c}{) suffix(}) span ///
+		drop(temp* precip* _cons) stats(user_fe dist_fe st_m_fe ///
+		year_fe N r2, labels(`"User FEs"' `"District FEs"' ///
+		`"State $\times$ Month FEs"' `"Year FE"' `"N"' `"\(R^{2}\)"') ///
+		fmt(0 0 0 0 0 3)) mgroups("Main" "Veteran" "{Time-Trend}", ///
+		pattern(1 1 1) prefix(\multicolumn{@span}{c}{) suffix(}) span ///
 		erepeat(\cmidrule(lr){@span})) nomtitles star(* .1 ** .05 *** .01) ///
 		label nonotes booktabs se b(%5.3f) se(%5.3f) width(\hsize)
 	eststo clear
+	
+	//2. SLX Estimates
+	* Main
+	reg_sat s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `ctrls_a', weighted(no)
+	* BC
+	reg_sat s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `ctrls_a' `slx_b', weighted(no)
+	* 1/D
+	preserve
+	drop *_slx_bc
+	ren *_slx_i *_slx_bc
+	reg_sat s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `ctrls_a' `slx_b', weighted(no)
+	* (1/D)^2
+	drop *_slx_bc
+	ren *_slx_i2 *_slx_bc
+	reg_sat s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `ctrls_a' `slx_b', weighted(no)
+	
+	esttab using "${TABLE}/tables/rchecks_slx.tex", replace ///
+		drop(temp* precip* _cons) stats(user_fe dist_fe st_m_fe ///
+		year_fe N r2, labels(`"User FEs"' `"District FEs"' ///
+		`"State $\times$ Month FEs"' `"Year FE"' `"N"' `"\(R^{2}\)"') ///
+		fmt(0 0 0 0 0 3)) mgroups("Main" "W=Queen" "W=$\frac{1}{d}$" ///
+		"W=$\frac{1}{d^2}$", pattern(1 1 1 1) prefix(\multicolumn{@span}{c}{) ///
+		suffix(}) span erepeat(\cmidrule(lr){@span})) ///
+		indicate("Veteran Controls=n_mon_yr_ihs all_species_prop_ihs" ///
+		"User Time-Trend=user_trend") nomtitles star(* .1 ** .05 *** .01) ///
+		label nonotes booktabs se b(%5.3f) se(%5.3f) width(\hsize)
+	eststo clear
+	restore
+	
+	//1. SLX
+	* Binary Contiguity
+	reg_user s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `u_ctrls' `slx_b'
+	esttab using "${TABLE}/tables/s_richness_slx.tex", replace f ///
+		keep(dist* tree*) stats(user_fe dist_fe st_y_fe st_m_fe ///
+		year_fe N r2, labels(`"User FEs"' `"District FEs"' `"State $\times$ Year FEs"' ///
+		`"State $\times$ Month FEs"' `"Year FE"' `"N"' `"\(R^{2}\)"') ///
+		fmt(0 0 0 0 0 0 3)) refcat(dist_f_cum_ihs "\emph{Panel A: Binary Contiguity}", ///
+		nolabel) nocons nomtitles star(* .1 ** .05 *** .01) label nonotes ///
+		booktabs se b(%5.3f) se(%5.3f) width(\hsize)
+	eststo clear
+	* Inverse Distance
+	reg_user s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `u_ctrls' `slx_i'
+	esttab using "${TABLE}/tables/s_richness_slx.tex", append f ///
+		keep(dist* tree*) stats(user_fe dist_fe st_y_fe st_m_fe ///
+		year_fe N r2, labels(`"User FEs"' `"District FEs"' `"State $\times$ Year FEs"' ///
+		`"State $\times$ Month FEs"' `"Year FE"' `"N"' `"\(R^{2}\)"') ///
+		fmt(0 0 0 0 0 0 3)) refcat(dist_f_cum_ihs "\emph{Panel B: Inverse Distance}", ///
+		nolabel) nocons nomtitles star(* .1 ** .05 *** .01) label ///
+		nonotes nonumbers booktabs se b(%5.3f) se(%5.3f) width(\hsize)
+	eststo clear
+	
+	//2. Coefficient Plot for Project-Wise SLX
+	foreach proj in elec ind irr mine o tran fvr pa hyb lin nl {
 
-	//2. SLX Estimates - Phase 1 and 2
-	foreach df in main robust{
-		
+		eststo `proj': qui reghdfe s_richness_ihs dist_f_`proj'_cum_ihs ///
+			dist_nf_`proj'_cum_ihs `ctrls_a', ///
+			a(user_id c_code_2011_num state_code_2011_num#month year) vce(r)
+		eststo `proj'_slx: qui reghdfe s_richness_ihs dist_f_`proj'_cum_ihs ///
+			dist_nf_`proj'_cum_ihs `ctrls_a' dist_f_`proj'_cum_ihs_slx_bc ///
+			dist_nf_`proj'_cum_ihs_slx_bc tree_cover_mean_ihs_slx_bc, ///
+			a(user_id c_code_2011_num state_code_2011_num#month year) vce(r)
+
+		}
+	coefplot (elec \ irr \ mine \ o \ tran \ fvr \ pa \ lin \ nl, ///
+			label("No SLX") mcolor(gs4) ciopts(color(gs4))) ///
+		(elec_slx irr_slx mine_slx o_slx tran_slx fvr_slx pa_slx lin_slx nl_slx, ///
+			label("SLX") mcolor(gs11) ciopts(color(gs11))), ///
+		keep(dist_f*ihs) xline(0, lcolor(gs10)) msymbol(D) msize(small) ///
+		graphregion(color(white)) bgcolor(white)
+	graph export "${TABLE}/fig/projwise_coef_slx.png", replace
+	eststo clear
+	
+	
+	//3. Control for Veteran
+	reg_user s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs all_species_prop n_mon_yr `u_ctrls' 
+	esttab using "${TABLE}/tables/s_richness_vet.tex", replace ///
+		drop(temp* precip*) stats(user_fe dist_fe st_y_fe st_m_fe ///
+		year_fe N r2, labels(`"User FEs"' `"District FEs"' `"State $\times$ Year FEs"' ///
+		`"State $\times$ Month FEs"' `"Year FE"' `"N"' `"\(R^{2}\)"') ///
+		fmt(0 0 0 0 0 0 3)) nomtitles star(* .1 ** .05 *** .01) label ///
+		nocons nonotes booktabs se b(%5.3f) se(%5.3f) width(\hsize)
+	eststo clear
+	
+	//4. Individual Time Trend
+	la_var_tex user_trend
+	reg_user s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs user_trend `u_ctrls' 
+	esttab using "${TABLE}/tables/s_richness_utrend.tex", replace ///
+		keep(dist* coverage* tree* user_trend) stats(user_fe dist_fe st_y_fe st_m_fe ///
+		year_fe N r2, labels(`"User FEs"' `"District FEs"' `"State $\times$ Year FEs"' ///
+		`"State $\times$ Month FEs"' `"Year FE"' `"N"' `"\(R^{2}\)"') ///
+		fmt(0 0 0 0 0 0 3)) nocons nomtitles star(* .1 ** .05 *** .01) label ///
+		nonotes booktabs se b(%5.3f) se(%5.3f) width(\hsize)
+	eststo clear
+	
+	//5. Phase I proposals
+	
+	* Read
+	use "${DATA}/dta/fc_ebd_user_robust", clear
+	drop_outliers
+	la_var_tex dist_f_cum_ihs dist_nf_cum_ihs `u_ctrls' `slx_b' `slx_i'
+	
+	* i). Species Richness
+	reg_user s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `u_ctrls'
+	esttab using "${TABLE}/tables/s_richness_phase1.tex", replace ///
+		keep(dist* coverage* tree*) stats(user_fe dist_fe st_y_fe st_m_fe ///
+		year_fe N r2, labels(`"User FEs"' `"District FEs"' `"State $\times$ Year FEs"' ///
+		`"State $\times$ Month FEs"' `"Year FE"' `"N"' `"\(R^{2}\)"') ///
+		fmt(0 0 0 0 0 0 3)) nocons nomtitles star(* .1 ** .05 *** .01) label ///
+		nonotes booktabs se b(%5.3f) se(%5.3f) width(\hsize)
+	eststo clear
+	
+	* ii) SLX
+	* Binary Contiguity
+	reg_user s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `u_ctrls' `slx_b'
+	esttab using "${TABLE}/tables/s_richness_slx_phase1.tex", replace f ///
+		keep(dist* tree*) stats(user_fe dist_fe st_y_fe st_m_fe ///
+		year_fe N r2, labels(`"User FEs"' `"District FEs"' `"State $\times$ Year FEs"' ///
+		`"State $\times$ Month FEs"' `"Year FE"' `"N"' `"\(R^{2}\)"') ///
+		fmt(0 0 0 0 0 0 3)) refcat(dist_f_cum_ihs "\emph{Panel A: Binary Contiguity}", ///
+		nolabel) nocons nomtitles star(* .1 ** .05 *** .01) label nonotes ///
+		booktabs se b(%5.3f) se(%5.3f) width(\hsize)
+	eststo clear
+	* Inverse Distance
+	reg_user s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `u_ctrls' `slx_i'
+	esttab using "${TABLE}/tables/s_richness_slx_phase1.tex", append f ///
+		keep(dist* tree*) stats(user_fe dist_fe st_y_fe st_m_fe ///
+		year_fe N r2, labels(`"User FEs"' `"District FEs"' `"State $\times$ Year FEs"' ///
+		`"State $\times$ Month FEs"' `"Year FE"' `"N"' `"\(R^{2}\)"') ///
+		fmt(0 0 0 0 0 0 3)) refcat(dist_f_cum_ihs "\emph{Panel B: Inverse Distance}", ///
+		nolabel) nocons nomtitles star(* .1 ** .05 *** .01) label ///
+		nonotes nonumbers booktabs se b(%5.3f) se(%5.3f) width(\hsize)
+	eststo clear
+
+	//6. All Checks
+	foreach df in main robust {
+	
+		* Main
 		use "${DATA}/dta/fc_ebd_user_`df'", clear
 		drop_outliers
-		
-		* Controls
-		if "`df'" == "main" {
-			local ctrls_1 `ctrls_a'
-			local slx_b1 `slx_b'
-		}
-		else {
-			local ctrls_1 `ctrls_a' stage2
-			local slx_b1 `slx_b' stage2_ihs_slx_bc
-		}
-			
-		eststo: reg_sat s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `ctrls_1' // No SLX
-		eststo: reg_sat s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `ctrls_1' `slx_b1' // binary cont.
+		reg_sat s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `u_ctrls'
+	
+		* Veteran
+		reg_sat s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `u_ctrls' n_mon_yr all_species_prop
+	
+		* Individual Time Trend
+		reg_sat s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `u_ctrls' n_mon_yr all_species_prop user_trend
+	
+		* Spatial Lag
+		reg_sat s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `u_ctrls' n_mon_yr all_species_prop user_trend `slx_b'
 		preserve
 		drop *_slx_bc
 		ren *_slx_i *_slx_bc
-		eststo: reg_sat s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `ctrls_1' `slx_b1' // 1/D
-		drop *_slx_bc
-		ren *_slx_i2 *_slx_bc
-		eststo: reg_sat s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `ctrls_1' `slx_b1' // 1/D sq.
+		reg_sat s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `u_ctrls' n_mon_yr all_species_prop user_trend `slx_b'
+		
+		esttab using "${TABLE}/tables/s_richness_rchecks_`df'.tex", replace ///
+			drop(temp* precip* _cons) stats(user_fe dist_fe st_y_fe st_m_fe ///
+			year_fe N r2, labels(`"User FEs"' `"District FEs"' `"State $\times$ Year FEs"' ///
+			`"State $\times$ Month FEs"' `"Year FE"' `"N"' `"\(R^{2}\)"') ///
+			fmt(0 0 0 0 0 0 3)) mgroups("Main" "Veteran" "{Time-Trend}" ///
+			"\shortstack{SLX \\ (B.C.)}"  "\shortstack{SLX \\ (Inv. Dist.)}", ///
+			pattern(1 1 1 1 1) prefix(\multicolumn{@span}{c}{) suffix(}) span ///
+			erepeat(\cmidrule(lr){@span})) indicate("Veteran Controls=n_mon_yr all_species_prop" ///
+			"User Time-Trend=user_trend") nomtitles ///
+			star(* .1 ** .05 *** .01) label nonotes booktabs se b(%5.3f) se(%5.3f) width(\hsize)
+		eststo clear
 		restore
 	}
-	esttab using "${TABLE}/tables/rchecks_slx.tex", replace ///
-		drop(temp* precip* cov* _cons) stats(user_y_fe dist_fe st_m_fe N r2, ///
-		labels(`"User $\times$ Year FEs"' `"District FEs"' `"State $\times$ Month FEs"' ///
-		`"N"' `"\(R^{2}\)"') fmt(0 0 0 0 3)) mgroups("Phase II Approvals" ///
-		"Phase I and II Approvals", pattern(1 0 0 0 1 0 0 0) ///
-		prefix(\multicolumn{@span}{c}{) suffix(}) span erepeat(\cmidrule(lr){@span})) ///
-		mlabels("Main" "W=Queen" "W=$\frac{1}{d}$" "W=$\frac{1}{d^2}$" ///
-		"Main" "W=Queen" "W=$\frac{1}{d}$" "W=$\frac{1}{d^2}$") ///
-		indicate("Veteran Controls=all_species_prop" "User Time-Trend=user_trend" ///
-		"\% Stage II Projects=stage2*") nomtitles star(* .1 ** .05 *** .01) ///
-		label nonotes booktabs se b(%5.3f) se(%5.3f) width(\hsize)
-	eststo clear
 	
-	//Project-Wise SLX Plot
-	foreach df in main robust {
-		
-		use "${DATA}/dta/fc_ebd_user_`df'", clear
-		drop_outliers
-		
-		if "`df'" == "main" {
-			local s2 ""
-			local s2_b ""
-			local s2_i ""
-			local s2_i2 ""
-		}
-		else {
-			local s2 stage2
-			local s2_b stage2 stage2_ihs_slx_bc
-			local s2_i stage2 stage2_ihs_slx_i
-			local s2_i2 stage2 stage2_ihs_slx_i2
-		}
-		
-		foreach proj in elec ind irr mine o tran fvr pa hyb lin nl {
-
-			eststo `proj'_`df': qui reghdfe s_richness_ihs dist_f_`proj'_cum_ihs ///
-				dist_nf_`proj'_cum_ihs `ctrls_a' `s2', ///
-				a(user_id#year c_code_2011_num state_code_2011_num#month) vce(r)
-			eststo `proj'_w1_`df': qui reghdfe s_richness_ihs dist_f_`proj'_cum_ihs ///
-				dist_nf_`proj'_cum_ihs dist_f_`proj'_cum_ihs_slx_bc ///
-				dist_nf_`proj'_cum_ihs_slx_bc tree_cover_mean_ihs_slx_bc `ctrls_a' `s2_b', ///
-				a(user_id#year c_code_2011_num state_code_2011_num#month) vce(r)
-			eststo `proj'_w2_`df': qui reghdfe s_richness_ihs dist_f_`proj'_cum_ihs ///
-				dist_nf_`proj'_cum_ihs dist_f_`proj'_cum_ihs_slx_i ///
-				dist_nf_`proj'_cum_ihs_slx_i tree_cover_mean_ihs_slx_i `ctrls_a' `s2_i', ///
-				a(user_id#year c_code_2011_num state_code_2011_num#month) vce(r)
-			eststo `proj'_w3_`df': qui reghdfe s_richness_ihs dist_f_`proj'_cum_ihs ///
-				dist_nf_`proj'_cum_ihs dist_f_`proj'_cum_ihs_slx_i2 ///
-				dist_nf_`proj'_cum_ihs_slx_i2 tree_cover_mean_ihs_slx_i2 `ctrls_a' `s2_i2', ///
-				a(user_id#year c_code_2011_num state_code_2011_num#month) vce(r)	
-		}
-	}
-	set scheme s1mono
-	coefplot (elec_main \ irr_main \ mine_main \ o_main \ tran_main \ fvr_main \ pa_main \ lin_main \ nl_main \, ///
-				label("No SLX") mcolor(red) ciopts(color(red))) ///
-			 (elec_w1_main irr_w1_main mine_w1_main o_w1_main tran_w1_main fvr_w1_main pa_w1_main lin_w1_main nl_w1_main, ///
-				label("Queen") mcolor(orange) ciopts(color(orange))) ///
-			 (elec_w2_main irr_w2_main mine_w2_main o_w2_main tran_w2_main fvr_w2_main pa_w2_main lin_w2_main nl_w2_main, ///
-				label("W=1/d") mcolor(purple) ciopts(color(purple))) ///
-			 (elec_w3_main irr_w3_main mine_w3_main o_w3_main tran_w3_main fvr_w3_main pa_w3_main lin_w3_main nl_w3_main, ///
-				label("W=1/d{superscript:2}") mcolor(green) ciopts(color(green))), keep(dist_f*ihs) bylabel("Phase II Approvals")  || ///
-			 (elec_robust \ irr_robust \ mine_robust \ o_robust \ tran_robust \ fvr_robust \ pa_robust \ lin_robust \ nl_robust \, ///
-				label("No SLX") mcolor(red) ciopts(color(red))) ///
-			 (elec_w1_robust irr_w1_robust mine_w1_robust o_w1_robust tran_w1_robust fvr_w1_robust pa_w1_robust lin_w1_robust nl_w1_robust, ///
-				label("Queen") mcolor(orange) ciopts(color(orange))) ///
-			 (elec_w2_robust irr_w2_robust mine_w2_robust o_w2_robust tran_w2_robust fvr_w2_robust pa_w2_robust lin_w2_robust nl_w2_robust, ///
-				label("W=1/d") mcolor(purple) ciopts(color(purple))) ///
-			 (elec_w3_robust irr_w3_robust mine_w3_robust o_w3_robust tran_w3_robust fvr_w3_robust pa_w3_robust lin_w3_robust nl_w3_robust, ///
-				label("W=1/d{superscript:2}") mcolor(green) ciopts(color(green))), keep(dist_f*ihs) bylabel("Phase I and II Approvals") || ///
-		 , xline(0, lcolor(gs10)) msymbol(D) msize(vsmall) graphregion(color(white)) bgcolor(white)	
-	graph export "${TABLE}/fig/projwise_coef_slx.pdf", replace
-	eststo clear
-*/
-	//5. Birding Activity	
-	foreach var of varlist duration distance{
-		foreach df in main robust {
-
-			use "${DATA}/dta/fc_ebd_user_`df'", clear
-			drop_outliers
-			
-			if "`df'" == "main" {
-				local ba_ctrls coverage tree_cover_mean_ihs temperature_mean precipitation_mean
-				local ba_ctrls_a coverage tree_cover_mean_ihs temperature_mean precipitation_mean all_species_prop user_trend 
-			}
-			else {
-				local ba_ctrls coverage tree_cover_mean_ihs temperature_mean precipitation_mean stage2
-				local ba_ctrls_a coverage tree_cover_mean_ihs temperature_mean precipitation_mean all_species_prop user_trend stage2
-			}
-			la_var_tex dist_f_cum_km2 dist_nf_cum_km2 `ba_ctrls'
-
-			eststo `var'_`df'_1 : reg_sat `var' dist_f_cum_km2 dist_nf_cum_km2 `ba_ctrls' // Main
-			eststo `var'_`df'_2 : reg_sat `var' dist_f_cum_km2 dist_nf_cum_km2 `ba_ctrls_a' // Additional controls
-		}
-	}
-	esttab duration_main_1 duration_main_2 duration_robust_1 duration_robust_2 ///
-		using "${TABLE}/tables/rchecks_birding_activity.tex", ///
-		replace f drop(temp* precip* _cons) stats(user_y_fe dist_fe st_m_fe N r2, ///
-		labels(`"User $\times$ Year"' `"District FEs"' `"State $\times$ Month FEs"' ///
-		`"N"' `"\(R^{2}\)"') fmt(0 0 0 0 3)) mgroups("Phase II Approvals" ///
-		"Phase I and II Approvals", pattern(1 0 1 0) prefix(\multicolumn{@span}{c}{) ///
-		suffix(}) span erepeat(\cmidrule(lr){@span})) ///
-		mlabels("Main" "Ad. Controls" "Main" "Ad. Controls") ///
-		indicate("Veteran Controls=all_species_prop" "User Time-Trend=user_trend" ///
-		"\% Stage II Projects=stage2") refcat(dist_f_cum_km2 ///
-		"\emph{Panel A: Duration (min)}", nolabel) nomtitles star(* .1 ** .05 *** .01) ///
-		label nonotes booktabs se b(%5.3f) se(%5.3f) width(\hsize)
-		
-	esttab distance_main_1 distance_main_2 distance_robust_1 distance_robust_2 ///
-		using "${TABLE}/tables/rchecks_birding_activity.tex", ///
-		append f drop(temp* precip* _cons) stats(user_y_fe dist_fe st_m_fe ///
-		N r2, labels(`"User $\times$ Year"' `"District FEs"' ///
-		`"State $\times$ Month FEs"' `"N"' `"\(R^{2}\)"') fmt(0 0 0 0 3)) ///
-		indicate("Veteran Controls=all_species_prop" "User Time-Trend=user_trend" ///
-		"\% Stage II Projectts=stage2") refcat(dist_f_cum_km2 ///
-		"\emph{Panel B: Distance (km)}", nolabel) nonumbers nomtitles ///
-		star(* .1 ** .05 *** .01) label nonotes booktabs se b(%5.3f) ///
-		se(%5.3f) width(\hsize)
-	eststo clear
 	
 }
 
@@ -494,13 +533,13 @@ if `appendix' == 1 {
 
 	* Read
 	use "${DATA}/dta/fc_ebd_user_main.dta", clear
-	local ctrls coverage tree_cover_mean_ihs temperature_mean precipitation_mean
-	la_var_tex dist_f_cum_ihs dist_nf_cum_ihs `ctrls'
+	local u_ctrls coverage_ihs tree_cover_mean_ihs temperature_mean_ihs precipitation_mean_ihs
+	la_var_tex dist_f_cum_ihs dist_nf_cum_ihs `u_ctrls'
 	
 	//1. Alternative Diversity Measures
 	
 	* Panel A: Shannon Index
-	reg_user sh_index_ihs dist_f_cum_ihs dist_nf_cum_ihs `ctrls'
+	reg_user sh_index_ihs dist_f_cum_ihs dist_nf_cum_ihs `u_ctrls'
 	esttab using "${TABLE}/tables/alt_diversity.tex", replace f ///
 		keep(dist* coverage* tree*) stats(user_fe dist_fe st_y_fe st_m_fe ///
 		year_fe N r2, labels(`"User FEs"' `"District FEs"' `"State $\times$ Year FEs"' ///
@@ -511,7 +550,7 @@ if `appendix' == 1 {
 		se(%5.3f) width(\hsize)
 	eststo clear
 	* Panel B: Simpson Index
-	reg_user si_index_ihs dist_f_cum_ihs dist_nf_cum_ihs `ctrls'
+	reg_user si_index_ihs dist_f_cum_ihs dist_nf_cum_ihs `u_ctrls'
 	esttab using "${TABLE}/tables/alt_diversity.tex", append f ///
 		keep(dist* coverage* tree*) stats(user_fe dist_fe st_y_fe st_m_fe ///
 		year_fe N r2, labels(`"User FEs"' `"District FEs"' `"State $\times$ Year FEs"' ///
@@ -531,7 +570,7 @@ if `appendix' == 1 {
 	foreach y in sh_index si_index {
 		
 		* Electricity
-		reg_user `y'_ihs dist_f_elec_cum_ihs dist_nf_elec_cum_ihs `ctrls'
+		reg_user `y'_ihs dist_f_elec_cum_ihs dist_nf_elec_cum_ihs `u_ctrls'
 		esttab using "${TABLE}/tables/projwise_`y'.tex", replace f ///
 			keep(dist_f_elec_cum_ihs) refcat(dist_f_elec_cum_ihs ///
 			"\emph{Project Category}", nolabel) nocons nomtitles ///
@@ -542,7 +581,7 @@ if `appendix' == 1 {
 		* Other Projects
 		foreach i in ind irr mine o tran fvr pa hyb lin {
 			
-			reg_user `y'_ihs dist_f_`i'_cum_ihs dist_nf_`i'_cum_ihs `ctrls'
+			reg_user `y'_ihs dist_f_`i'_cum_ihs dist_nf_`i'_cum_ihs `u_ctrls'
 			esttab using "${TABLE}/tables/projwise_`y'.tex", append f ///
 				keep(dist_f_`i'_cum_ihs) refcat(dist_f_hyb_cum_ihs ///
 				"\emph{Project Shape}", nolabel) nocons nolines nomtitles label ///
@@ -552,7 +591,7 @@ if `appendix' == 1 {
 			}
 		
 		* Non-linear projects
-		reg_user `y'_ihs dist_f_nl_cum_ihs dist_nf_nl_cum_ihs `ctrls'
+		reg_user `y'_ihs dist_f_nl_cum_ihs dist_nf_nl_cum_ihs `u_ctrls'
 		esttab using "${TABLE}/tables/projwise_`y'.tex", append f ///
 			keep(dist_f_nl_cum_ihs) stats(user_fe dist_fe st_y_fe st_m_fe ///
 			year_fe N, labels(`"User FEs"' `"District FEs"' ///
@@ -570,7 +609,7 @@ if `appendix' == 1 {
 		foreach x in elec irr mine o tran fvr pa lin nl {
 	
 			eststo `y'_`x': qui reghdfe s_richness_ihs dist_f_`x'_cum_ihs ///
-				dist_nf_`x'_cum_ihs `ctrls', ///
+				dist_nf_`x'_cum_ihs `u_ctrls', ///
 				a(user_id c_code_2011_num state_code_2011_num#month year) vce(r)
 		}
 	}
@@ -592,7 +631,7 @@ if `appendix' == 1 {
 	la var dist_f_cum_ihs "No lag"	
 	foreach var in s_richness sh_index si_index {
 		
-		reg_user `var'_ihs dist_f_cum_ihs dist_nf_cum_ihs `ctrls'
+		reg_user `var'_ihs dist_f_cum_ihs dist_nf_cum_ihs `u_ctrls'
 	
 		* Store Beta, CI
 		gen `var'_df_b_l0 = _b[dist_f_cum_ihs]
@@ -609,7 +648,7 @@ if `appendix' == 1 {
 		foreach i of numlist 1/12 {
 		
 			* Model
-			reg_user `var'_ihs dist_f_cum_ihs_l`i' dist_nf_cum_ihs_l`i' `ctrls'
+			reg_user `var'_ihs dist_f_cum_ihs_l`i' dist_nf_cum_ihs_l`i' `u_ctrls'
 				
 			* Store Coeff
 			gen `var'_df_b_l`i' = _b[dist_f_cum_ihs_l`i']

@@ -25,125 +25,35 @@ gl ROOT 	"/Users/rmadhok/Dropbox (Personal)/def_biodiv"
 gl DATA 	"${ROOT}/data"
 gl DO		"${ROOT}/scripts/stata"
 
-// Modules
-local district_level		1
-local trip_level			1
-local district_forest		1
+// Module
+local ebird					0
+local district_forest		0
 local slx					1
 
 *===============================================================================
-* BIODIVERSITY INDICATORS
+* BIODIVERSITY
 *===============================================================================
-if `district_level' == 1 {
-	
-	//1. Read
-	import delimited using "${DATA}/csv/ebird_all.csv", clear
-	// 600 districts with bird sightings
-
-	** Replace Missing
-	destring si* duration* distance*, replace force
-
-	** Format date
-	gen year = year(date(yearmonth, "20YM"))
-	gen year_month = ym(year, month(date(yearmonth, "20YM")))
-	format year_month %tmCCYY-NN
-	sort c_code_2011 year_month
-		 
-	tempfile biodiversity
-	save "`biodiversity'"
-
-	* Monthly Spatial Coverage and Weather
-	
-	foreach file in "coverage_ym_grid_8km" "india_precipitation" "india_temperature" {
-	
-		** Read
-		import delimited "${DATA}/csv/`file'", clear
-		
-		** Formate Date
-		gen year_month = ym(year(date(yearmonth, "20YM")), month(date(yearmonth, "20YM")))
-		format year_month %tmCCYY-NN
-		drop yearmonth
-		
-		** Merge
-		merge 1:1 c_code_2011 year_month using "`biodiversity'", keep (2 3) nogen
-		
-		save "`biodiversity'", replace
-	}
-	
-	//3. Merge with District Data
-	import delimited "${DATA}/csv/coverage_dist_grid_8km", clear // spatial coverage
-	merge 1:1 c_code_2011 using "${DATA}/dta/2011_india_dist", ///
-		keepus(state district tot_pop tot_area) nogen
-	merge 1:m c_code_2011 using "`biodiversity'", keep(3) nogen
-	
-	//4. Prep Variables
-	
-	** Transform
-	foreach var of varlist s_richness* sh_index* si_index* duration* ///
-		distance* coverage temperature* precipitation* {	
-			gen `var'_ihs = asinh(`var')
-	}
-
-	** Label
-	gen pop_density = tot_pop / tot_area
-	la var tot_area "District Area (\(km^{2}\))"
-	la var pop_density "Population Density (per \(km^{2}\))"
-	la var coverage_all "Spatial Coverage"
-	la var n_birders "Number of Birders"
-	la var n_trips "Number of Trips"
-	
-	local lablist `" "Species Richness" "Shannon Index" "Simpson Index" "'
-	local i = 1
-	foreach j in s_richness sh_index si_index {	
-		local lab : word `i' of `lablist'
-		la var `j'_mean "`lab' (per user)"
-		la var `j'_d "`lab' (all users)"
-		local ++i
-	}
-	
-	la var coverage "Spatial Coverage"
-	la var coverage_ihs "Spatial Coverage"
-	la var duration_mean "Duration (mean)"
-	la var duration_md "Duration (median)"
-	la var distance_mean "Distance (mean)"
-	la var distance_md "Distance (median)"
-	
-	//5. Write
-	order c_code_2011* state district year_month ///
-		s_richness* sh* si* duration* distance* coverage* n_*
-	sort c_code_2011 year_month
-	save "${DATA}/dta/ebird_distlevel", replace
-}
-
-if `trip_level' == 1 {
+if `ebird' == 1 {
 	
 	//1. Clean
 	
 	* Read
-	import delimited using "${DATA}/csv/ebird_triplevel.csv", clear 
+	import delimited using "${DATA}/csv/ebird_user.csv", clear
 	
 	* Clean
-	ren samplingeventidentifier trip_id
 	destring duration distance si_index, replace force
 	drop if c_code_2011 == "NA"
 	
-	* Collapse to user-district-month
-	bys observerid c_code_2011 yearmonth: gen n_trips_dym = _N
-	collapse (mean) duration distance s_richness sh_index si_index ///
-			 (first) n_trips_dym, ///
-		by(observerid c_code_2011 yearmonth)
-	
 	* Format Date
-	gen year = year(date(yearmonth, "20YM"))
 	gen year_month = ym(year, month(date(yearmonth, "20YM")))
 	format year_month %tmCCYY-NN
 	drop yearmonth
 	
-	tempfile biodiv_trip
-	save "`biodiv_trip'"
+	tempfile biodiv_user
+	save "`biodiv_user'"
 	
 	//2. Merge temporal data
-	foreach file in "coverage_ym_grid_8km" "india_precipitation" "india_temperature" {
+	foreach file in "coverage_ym_grid_5km" "india_precipitation" "india_temperature" {
 	
 		import delimited "${DATA}/csv/`file'", clear
 		gen year_month = ym(year(date(yearmonth, "20YM")), month(date(yearmonth, "20YM")))
@@ -152,13 +62,19 @@ if `trip_level' == 1 {
 		
 		** Merge
 		merge 1:m c_code_2011 year_month ///
-			using "`biodiv_trip'", keep (2 3) nogen
+			using "`biodiv_user'", keep (2 3) nogen
 		
-		save "`biodiv_trip'", replace
+		save "`biodiv_user'", replace
 	}
+	
+	//3. Merge with District Data
+	import delimited "${DATA}/csv/coverage_dist_grid_5km", clear
+	merge 1:1 c_code_2011 using "${DATA}/dta/2011_india_dist", ///
+		keepus(state district tot_pop tot_area) nogen
+	merge 1:m c_code_2011 using "`biodiv_user'", keep(3) nogen
 
 	* Transform
-	foreach var of varlist s_richness *_index *_mean coverage {
+	foreach var of varlist s_richness *_index {
 		gen `var'_ihs = asinh(`var')
 	}
 	
@@ -167,26 +83,40 @@ if `trip_level' == 1 {
 	bys observerid: egen n_states_user = nvals(state_code_2011)
 	bys observerid: egen n_dist_user = nvals(c_code_2011)
 	bys observerid: egen n_ym_user = nvals(year_month)
+	bys observerid: egen n_trips_user = total(n_trips)
+	bys c_code_2011: egen n_users_dist = nvals(observerid)
+	gen pop_density = tot_pop / tot_area
+	gen veteran = (n_mon_yr >= 6)
 	encode observerid, gen(user_id)
 	drop state_code_2011
 	
 	* Label
-	la var n_ym_user "No. Year-months per User"
-	la var n_dist_user "No. Districts per User"
-	la var n_states_user "No. States per User"
-	la var n_trips_dym "No. Trips per User"
+	la var tot_area "District Area (\(km^{2}\))"
+	la var pop_density "Population Density (per \(km^{2}\))"
+	la var n_ym_user "Num. Year-months per User"
+	la var n_dist_user "Num. Districts per User"
+	la var n_states_user "Num. States per User"
+	la var n_users_dist "Num. Users"
+	la var n_trips "Num. Trips per User"
+	la var n_trips_user "Num. Trips per User"
+	la var s_richness "Species Richness"
 	la var s_richness_ihs "Species Richness"
+	la var sh_index "Shannon Index"
 	la var sh_index_ihs "Shannon Index"
-	la var si_index_ih "Simpson Index"
+	la var si_index "Simpson Index"
+	la var si_index_ihs "Simpson Index"
 	la var coverage "Spatial Coverage"
-	la var coverage_ihs "Spatial Coverage"
+	la var coverage_all "Spatial Coverage"
 	la var duration "Duration (min)"
 	la var distance "Distance (km)"
+	la var veteran "Veteran (=1)"
+	la var all_species_prop "\% Full Reporting"
+	la var n_mon_yr "Months/Year of Birdwatching"
 	
 	* Save
 	order user_id c_code_2011 year_month
 	sort user_id c_code_2011 year_month
-	save "${DATA}/dta/ebird_triplevel", replace
+	save "${DATA}/dta/ebird_user", replace
 
 }
 
@@ -199,11 +129,17 @@ if `district_forest' == 1 {
 	
 	* Read 
 	use "${DATA}/dta/fc_clean", clear //19,495 total projects
-	keep if prop_status == "approved" // 2,682 under construction
-		
+	
+	* Stage I and II approvals
+	gen stage2 = 1 if prop_status == "approved" // 2,773 projects
+	replace stage2 = 0 if prop_status == "approved by rohq" | regexm(prop_status, "principle") == 1 | regexm(prop_status, "pending at ho") == 1 | prop_status == "pending at ro for stage-ii" // 3,858 projects
+	*keep if stage2 == 1
+	keep if stage2 == 1 | stage2 == 0 // 6,631 projects
+	
 	* Format Date
 	gen year_month = ym(year(date_rec), month(date_rec))
 	format year_month %tmCCYY-NN
+	drop if year_month == .
 	
 	//2. Project-District Level
 	
@@ -232,7 +168,7 @@ if `district_forest' == 1 {
 	merge 1:m state district using "`fc_district'", keep(3) nogen
 	
 	//4. Aggregate to District
-	
+
 	* Sector Indicator
 	tab proj_cat, gen(proj_cat_)
 	tab proj_shape, gen(proj_shape_)
@@ -252,7 +188,7 @@ if `district_forest' == 1 {
 		
 		* Label
 		local type : word `i' of `projlist'
-		la var dist_f_`j' "Deforestation (`type')" 
+		la var dist_f_`j' "`type'" 
 		la var dist_nf_`j' "Non-forest Diversion (`type')" 
 		
 		local ++i
@@ -272,7 +208,7 @@ if `district_forest' == 1 {
 		
 		* Label
 		local type : word `i' of `shapelist'
-		la var dist_f_`j' "Deforestation (`type')" 
+		la var dist_f_`j' "`type'" 
 		la var dist_nf_`j' "Non-forest Land Diversion (`type')" 
 		
 		local ++i
@@ -283,9 +219,9 @@ if `district_forest' == 1 {
 	gen forest_pa = dist_f if proj_in_pa_esz_num == 1
 	gen nonforest_pa = dist_nf if proj_in_pa_esz_num == 1
 	bys c_code_2011 year_month: egen dist_f_pa = total(forest_pa)
-	la var dist_f_pa "Deforestation (Protected Area)"
+	la var dist_f_pa "Near Protected Area"
 	bys c_code_2011 year_month: egen dist_nf_pa = total(nonforest_pa)
-	la var dist_nf_pa "Non-forest Land Diversion (Protected Area)"
+	la var dist_nf_pa "Non-forest Land Diversion (Near Protected Area)"
 	drop forest_pa nonforest_pa
 
 	* Save Labels
@@ -295,7 +231,8 @@ if `district_forest' == 1 {
 
 	* Aggregate
 	collapse (sum)  dist_f dist_nf ///
-			 (first) dist_f_* dist_nf_*, ///
+			 (first) dist_f_* dist_nf_* ///
+			 (mean) stage2, ///
 			 by(c_code_2011 year_month)
 	
 	* Label
@@ -323,12 +260,14 @@ if `district_forest' == 1 {
 	//6. Generate Variables
 	foreach var of varlist dist_f-dist_nf_pa {
 		
+		* No deforestation
 		replace `var' = 0 if `var' == .
 		local vlab : var lab `var'
 	
 		* Cumulative
 		sort c_code_2011 year_month
 		by c_code_2011: gen `var'_cum = sum(`var')
+		la var `var'_cum "`vlab'"
 		
 		* km2
 		gen `var'_cum_km2 = `var'_cum / 100
@@ -339,7 +278,12 @@ if `district_forest' == 1 {
 		la var `var'_cum_ihs "`vlab'"
 		
 	}
-
+	bys c_code_2011: replace stage2 = stage2[_n - 1] if dist_f == 0
+	replace stage2 = 0 if stage2 == .
+	gen stage2_ihs = asinh(stage2)
+	la var stage2 "\% Stage II Projects"
+	la var stage2_ihs "\% Stage II Projects"
+	
 	* State/Dist Strings
 	merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist", ///
 		keepus(state district) nogen
@@ -361,7 +305,7 @@ if `district_forest' == 1 {
 	
 	gen tree_cover_mean_ihs = asinh(tree_cover_mean)
 	la var tree_cover_mean_ihs "Tree Cover"
-	la var tree_cover_mean "Tree Cover"
+	la var tree_cover_mean "Tree Cover (\%)"
 	
 	* Lags
 	sort c_code_2011 year_month
@@ -377,15 +321,20 @@ if `district_forest' == 1 {
 	
 	* Save
 	order c_code_2011 year_month dist_f*
-	save "${DATA}/dta/fc_dist_ym", replace
-	export delimited "${DATA}/csv/fc_dist_ym.csv", replace
+	*save "${DATA}/dta/fc_dist_ym_main", replace
+	save "${DATA}/dta/fc_dist_ym_robust", replace
+	*export delimited "${DATA}/csv/fc_dist_ym_main.csv", replace
+	export delimited "${DATA}/csv/fc_dist_ym_robust.csv", replace
 	
 }
 
 if `slx' == 1 {
 	
+	// Setting (main or robust)
+	local section "main"
+	
 	* Read SLX
-	import delimited "${DATA}/csv/slx.csv", clear
+	import delimited "${DATA}/csv/slx_`section'.csv", clear
 
 	* Clean
 	destring *mean*, replace force
@@ -400,24 +349,29 @@ if `slx' == 1 {
 	la var dist_f_cum_ihs_slx_i "Sp. Lag Deforestation"
 	la var dist_nf_cum_ihs_slx_i "Sp. Lag Non-forest Diversion"
 	la var tree_cover_mean_ihs_slx_i "Sp. Lag Tree Cover"
+	la var dist_f_cum_ihs_slx_i2 "Sp. Lag Deforestation"
+	la var dist_nf_cum_ihs_slx_i2 "Sp. Lag Non-forest Diversion"
+	la var tree_cover_mean_ihs_slx_i2 "Sp. Lag Tree Cover"
+	if "`section'" == "robust" {
+		la var stage2_ihs_slx_bc "Sp. Lag \% Stage II Projects"
+		la var stage2_ihs_slx_i "Sp. Lag \% Stage II Projects"
+		la var stage2_ihs_slx_i2 "Sp. Lag \% Stage II Projects"
+	}
 	
 	* Merge to forest clearance
-	merge 1:1 c_code_2011 year_month using "${DATA}/dta/fc_dist_ym", nogen
+	merge 1:1 c_code_2011 year_month using "${DATA}/dta/fc_dist_ym_`section'", nogen
+
+	* Merge to ebird
+	merge 1:m c_code_2011 year_month using "${DATA}/dta/ebird_user", keep(3) nogen
 	
-	tempfile slx
-	save "`slx'"
+	* User Time Trend
+	bys user_id (year_month): gen user_trend = sum(year_month != year_month[_n-1]) 
+	la var user_trend "User Time Trend"
 	
-	* Merge to dist-level ebird
-	merge 1:1 c_code_2011 year_month using "${DATA}/dta/ebird_distlevel", keep(3) nogen
-	order c_code_2011* state_code_2011* state district year_month dist*
-	save "${DATA}/dta/fc_ebd_dist", replace
-	
-	* Merge with trip-level ebird
-	use "`slx'", clear
-	merge 1:m c_code_2011 year_month using "${DATA}/dta/ebird_triplevel", keep(3) nogen
+	* Save
 	sort user_id year_month
 	order user_id *_code_2011 year_month state district s_richness *_index
-	save "${DATA}/dta/fc_ebd_trip", replace
+	save "${DATA}/dta/fc_ebd_user_`section'", replace
 		
 }
 
