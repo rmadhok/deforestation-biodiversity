@@ -22,8 +22,8 @@ india_districts <- st_read(paste(dist_shp, "maps/india-district", sep=""),
   arrange(c_code_2011)
 
 # Read Data
-data <- read_csv(paste(path_head,'/data/csv/fc_dist_ym.csv', sep='')) %>%
-  select(matches('^dist_.*_cum_ihs$'), tree_cover_mean_ihs, 
+data <- read_csv(paste(path_head,'/data/csv/fc_dist_ym_robust.csv', sep='')) %>%
+  select(matches('^dist_.*_cum_ihs$'), tree_cover_mean_ihs, stage2_ihs, 
          c_code_2011, year_month) %>%
   arrange(year_month, c_code_2011) %>%
   mutate(year_month=as.factor(year_month))
@@ -48,7 +48,9 @@ for(ym in levels(data$year_month)){
   print(paste('Computing contiguous spatial lags in:', ym))
   
   # Spatial lag matrix
-  X <- as.matrix(data[data$year_month==ym,c(1:25)])
+  X <- as.matrix(data %>%
+                   filter(year_month==ym) %>%
+                   select(-c(c_code_2011, year_month)))
   WX <- W %*% X
   
   # Merge to data
@@ -74,11 +76,11 @@ coords <- do.call(rbind, st_centroid(st_geometry(india_districts))) %>%
   as.data.frame() %>% setNames(c("lon","lat"))
 row.names(coords) <- india_districts$c_code_2011
 
-# Inverse Distance matrix
+# Inverse Distance Matrix
 W <- as.matrix(dist(coords, method = "euclidean"))
-W <- 1 / W
-W[W > quantile(W,0.3)] <- 0 # cutoff at 80th percentile 
-diag(W) <- 0
+W_i <- 1 / W
+W_i[W_i > quantile(W_i,0.3)] <- 0 # cutoff at 30th percentile 
+diag(W_i) <- 0
 
 slag_inv <- data.frame()
 for(ym in levels(data$year_month)){
@@ -86,8 +88,10 @@ for(ym in levels(data$year_month)){
   print(paste('Computing inverse distance spatial lags in:', ym))
   
   # Spatial lag matrix
-  X <- as.matrix(data[data$year_month==ym,c(1:25)])
-  WX <- W %*% X
+  X <- as.matrix(data %>%
+                   filter(year_month==ym) %>%
+                   select(-c(c_code_2011, year_month)))
+  WX <- W_i %*% X
 
   # Merge to data
   WX <- as.data.frame(WX)
@@ -97,5 +101,28 @@ for(ym in levels(data$year_month)){
   slag_inv <- rbind(slag_inv,WX)
 }
 
+# W = (1/d)^2
+W_i2 <- (1/W)^2
+diag(W_i2) <- 0
+slag_inv2 <- data.frame()
+for(ym in levels(data$year_month)){
+  
+  print(paste('Computing suqared inverse distance spatial lags in:', ym))
+  
+  # Spatial lag matrix
+  X <- as.matrix(data %>%
+                   filter(year_month==ym) %>%
+                   select(-c(c_code_2011, year_month)))
+  WX <- W_i2 %*% X
+  
+  # Merge to data
+  WX <- as.data.frame(WX)
+  colnames(WX) <- paste(colnames(WX), "slx_i2", sep = "_")
+  WX$year_month <- ym
+  WX$c_code_2011 <- row.names(WX)
+  slag_inv2 <- rbind(slag_inv2,WX)
+}
+
 slag <- merge(slag_bc, slag_inv, by=c('c_code_2011', 'year_month'))
-write_csv(slag, paste(path_head, 'data/csv/slx.csv', sep=''))
+slag <- merge(slag, slag_inv2, by=c('c_code_2011', 'year_month'))
+write_csv(slag, paste(path_head, 'data/csv/slx_robust.csv', sep=''))

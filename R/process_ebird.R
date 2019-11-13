@@ -63,12 +63,12 @@ rm(list='ebird_oob')
 
 ## 3. FILTER DATA ----------------------------------------------------------------------
 
-# All species reported (n=12,281,846)
-ebird <- filter(ebird, ALL.SPECIES.REPORTED == 1)
-# Protocol (stationary, travelling, historical, banding, random) (n=12,252,132)
-ebird <- filter(ebird, PROTOCOL.CODE %in% c('P21', 'P22', 'P62', 'P33', 'P48'))
+# All species reported (n=12,380,423)
+#ebird <- filter(ebird, ALL.SPECIES.REPORTED == 1)
+# Protocol (stationary, travelling, banding, random) (n=12,252,132)
+ebird <- filter(ebird, PROTOCOL.CODE %in% c('P21', 'P22', 'P33', 'P48'))
 
-# Drop Duplicates (n=8,468,361)
+# Drop Duplicates (n=8,564,865)
 ebird$GROUP.IDENTIFIER[ebird$GROUP.IDENTIFIER == ''] <- NA
 ebird_m <- ebird %>% filter(is.na(GROUP.IDENTIFIER))
 ebird_nm <- ebird %>% filter(!is.na(GROUP.IDENTIFIER))
@@ -113,13 +113,16 @@ ebird <- ebird %>%
          si_index = 1 - ((sum(OBSERVATION.COUNT*(OBSERVATION.COUNT - 1), na.rm = T)) /
                                  (sum(OBSERVATION.COUNT, na.rm = T)*(sum(OBSERVATION.COUNT, na.rm = T) - 1))))
 
-# Trip-level (n=621,944 trips, 11,939 users)
+# Trip-level (n=636,211 trips, 12,606 users)
 ebird_trip <- ebird %>% 
   distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
-  dplyr::select(OBSERVER.ID, SAMPLING.EVENT.IDENTIFIER, YEAR,
-                DURATION.MINUTES, EFFORT.DISTANCE.KM, YEARMONTH, 
-                n_months, c_code_2011, s_richness, sh_index, si_index) %>%
-  rename(distance = EFFORT.DISTANCE.KM, duration = DURATION.MINUTES)
+  dplyr::select(OBSERVER.ID, SAMPLING.EVENT.IDENTIFIER, YEAR, 
+                ALL.SPECIES.REPORTED, DURATION.MINUTES, 
+                EFFORT.DISTANCE.KM, YEARMONTH, n_months, c_code_2011, 
+                s_richness, sh_index, si_index) %>%
+  rename(distance = EFFORT.DISTANCE.KM, 
+         duration = DURATION.MINUTES,
+         all_species = ALL.SPECIES.REPORTED)
 
 # User-district-month
 ebird_user <- ebird_trip %>%
@@ -128,8 +131,9 @@ ebird_user <- ebird_trip %>%
   summarize(s_richness=mean(s_richness, na.rm=T),
             sh_index=mean(sh_index, na.rm=T),
             si_index=mean(si_index,na.rm=T),
-            duation=mean(duration, na.rm=T),
+            duration=mean(duration, na.rm=T),
             distance=mean(distance,na.rm=T),
+            all_species_prop=mean(all_species,na.rm=T),
             year=first(YEAR),
             n_trips=first(n_trips),
             n_mon_yr=first(n_months))
@@ -137,7 +141,6 @@ ebird_user <- ebird_trip %>%
 write.csv(ebird_user,
           paste(save_path_head, 'data/csv/ebird_user.csv', sep=""),
           row.names = F)
-
 
 ## 5. SPATIAL COVERAGE ------------------------------------
 

@@ -63,14 +63,14 @@ levelplot(forest_cover,
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
 # Read Data
 defn <- st_read(paste('def_biodiv/data/csv/', sep=''), 
-                         'fc_dist_ym_main', stringsAsFactors = F)
+                         'fc_dist_ym', stringsAsFactors = F)
 
 # Prepare 2015 and 2018 cross-section
 defn_year <- defn %>% 
-  mutate(dist_f_cum_km2 = as.numeric(dist_f_cum_km2)) %>%
+  mutate(district_forest_cum_km2 = as.numeric(district_forest_cum_km2)) %>%
   arrange(c_code_2011, year_month) %>%
   group_by(c_code_2011, year) %>%
-  summarize(dist_f_cum_km2 = last(dist_f_cum_km2)) %>%
+  summarize(district_forest_cum_km2 = last(district_forest_cum_km2)) %>%
   filter(year == 2015 | year == 2018) %>%
   rename(c_code_11 = c_code_2011)
   
@@ -79,7 +79,7 @@ india_dist_def <- left_join(india_districts, defn_year, by="c_code_11")
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
 # Plot 2015/2018 cross-section
-ggplot(india_dist_def, aes(fill = dist_f_cum_km2)) +
+ggplot(india_dist_def, aes(fill = district_forest_cum_km2)) +
  geom_sf(alpha = 0.8, colour = 'white', size = 0.3) +
  scale_fill_viridis(name = "Cumulative Deforestation (km2)",
                     direction = -1,
@@ -108,15 +108,15 @@ This map shows the change in cumulative deforestation (for infrastructure) betwe
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
 # Change in Deforestation
-defn_change <- spread(defn_year, year, dist_f_cum_km2)
-defn_change$theta_dist_f_cum_km2 <- defn_change$`2018`-defn_change$`2015`
+defn_change <- spread(defn_year, year, district_forest_cum_km2)
+defn_change$theta_district_forest_cum_km2 <- defn_change$`2018`-defn_change$`2015`
 defn_change <- defn_change[,c(1,4)]
 india_dist_def <- left_join(india_districts, defn_change, by="c_code_11")
 ```
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
 # Plot Change in Deforestation
-def_plot <- ggplot(india_dist_def, aes(fill = theta_dist_f_cum_km2)) +
+def_plot <- ggplot(india_dist_def, aes(fill = theta_district_forest_cum_km2)) +
   geom_sf(alpha = 0.8, colour = 'white', size = 0.3) +
   scale_fill_viridis(name = "Cumulative Deforestation (km2)",
                      direction = -1,
@@ -148,12 +148,12 @@ From panel B, there is ample variation in bird-watching activity in deforestatio
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
 # Read Data
 ebird <- st_read(paste('def_biodiv/data/csv', sep=''),
-                   'ebird_user', stringsAsFactors = F)
+                   'ebird_all', stringsAsFactors = F)
 
-# Truncate at 99th percentile
+# Truncate at 95th percentile
 ebird_trunc <- ebird %>%
   mutate(n_trips = as.numeric(n_trips)) %>%
-  filter(n_trips < quantile(n_trips, 0.99))
+  filter(n_trips < quantile(n_trips, 0.95))
 
 # Summarize trips per district
 trips <- ebird_trunc %>%
@@ -163,7 +163,7 @@ trips <- ebird_trunc %>%
 trips <- trips %>% mutate(sd_trips = (n_trips-mean(n_trips))/sd(n_trips))
 
 india_dist_def <- left_join(india_dist_def, trips, by="c_code_11")
-india_dist_def$sd_trips[india_dist_def$theta_dist_f_cum_km2==0] <- NA
+india_dist_def$sd_trips[india_dist_def$theta_district_forest_cum_km2==0] <- NA
 ```
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
@@ -190,7 +190,7 @@ trip_plot <- ggplot() +
         legend.position = 'bottom',
         legend.title = element_text(size = 10),
         legend.text = element_text(size = 8))
-ggsave(paste('def_biodiv/docs/tex_doc/fig/n_trips_district.pdf', sep=''))
+ggsave(paste('def_biodiv/docs/tex_doc/fig/n_trips_district.png', sep=''))
 ```
 
 
@@ -236,23 +236,23 @@ sp_coverage <- ggplot(india_dist_def, aes(fill = coverage_all)) +
         legend.position = 'bottom',
         legend.title = element_text(size = 10),
         legend.text = element_text(size = 8))
-ggsave(paste('def_biodiv/docs/tex_doc/fig/coverage.pdf', sep=''))
+ggsave(paste('def_biodiv/docs/tex_doc/fig/coverage.png', sep=''))
 ```
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
-# Combine spatial coverage and deforestation
+# Combine number of trips and deforestation
 ggarrange(def_plot, sp_coverage, align='h', labels=c("A", "B"))
 ggsave(paste('def_biodiv/docs/tex_doc/fig/def_coverage.png', sep=''))
 rm(list=c('defn', 'defn_year', 'defn_change', 'coverage', 'trip_plot', 'def_plot', 'forest_cover'))
 ```
 
 # eBird Data
-The final eBird data for this analysis includes 8.7 million bird sightings from 13,000 users and 680,000 trips. There is rich variation in the timing and location of these trips, so it is important to identify predictable trends in birding activity (number of trips) and species diversity that may bias the coefficients in the empirical analysis.
+The final eBird data for this analysis includes 7 million bird sightings from 3100 users and 500,000 trips. There is rich variation in the timing and location of these trips, so it is important to identify predictable trends in birding activity (number of trips) and species diversity that may bias the coefficients in the empirical analysis.
 
 ## Birding Activity: Number of Trips
 
 ### CDF of Number of Trips
-The user-level data aggregates species diversity across bird-watching trips in each district-time period. The CDF below shows the CDF of the number of trips making up each observation. 50% of observations are made up of less than 10 trips and 10% are made up of more than 50. In the empirical analysis, I use weighted least squares so that more precisely measured observations (made up of many trips) are given more influence over coefficient determination than less precisely measured points. 
+The district-monthly data aggregates species diversity across bird-watching trips in each district-time period. The CDF below shows the CDF of the number of trips making up each observation. 50% of observations are made up of less than 10 trips and 10% are made up of more than 50. In the empirical analysis, I use weighted least squares so that more precisely measured observations (made up of many trips) are given more influence over coefficient determination than less precisely measured points. 
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
 ggplot(ebird_trunc, aes(n_trips)) +
@@ -374,17 +374,19 @@ ggarrange(sp_ym, n_trips_month_plot, nrow=2, align='h', labels=c("A", "B"))
 ggsave(paste('def_biodiv/docs/tex_doc/fig/n_species_yr_ym.png', sep=''))
 ```
 
-# User Characteristics
-The user-level data includes individual identifiers, so I can track an individual's trips across time and space. The plots below show the distribution of *per-user* characteristics. Across the sample period, most users take around 20 trips across 15 time periods and travel through 6 states and 10 districts. This provides a huge amount of variation to exploit in the trip-level analysis with individual fixed effects. 
+# Trip Level Data
+The trip-level data includes individual identifiers, so I can track an individual's trips across time and space. The plots below show the distribution of *per-user* characteristics. Across the sample period, most users take around 100 trips across 15 time periods and travel through 6 states and 10 districts. This provides a huge amount of variation to exploit in the trip-level analysis with individual fixed effects. 
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
+ebird_trip <- st_read(paste('def_biodiv/data/csv/', sep=''), 
+                'ebird_triplevel', stringsAsFactors = F)
 
-ebird$state_code_2011 <- substr(ebird$c_code_2011,1,3)
+ebird_trip$state_code_2011 <- substr(ebird_trip$c_code_2011,1,3)
 
-# User-level Characteristics
-ebird_user <- ebird %>%
+# User-level Trip Characteristics
+ebird_user <- ebird_trip %>%
   group_by(OBSERVER.ID) %>%
-  summarize("No. of Trips" = sum(as.numeric(n_trips)),
+  summarize("No. of Trips" = as.numeric(n_distinct(SAMPLING.EVENT.IDENTIFIER)),
             "No. of States" = as.numeric(n_distinct(state_code_2011)),
             "No. of Districts" = as.numeric(n_distinct(c_code_2011)),
             "No. of Year-months" = as.numeric(n_distinct(YEARMONTH))) %>%
