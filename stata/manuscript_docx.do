@@ -26,9 +26,8 @@ gl DATA 	"${ROOT}/data"
 gl TABLE	"${ROOT}/docs/science_pub/"
 
 // Module
-local sumstats			0
-local robustness		1
-local appendix			0
+local sumstats			1
+local robustness		0
 
 *===============================================================================
 * PROGRAMS
@@ -80,7 +79,7 @@ if `sumstats' == 1 {
 	
 	* Indent for pretty latex formatting
 	foreach v of varlist dist_f_cum dist_f_*_cum* tot_area tree* ///
-		s_richness pop_density coverage n_* duration distance temp* rain* { 
+		s_richness pop_density coverage n_* duration distance temp rain { 
 	
 			label variable `v' `"    `: variable label `v''"'	
 		}
@@ -88,7 +87,7 @@ if `sumstats' == 1 {
 	** Collect
 	local dist_vars tot_area pop_density n_users_dist n_trips_dist
 	local trip s_richness
-	local covariates tree_cover_mean coverage rainfall_mm temperature_mean
+	local covariates tree_cover coverage rain temp
 	
 	*---------------------------------------
 	* OUTCOMES AND COVARIATES
@@ -119,7 +118,7 @@ if `sumstats' == 1 {
 	eststo B: estpost tabstat `covariates' if !any_def, s(n mean med sd) c(s)
 	esttab A B using "${TABLE}/tables/sumstats_biodiv.rtf", append main(mean) ///
 		aux(sd) cells("mean(fmt(2)) sd(fmt(2)) count(fmt(0))") ///
-		refcat(tree_cover_mean "Covariates" , nolabel) nomtitle collabel(none) ///
+		refcat(tree_cover "Covariates" , nolabel) nomtitle collabel(none) ///
 		noobs label unstack nonumber plain ///
 		addnotes("Note: Spatial coverage is the fraction of grid cells in a district" ///
 		"containing at least one bird observation over the study period using a" ///
@@ -210,7 +209,8 @@ if `robustness' == 1 {
 	* Controls
 	local ctrls coverage tree_cover temp rain all_species
 	local slx_b dist_f_cum_km2_slx_bc dist_nf_cum_km2_slx_bc
-	
+	la var dist_f_cum_km2 "Deforestation (Stage 2)"
+	la var dist_f_cum_km2_slx_bc "Deforestation
 	// SEASONALITY
 	
 	* 1. User x Month FE 
@@ -221,7 +221,7 @@ if `robustness' == 1 {
 			estadd local user_m_fe "x"
 			estadd local dist_fe "x"
 			estadd local st_y_fe "x"
-			estadd local u_trend "x"
+			estadd local u_trend "Linear"
 	
 	* 2. User x Year, Cubic Trend
 	eststo: reg_sat s_richness dist_f_cum_km2 dist_nf_cum_km2 `ctrls' u_cubic
@@ -233,68 +233,57 @@ if `robustness' == 1 {
 	preserve
 		drop *_slx_bc
 		ren *_slx_i *_slx_bc
-		eststo: reg_sat s_richness dist_f_cum_km2 dist_nf_cum_km2 `ctrls' `slx_b' // 1/D
+		eststo: reg_sat s_richness dist_f_cum_km2 dist_nf_cum_km2 `ctrls' `slx_b'
 			estadd local u_trend "None"
 		drop *_slx_bc
+	
+	* 4. W = 1/d^2
 		ren *_slx_i2 *_slx_bc
-		eststo: reg_sat s_richness dist_f_cum_km2 dist_nf_cum_km2 `ctrls' `slx_b' // 1/D sq.
+		eststo: reg_sat s_richness dist_f_cum_km2 dist_nf_cum_km2 `ctrls' `slx_b'
 			estadd local u_trend "None" 
 	restore
 	
+	// Illegal Deforestation
 	
-	
-	
-	eststo: reg_sat s_richness dist_f_cum_km2 dist_nf_cum_km2 `ctrls' dist_f_cum_km2_s1 dist_nf_cum_km2_s1
+	* 5. Stage 1
+	eststo: reg_sat s_richness dist_f_cum_km2 dist_nf_cum_km2 `ctrls' *_km2_s1
 		estadd local u_trend "None"
 	
-	*2. Spatial
-	eststo: reg_sat s_richness dist_f_cum_km2 dist_nf_cum_km2 `ctrls' `slx_b' // binary cont.
-		estadd local u_trend "None"
-	eststo: reg_sat s_richness dist_f_cum_km2 dist_nf_cum_km2 `ctrls' ///
-		dist_f_cum_km2_s1 dist_nf_cum_km2_s1 `slx_b' ///
-		dist_f_cum_km2_slx_s1 dist_nf_cum_km2_slx_s1 // binary cont.
+	* 6. Stage 1 SLX
+	eststo: reg_sat s_richness dist_f_cum_km2 dist_nf_cum_km2 `ctrls' *_s1
 		estadd local u_trend "None"
 	
-	esttab using "${TABLE}/tables/robustness_science.rtf", replace ///
-		keep(dist_f*) stats(user_m_fe user_y_fe dist_fe st_y_fe st_m_fe ///
-		u_trend N r2, labels(`"User x Month FEs"' ///
-		`"User x Year FEs"' `"District FEs"' `"State x Year FEs"' ///
-		`"State x Month FEs"' `"User Trend"' `"N"' ///
-		`"R^2"') fmt(0 0 0 0 0 0 0 3)) nomtitles star(* .1 ** .05 *** .01) ///
-		label nonotes se b(%5.3f) se(%5.3f)
-	eststo clear
+	// Alternative Outcomes
+	
+	* 7. IHS
+	eststo: reg_sat s_richness_ihs dist_f_cum_km2 dist_nf_cum_km2 `ctrls'
+		estadd local u_trend "None"
 		
-}
-
-*===============================================================================
-* APPENDIX
-*===============================================================================
-if `appendix' == 1 {
+	* 8. Species Richness (across all trips in dist-ym)
+	eststo: reg_sat s_richness_all dist_f_cum_km2 dist_nf_cum_km2 `ctrls'
+		estadd local u_trend "None"
 	
-	*1. Additional Spatial Weight Matrices
-	eststo: reg_sat s_richness dist_f_cum_km2 dist_nf_cum_km2 `ctrls' `slx_b' // binary cont.
-			estadd local u_trend "None"
+	* 9. Only trips where all species reported
 	preserve
-		drop *_slx_bc
-		ren *_slx_i *_slx_bc
-		eststo: reg_sat s_richness dist_f_cum_km2 dist_nf_cum_km2 `ctrls' `slx_b' // 1/D
+		
+		use "${DATA}/dta/fc_ebd_user_allreported", clear
+		drop_outliers
+		
+		eststo: reg_sat s_richness dist_f_cum_km2 dist_nf_cum_km2 `ctrls'
 			estadd local u_trend "None"
-		drop *_slx_bc
-		ren *_slx_i2 *_slx_bc
-		eststo: reg_sat s_richness dist_f_cum_km2 dist_nf_cum_km2 `ctrls' `slx_b' // 1/D sq.
-			estadd local u_trend "None" 
-	restore
 	
-	esttab using "${TABLE}/tables/apx_sp_weight.rtf", replace ///
-		keep(dist_f*) stats(user_m_fe user_y_fe dist_fe st_y_fe st_m_fe ///
-		u_trend N r2, labels(`"User x Month FEs"' ///
-		`"User x Year FEs"' `"District FEs"' `"State x Year FEs"' ///
-		`"State x Month FEs"' `"User Trend"' `"N"' ///
-		`"R^2"') fmt(0 0 0 0 0 0 0 3)) nomtitles star(* .1 ** .05 *** .01) ///
-		label nonotes se b(%5.3f) se(%5.3f)
+	restore
+		
+	esttab using "${TABLE}/tables/robustness_science.rtf", replace ///
+		keep(dist_f* n_mon_yr) stats(user_m_fe user_y_fe dist_fe st_y_fe ///
+		st_m_fe u_trend N r2, labels(`"User x Month FEs"' `"User x Year FEs"' ///
+		`"District FEs"' `"State x Year FEs"' `"State x Month FEs"' ///
+		`"User Trend"' `"N"' `"R^2"') fmt(0 0 0 0 0 0 0 3)) nomtitles ///
+		mlabel("User-Month" "User-Year" "W=1/d" "W=1/d^2" "Stage 1" "SLX Stage 1" ///
+		"IHS" "All Trips" "All Species Reported") star(* .1 ** .05 *** .01) label ///
+		nonotes se b(%5.3f) se(%5.3f)
 	eststo clear
 	
-
 }
 
 

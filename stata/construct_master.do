@@ -26,14 +26,22 @@ gl DATA 	"${ROOT}/data"
 gl DO		"${ROOT}/scripts/stata"
 
 // Module
-local ebird					1
-local district_forest		1
+local ebird					0
+local district_forest		0
 local slx					1
 local growth				0
 
 *===============================================================================
 * BIODIVERSITY
 *===============================================================================
+/*---------------------------------------
+For dataset restricted to trips with 
+all species reported use:
+file: ebird_user_allreported.csv
+coverage: coverage_ym_grid_5km_allreported
+No other changes.
+-----------------------------------------*/
+
 if `ebird' == 1 {
 	
 	//1. Clean
@@ -377,7 +385,7 @@ if `slx' == 1 {
 		format year_month %tmCCYY-NN
 		drop ym
 	
-		foreach v of varlist dist_f_cum* dist_nf_cum* {
+		foreach v of varlist dist_f_cum* {
 			la var `v' "SLX Deforestation (Stage `i')"
 		}
 		
@@ -396,7 +404,7 @@ if `slx' == 1 {
 	use "${DATA}/dta/fc_dist_ym_stage1", clear
 	keep c_code_2011 year_month dist_f_cum_km2 dist_nf_cum_km2 
 	ren (dist_f_cum_km2 dist_nf_cum_km2) (dist_f_cum_km2_s1 dist_nf_cum_km2_s1)
-	la var dist_f_cum_km2_s1 "Deforestation (Stage I)"
+	la var dist_f_cum_km2_s1 "Deforestation (Stage 1)"
 	tempfile stage1
 	save "`stage1'"
 	
@@ -429,7 +437,7 @@ if `slx' == 1 {
 	sort user_id year_month
 	order user_id *_code_2011 year_month state district s_richness *_index
 	save "${DATA}/dta/fc_ebd_user", replace
-		
+
 }
 
 *===============================================================================

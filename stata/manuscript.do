@@ -597,7 +597,7 @@ if `sim' == 1 {
 * APPENDIX
 *===============================================================================
 if `appendix' == 1 {
-
+	
 	* Read
 	use "${DATA}/dta/fc_ebd_user", clear
 	drop_outliers
@@ -605,9 +605,7 @@ if `appendix' == 1 {
 	* Controls
 	local ctrls coverage tree_cover temp rain all_species
 	
-	
-	
-		* Read
+	* Read
 	use "${DATA}/dta/fc_ebd_user", clear
 	drop_outliers
 	
@@ -648,7 +646,6 @@ if `appendix' == 1 {
 			 dist_f_mine_cum_km2)
 	graph export "${TABLE}/fig/projwise_slx_science_all.png", replace
 	
-		/*
 	// Table 3 - Robustness Checks
 
 	* Additional Controls
@@ -686,10 +683,6 @@ if `appendix' == 1 {
 		star(* .1 ** .05 *** .01) label nonotes booktabs se b(%5.3f) ///
 		se(%5.3f) width(\hsize)
 	eststo clear
-*/
-
-	
-	// 1. Dynamic Lag Model
 
 	** Figure 3 - Alternative Diversity Measures
 	la var dist_f_cum_km2 "All"
