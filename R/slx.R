@@ -13,6 +13,9 @@ require(tidyverse)
 require(sf)
 require(spatialreg)
 require(spdep)
+
+# Section (stage1 or stage2)
+section <- 'stage2'
 # ------------------------------------------------------------------------
 
 # Read District Map
@@ -22,9 +25,8 @@ india_districts <- st_read(paste(dist_shp, "maps/india-district", sep=""),
   arrange(c_code_2011)
 
 # Read Data
-data <- read_csv(paste(path_head,'/data/csv/fc_dist_ym_robust.csv', sep='')) %>%
-  select(matches('^dist_.*_cum_ihs$'), tree_cover_mean_ihs, stage2_ihs, 
-         c_code_2011, year_month) %>%
+data <- read_csv(paste(path_head,'/data/csv/fc_dist_ym_', section, '.csv', sep='')) %>%
+  select(matches('^dist_.*_cum_km2$'), c_code_2011, year_month) %>%
   arrange(year_month, c_code_2011) %>%
   mutate(year_month=as.factor(year_month))
 
@@ -125,4 +127,4 @@ for(ym in levels(data$year_month)){
 
 slag <- merge(slag_bc, slag_inv, by=c('c_code_2011', 'year_month'))
 slag <- merge(slag, slag_inv2, by=c('c_code_2011', 'year_month'))
-write_csv(slag, paste(path_head, 'data/csv/slx_robust.csv', sep=''))
+write_csv(slag, paste(path_head, 'data/csv/slx_', section, '.csv', sep=''))

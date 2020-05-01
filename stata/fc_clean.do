@@ -27,10 +27,11 @@ gl DATA 	"${ROOT}/data"
 *===============================================================================
 *CLEAN VARIABLE NAMES
 *===============================================================================
-//Read raw data
+
+// Read raw data
 import delimited using "${DATA}/csv/fc_raw_use.csv", encoding("utf-8")  clear
 
-//Reduce Variable List
+// Reduce Variable List
 drop adateofsubmissionofproposals astatusoftheenvironmentalclearan ///
 	bdegradedforestareaonwhichcahast benvironmentalclearancefileno ///
 	careaofnonforestorrevenueforestl ddateofgrantofenvironmentalclear ///
@@ -38,7 +39,7 @@ drop adateofsubmissionofproposals astatusoftheenvironmentalclearan ///
 	page_no *_fcopyofownership* *_gcopyofmouagree* cdateofapproval ///
 	v10 *_hcopyofnonencumber* *_avillage villageswisebreakupsno* 
 
-//Clean Variable Names
+// Clean Names
 ren atotalnumberoffamilies fam_num
 ren awhetherprojectorapartthereofisl proj_in_pa
 ren bareaofnonforestorrevenueforestl ca_nfl_rfl_area
@@ -75,12 +76,12 @@ foreach v of varlist districtwisebreakupdistrictname_-v527 {
    local x : variable label `v'
    local y = subinstr("`x'", " ", "", .)
    local y = subinstr("`y'", "(ha.)", "", .)
-   local y = subinstr("`y'", "wisebreakup", "", .)
+   local y = subinstr("`y'", "Districtwisebreakup", "", .)
    local y = subinstr("`y'", "-", "", .)
    ren `v' `y'
 }
 
-**villages
+** villages
 foreach v of varlist villageswisebreakupforestlandha_-v2143 {
    local x : variable label `v'
    local y = subinstr("`x'", " ", "", .)
@@ -90,34 +91,35 @@ foreach v of varlist villageswisebreakupforestlandha_-v2143 {
    ren `v' `y'
 }
 
-ren DistrictDistrictName* district*
-ren DistrictForestLand* district_forest*
-ren DistrictNonForestLand* district_nonforest*
+ren DistrictName* district*
+ren ForestLand* dist_f*
+ren NonForestLand* dist_nf*
 ren villageswisebreakup* *
-ren VillagesForestLand* village_forest*
-ren VillagesNonForestLand* village_nonforest*
-ren district# ca_district_#
-ren district#_bareainha ca_district_nfl_#
+ren VillagesForestLand* vil_f*
+ren VillagesNonForestLand* vil_nf*
+ren district# ca_dist_#
+ren district#_bareainha ca_dist_nfl_#
+
 *===============================================================================
 * DATA CLEANING
 *===============================================================================
 
-//Drop Missing Rows
+// Drop Missing Rows
 egen nmcount = rownonmiss(_all), strok
 drop if nmcount == 0
 drop nmcount
 
-//Trim Strings
+// Trim Strings
 ds, has(type string) 
 local strvars "`r(varlist)'"
 foreach var of local strvars{
 	replace `var'=trim(itrim(lower(`var')))
 	}
 	
-//Drop Duplicates
+// Drop Duplicates
 duplicates drop prop_no, force
 
-//Manage NIL Values
+//Manage NILs
 
 ** missing
 foreach var of varlist displacement proj_in_pa* proj_scheduledarea ///
@@ -127,8 +129,8 @@ foreach var of varlist displacement proj_in_pa* proj_scheduledarea ///
 	
 	}
 
-ds ca_district_nfl*, has(type string)
-foreach var of varlist `r(varlist)' ca_nfl_rfl_area{
+ds ca_dist_nfl*, has(type string)
+foreach var of varlist `r(varlist)' ca_nfl_rfl_area {
 	replace `var' = "" if `var' == "nil"
 	destring `var', replace
 }
@@ -142,16 +144,18 @@ foreach var of varlist sc_fam_disp st_fam_disp other_fam_disp ///
 		
 		}
 
-//Categorize Project Type
+// Categorize Project Type
 gen proj_cat = "electricity" if inlist(proj_category, "hydel", "sub station", "thermal", "transmission line", "village electricity", "wind power", "solar power")
-replace proj_cat = "transport" if inlist(proj_category, "road", "approach access", "railway")
+replace proj_cat = "transportation" if inlist(proj_category, "road", "approach access", "railway")
 replace proj_cat = "irrigation" if inlist(proj_category, "canal", "irrigation", "drinking water")
-replace proj_cat = "forest village relocation" if inlist(proj_category, "forest village conversion", "encroachments", "rehabilitation")
+replace proj_cat = "resettlement" if inlist(proj_category, "forest village conversion", "encroachments", "rehabilitation")
 replace proj_cat = "mining" if inlist(proj_category, "mining", "quarrying")
-replace proj_cat = "industry" if inlist(proj_category, "industry", "school", "dispensary/hospital")
+replace proj_cat = "industry" if inlist(proj_category, "industry")
+replace proj_cat = "underground" if inlist(proj_category, "optical fibre cable", "pipeline")
 replace proj_cat = "other" if proj_cat == ""
+replace proj_shape = "nonlinear" if proj_shape == "non linear"
 
-//Encode Binary Variables
+// Encode Binary Variables
 foreach var of varlist displacement employment proj_in_pa* ///
 	proj_scheduledarea ca_nfl_rfl ca_area_less_div {
 		
@@ -165,19 +169,17 @@ foreach var of varlist displacement employment proj_in_pa* ///
 * MERGE APPROVAL DETAILS
 *===============================================================================
 
-//Tempfile
 tempfile temp
 save "`temp'"
 
-//Read Approval File
+// Read
 import delimited "${DATA}/csv/fc_records.csv", clear
 
-//Sync to FC data
-keep proposal_no area_applied proposal_status date_of_recomm date_from_ua_to_nodal
-ren (proposal_no area_applied proposal_status date_from_ua_to_nodal date_of_recomm) ///
-	(prop_no proj_area_forest2 prop_status date_submitted date_recomm)
+// Sync to FC data
+keep proposal_no area_applied proposal_status proposal_name date_of_recomm date_from_ua_to_nodal
+ren (proposal_no area_applied proposal_status proposal_name date_from_ua_to_nodal date_of_recomm) ///
+	(prop_no proj_area_forest2 prop_status prop_name date_submitted date_recomm)
 	
-** Sync merge ID
 replace prop_no = trim(itrim(lower(prop_no)))
 replace prop_status = trim(itrim(lower(prop_status)))
 duplicates drop prop_no, force
@@ -185,13 +187,37 @@ duplicates drop prop_no, force
 // Merge 
 merge 1:1 prop_no using "`temp'", keep(2 3) nogen
 
-//Format Dates
+// Re-categorize "other"
+replace prop_name = trim(itrim(lower(prop_name)))
+replace prop_name = subinstr(prop_name, ".", "", .)
+replace prop_name = subinstr(prop_name, "-", "", .)
+
+* OFC
+replace proj_cat = "underground" if regexm(prop_name, "optical") & proj_cat == "other"
+replace proj_cat = "underground" if regexm(prop_name, "ofc") & proj_cat == "other"
+
+* Oil, Gas Pipeline
+replace proj_cat = "underground" if regexm(prop_name, "pipeline") & regexm(prop_name, "oil") & proj_cat == "other"
+replace proj_cat = "underground" if regexm(prop_name, "pipeline") & regexm(prop_name, "gas") & proj_cat == "other"
+replace proj_cat = "underground" if regexm(prop_name, "pipeline") & regexm(prop_name, "lpg") & proj_cat == "other"
+
+* Irrigation Pipeline
+replace proj_cat = "irrigation" if regexm(prop_name, "pipeline") & regexm(prop_name, "water") & proj_cat == "other"
+replace proj_cat = "irrigation" if regexm(prop_name, "pipeline") & regexm(prop_name, "irrigation") & proj_cat == "other"
+
+* Road
+replace proj_cat = "transportation" if regexm(prop_name, "approach") & proj_cat == "other"
+
+* Relocation
+replace proj_cat = "resettlement" if regexm(prop_name, "relocation") & proj_cat == "other"
+
+// Format Dates
 gen date_submit = date(date_submitted,"DM20Y")
 gen date_rec = date(date_recomm, "DM20Y")
 format date_submit date_rec %td
 
-//Save
-drop village* // reduce file size
+// Save
+drop village* vil_* // reduce file size
 order state prop_no prop_status date_submit date_rec proj_area_forest* proj*
 sort state prop_no
 save "${DATA}/dta/fc_clean.dta", replace

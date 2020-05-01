@@ -3,6 +3,7 @@
 # DATA SOURCE: https://www.ngdc.noaa.gov/eog/viirs/download_dnb_composites.html#NTL_2015
 # AUTHOR: Raahil Madhok
 # DATE: Apr 16 2019 [created]
+# NOTES: units in nanoWatts/cm2/sr
 
 ### SET-UP
 # Directories

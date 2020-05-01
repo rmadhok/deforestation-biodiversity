@@ -36,11 +36,10 @@ local appendix			0
 *===============================================================================
 if `sumstats' == 1 {
 	
-	
+	/*
 	* Read
-	use "${DATA}/dta/fc_ebd_user", clear
+	use "${DATA}/dta/fc_ebd_user_main", clear
 	keep if year >= 2015 & year <=2018
-	jj
 	
 	* Tag 
 	bys c_code_2011: egen any_def = max(dist_f > 0 & dist_f!=.)
@@ -111,53 +110,46 @@ if `sumstats' == 1 {
 		addnotes("Note: Spatial coverage is the fraction of grid cells in a district" ///
 		"containing at least one bird observation over the study period using an" ///
 		"5km $\times$ 5km grid")
-	
+
 	** Forest Clearance
 	// Deforestation
 	ren dist_f Total
 	eststo clear
-	eststo C: estpost tabstat Total dist_f_elec-dist_f_pa if any_def, s(n mean sd) c(s)
-
+	eststo A: estpost tabstat Total dist_f_elec-dist_f_pa if any_def, s(n mean sd) c(s)
+	
+	// Project Breakup
 	use "${DATA}/dta/fc_clean", clear
-	drop ca_*
 	keep if prop_status == "approved"
 	replace proj_cat = "other" if proj_cat == "industry" | proj_cat == "underground"
-	
-	* Proj-wise Area
-	levelsof proj_cat, local(category)
-	levelsof proj_shape, local(shape)
-	
-	foreach cat of local category {
-		
-		gen `cat' = proj_area_forest2 if proj_cat == "`cat'"
+	tab proj_cat, gen(proj_cat_)
+	tab proj_shape, gen(proj_shape_)
+	ren (proj_cat_1 proj_cat_2 proj_cat_3 proj_cat_4 proj_cat_5 proj_cat_6) ///
+		(dist_f_elec dist_f_irr dist_f_mine dist_f_o dist_f_res dist_f_tran)
+	ren (proj_shape_1 proj_shape_2 proj_shape_3 proj_in_pa_esz_num) (dist_f_hyb dist_f_lin dist_f_nl dist_f_pa)
+	foreach v of varlist dist_f_elec-dist_f_nl {
+		local x : variable label `v'
+		local y = subinstr("`x'", " ", "", .)
+		local y = subinstr("`y'", "proj_cat==", "", .)
+		local y = subinstr("`y'", "proj_shape==", "", .)
+		local y = proper("`y'")
+		la var `v' `y'
 	}
-	
-	foreach sh of local shape {
-		gen `sh' = proj_area_forest2 if proj_shape == "`sh'"
-	}
-	gen dist_f_pa = proj_area_forest2 if proj_in_pa_esz_num
+	la var dist_f_nl "Non-Linear"
 	la var dist_f_pa "Near Protected Area"
 	
-	* Label
-	foreach v of varlist electricity-nonlinear {
-		la var `v' "`v'"
-		local x : variable label `v'
-		local x = proper("`x'")
-		la var `v' "`x'"
-	}
-	ren (electricity irrigation mining other resettlement transportation hybrid linear nonlinear) ///
-		(dist_f_elec dist_f_irr dist_f_mine dist_f_o dist_f_res dist_f_tran dist_f_hyb dist_f_lin dist_f_nl)
+	eststo B: estpost tabstat dist_f_elec-dist_f_nl dist_f_pa, s(n mean sd) c(s)
 
-	eststo A: estpost tabstat dist_f_elec-dist_f_pa, s(sum) c(s)
+	esttab B A using "${TABLE}/tables/sumstats_deforest.tex", replace ///
+		label cells("mean(star fmt(2)) count(fmt(0))" "sd(par fmt(2))") ///
+		width(\hsize) mgroups("Project-Wise Break-Up" ///
+		"Project-Wise Deforestation", pattern(1 1) ///
+		prefix(\multicolumn{@span}{c}{) suffix(}) span erepeat(\cmidrule(lr){@span})) ///
+		collabel("\specialcell{Mean}" "N", prefix({) suffix(})) ///
+		refcat(dist_f_elec "\emph{By Project Category}" ///
+		dist_f_hyb "\emph{By Project Type}", nolabel) ///
+		nomtitle booktabs noobs unstack nonumber gap	
+	*/
 	
-	foreach v of varlist dist_f_elec-dist_f_pa {
-		
-		replace `v' = 1 if `v' != .
-		replace `v' = 0 if `v' == .
-	}
-	
-	eststo B: estpost tabstat dist_f_elec-dist_f_pa, s(mean) c(s)
-			
 }
 
 *===============================================================================
@@ -281,7 +273,7 @@ if `main_analysis' == 1 {
 	use "${DATA}/dta/fc_ebd_user_main", clear
 	local ctrls coverage tree_cover_mean_ihs temperature_mean rainfall_mm all_species_prop
 	drop_outliers
-
+kk
 	//1. Species Richness on Deforestation
 	reg_user s_richness_ihs dist_f_cum_ihs dist_nf_cum_ihs `ctrls'
 	esttab using "${TABLE}/tables/s_richness.tex", replace ///

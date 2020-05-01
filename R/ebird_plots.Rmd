@@ -30,13 +30,12 @@ require(rasterVis)
 # Load Basemap
 india_districts <- st_read(paste("IndiaPowerPlant/data/maps/india-district", sep=""), 
                            'SDE_DATA_IN_F7DSTRBND_2011', stringsAsFactors = F)
-india_districts <- india_districts[india_districts$ID>1,]
 ```
 
 # Deforestation and Bird-watching Activity
 The infrastructure data consists only of projects requiring deforestation. Thus, these projects are located in the 20% of India's land area that is forested. The map below shows 2018 forest cover at 250m resolution from the NASA MODIS Vegetation Continuous Field (VCF) data product. Values indicate percentage tree cover in a cell.
 
-```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
+```{r,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
 # Read forest cover from external drive
 forest_cover <- raster(paste('/Volumes/Backup Plus/research/def_biodiv/forest_cover/mosaic/MOD44B.006_Percent_Tree_Cover_doy2018065_aid0001.tif'))
 
@@ -46,11 +45,13 @@ forest_cover <- mask(forest_cover, india_districts)
 forest_cover[forest_cover > 100] <- NA
 
 # Plot
+#png('/Users/rmadhok/Dropbox (Personal)/def_biodiv/docs/tex_doc/fig/tree_cover.png')
 levelplot(forest_cover, 
           margin=F,
           xlab=NULL,
           ylab=NULL,
           colorkey=list(
+            labels=list(cex=2),
             space='bottom',
             axis.line=list(col='black')),
           scales=list(draw=F),
@@ -58,7 +59,73 @@ levelplot(forest_cover,
           at=seq(0,100),
           par.settings=list(
             axis.line=list(col='transparent')))
+#dev.off()
 ```
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
+# Read Data
+tree_cover <- st_read(paste('def_biodiv/data/csv/', sep=''), 
+                         'forest_cover', stringsAsFactors = F)
+  
+tree_cover <- tree_cover %>%
+  mutate(tree_cover_mean = as.numeric(tree_cover_mean)) %>%
+  filter(year == 2018) %>% 
+  dplyr::select(c_code_2011, tree_cover_mean) %>%
+  rename(c_code_11 = c_code_2011)
+  
+india_dist_def <- left_join(india_districts, tree_cover, by="c_code_11")
+```
+
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
+# Plot Tree Cover
+tree_plot <- ggplot(india_dist_def, aes(fill = tree_cover_mean)) +
+  geom_sf(alpha = 0.8, colour = 'white', size = 0.3) +
+  scale_fill_gradient(name='',
+                      low='#FFCC99',
+                      high='#006633',
+                      guide = guide_colourbar(
+                         direction = "horizontal",
+                         barheight = unit(5, units = "mm"),
+                         barwidth = unit(10, units = "cm"),
+                         draw.ulim = F,
+                         title.position = 'top',
+                         title.hjust = 0.5,
+                         label.hjust = 0.5)) +
+  coord_sf(datum = NA) +
+  theme(line = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank(),
+        panel.background = element_blank(),
+        legend.position = 'bottom',
+        legend.text=element_text(size=15))
+tree_plot
+
+# Plot Tree Cover - FINAL
+#tree_plot <- ggplot(india_dist_def, aes(fill = tree_cover_mean)) +
+#  geom_sf(alpha = 0.8, colour = 'white', size = 0.3) +
+#  scale_fill_viridis(name = '',
+#                     guide = guide_colourbar(
+#                       direction = "horizontal",
+#                       barheight = unit(5, units = "mm"),
+#                       barwidth = unit(10, units = "cm"),
+#                       draw.ulim = F,
+#                       title.position = 'top',
+#                       title.hjust = 0.5,
+#                       label.hjust = 0.5)) +
+#  coord_sf(datum = NA) +
+#  theme(line = element_blank(),
+#        axis.text = element_blank(),
+#        axis.title = element_blank(),
+#        panel.background = element_blank(),
+#        legend.position = 'bottom',
+#        legend.title = element_text(size=10),
+#        legend.text=element_text(size=15))
+#tree_plot
+ggsave(paste('def_biodiv/docs/jmp/tex_doc/fig/tree_cover_plot.png', sep=''))
+```
+
+
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
 # Read Data
@@ -100,7 +167,7 @@ ggplot(india_dist_def, aes(fill = dist_f_cum_km2)) +
        legend.title = element_text(size = 10),
        legend.text = element_text(size = 8)) +
  facet_wrap(~year, drop=T)
-ggsave(paste('def_biodiv/docs/tex_doc/fig/deforestation.png', sep=''))
+ggsave(paste('def_biodiv/docs/jmp/tex_doc/fig/deforestation.png', sep=''))
 ```
 
 ## Change in Deforestation between First and Last Period
@@ -118,12 +185,12 @@ india_dist_def <- left_join(india_districts, defn_change, by="c_code_11")
 # Plot Change in Deforestation
 def_plot <- ggplot(india_dist_def, aes(fill = theta_dist_f_cum_km2)) +
   geom_sf(alpha = 0.8, colour = 'white', size = 0.3) +
-  scale_fill_viridis(name = "Cumulative Deforestation (km2)",
+  scale_fill_viridis(name = '',
                      direction = -1,
                      guide = guide_colourbar(
                        direction = "horizontal",
-                       barheight = unit(2, units = "mm"),
-                       barwidth = unit(50, units = "mm"),
+                       barheight = unit(5, units = "mm"),
+                       barwidth = unit(10, units = "cm"),
                        draw.ulim = F,
                        title.position = 'top',
                        title.hjust = 0.5,
@@ -134,10 +201,10 @@ def_plot <- ggplot(india_dist_def, aes(fill = theta_dist_f_cum_km2)) +
         axis.title = element_blank(),
         panel.background = element_blank(),
         legend.position = 'bottom',
-        legend.title = element_text(size = 10),
-        legend.text = element_text(size = 8))
+        legend.title = element_text(size=10),
+        legend.text=element_text(size=15))
 def_plot
-ggsave(paste('def_biodiv/docs/tex_doc/fig/theta_deforestation.png', sep=''))
+ggsave(paste('def_biodiv/docs/jmp/tex_doc/fig/theta_deforestation.png', sep=''))
 ```
 
 ## Birding Activity in Deforestation Districts
@@ -158,26 +225,28 @@ ebird_trunc <- ebird %>%
 # Summarize trips per district
 trips <- ebird_trunc %>%
   group_by(c_code_2011) %>%
-  summarize(n_trips = sum(n_trips, na.rm=T)) %>%
+  summarize(n_trips = mean(n_trips, na.rm=T)) %>%
   rename(c_code_11 = c_code_2011)
-trips <- trips %>% mutate(sd_trips = (n_trips-mean(n_trips))/sd(n_trips))
+trips <- trips %>% mutate(z_trips = (n_trips-mean(n_trips))/sd(n_trips))
 
 india_dist_def <- left_join(india_dist_def, trips, by="c_code_11")
-india_dist_def$sd_trips[india_dist_def$theta_dist_f_cum_km2==0] <- NA
+#india_dist_def$sd_trips[india_dist_def$theta_dist_f_cum_km2==0] <- NA
 ```
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
-trip_plot <- ggplot() +
-  geom_sf(data=st_union(india_districts$geom), fill=NA, color='black') +
-  geom_sf(data=india_dist_def, aes(fill=sd_trips), 
-          alpha = 0.8, colour = 'white', size = 0.3) +
-  scale_fill_viridis(name = "Z-score",
+india_dist_def$group[india_dist_def$theta_dist_f_cum_km2==0] <- 'control'
+india_dist_def$group[india_dist_def$theta_dist_f_cum_km2>0 | is.na(india_dist_def$theta_dist_f_cum_km2) ] <- 'treatment'
+
+# All Districts
+trip_plot <- ggplot(india_dist_def, aes(fill = z_trips)) +
+  geom_sf(alpha = 0.8, colour = 'white', size = 0.3) +
+  scale_fill_viridis(option='plasma',
+                     name = '',
                      direction = -1,
-                     na.value='white',
                      guide = guide_colourbar(
                        direction = "horizontal",
-                       barheight = unit(2, units = "mm"),
-                       barwidth = unit(50, units = "mm"),
+                       barheight = unit(5, units = "mm"),
+                       barwidth = unit(10, units = "cm"),
                        draw.ulim = F,
                        title.position = 'top',
                        title.hjust = 0.5,
@@ -188,11 +257,37 @@ trip_plot <- ggplot() +
         axis.title = element_blank(),
         panel.background = element_blank(),
         legend.position = 'bottom',
-        legend.title = element_text(size = 10),
-        legend.text = element_text(size = 8))
-ggsave(paste('def_biodiv/docs/tex_doc/fig/n_trips_district.pdf', sep=''))
-```
+        legend.title = element_text(size=10),
+        legend.text=element_text(size=15))
+ggsave(paste('def_biodiv/docs/jmp/tex_doc/fig/n_trips_district.png', sep=''))
 
+# Highlight Treatment
+trip_plot_hl <- ggplot() +
+  geom_sf(data=india_dist_def[india_dist_def$group=='control',], 
+          aes(fill=z_trips), alpha = 0.8, colour = 'white', size = 0.3) +
+  geom_sf(data=india_dist_def[india_dist_def$group=='treatment',], 
+          aes(fill=z_trips), alpha = 0.8, colour = 'black', size = 0.3) +
+  scale_fill_viridis(option='plasma',
+                     name = 'Number of Trips (std. dev.)',
+                     direction = -1,
+                     guide = guide_colourbar(
+                       direction = "horizontal",
+                       barheight = unit(5, units = "mm"),
+                       barwidth = unit(10, units = "cm"),
+                       draw.ulim = F,
+                       title.position = 'top',
+                       title.hjust = 0.5,
+                       label.hjust = 0.5)) +
+  coord_sf(datum = NA) +
+  theme(line = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank(),
+        panel.background = element_blank(),
+        legend.position = 'bottom',
+        legend.title = element_text(size=17),
+        legend.text = element_text(size = 15))
+ggsave(paste('def_biodiv/docs/jmp/tex_doc/fig/n_trips_district_hl.png', sep=''))
+```
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
 # Combine number of trips and deforestation
@@ -200,14 +295,38 @@ ggarrange(def_plot, trip_plot, align='h', labels=c("A", "B"))
 ggsave(paste('def_biodiv/docs/tex_doc/fig/def_n_trips.png', sep=''))
 ```
 
+```{r,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
+# Distribution of birding activity
+
+# Tag treatment/control
+defn_trips <- defn_year
+defn_trips$group[defn_trips$dist_f_cum_km2>0] <- 'Treatment'
+defn_trips$group[defn_trips$dist_f_cum_km2==0] <- 'Control'
+
+# Merge Trips
+ebird_yr <- ebird %>%
+  mutate(n_trips = as.numeric(n_trips)) %>%
+  filter(n_trips < quantile(n_trips, 0.90)) %>%
+  group_by(c_code_2011, year) %>%
+  summarize(n_trips = sum(n_trips, na.rm=T)) %>%
+  filter(year == 2015 | year == 2018) %>%
+  rename(c_code_11 = c_code_2011)
+defn_trips <- merge(defn_trips, ebird_yr, by=c('c_code_11', 'year'))
+
+# Plot
+ggplot(defn_trips, aes(n_trips, fill = group)) + 
+   geom_histogram(alpha = 0.5, aes(y = ..density..), position = 'identity') +
+  facet_wrap(~year, scales='free')
+```
+
 ## Spatial Coverage of Birding Activity in Deforestation Districts
-The map in panel B shows the spatial coverage of bird-watching activity. This is measured by gridding the district map into 8km x 8km cells and computing the percentage of cells with at least one bird sighting. This tells us whether bird-watching is concentrated within a district or not. It is useful for capturing access, since infrastructure projects may open up access to pristine parts of the forest. 
+The map in panel B shows the spatial coverage of bird-watching activity. This is measured by gridding the district map into 5km x 5km cells and computing the percentage of cells with at least one bird sighting. This tells us whether bird-watching is concentrated within a district or not. It is useful for capturing access, since infrastructure projects may open up access to pristine parts of the forest. 
 
 Panels A and B show that districts with infrastructure projects also have nearly full coverage of birding activity. This implies that no matter where the project is constructed, there is likely bird-watching activity nearby. 
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
 coverage <- st_read(paste('def_biodiv/data/csv/', sep=''), 
-                'coverage_dist_grid_8km', stringsAsFactors = F)
+                'coverage_dist_grid_5km', stringsAsFactors = F)
 coverage <- coverage %>%
   mutate(coverage_all = as.numeric(coverage_all)*100) %>%
   rename(c_code_11 = c_code_2011)
@@ -218,12 +337,12 @@ india_dist_def <- left_join(india_districts, coverage, by="c_code_11")
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
 sp_coverage <- ggplot(india_dist_def, aes(fill = coverage_all)) +
   geom_sf(alpha = 0.8, colour = 'white', size = 0.3) +
-  scale_fill_viridis(name = "% of district grid cells in which birds spotted",
+  scale_fill_viridis(name = '',
                      direction = -1,
                      guide = guide_colourbar(
                        direction = "horizontal",
-                       barheight = unit(2, units = "mm"),
-                       barwidth = unit(50, units = "mm"),
+                       barheight = unit(5, units = "mm"),
+                       barwidth = unit(10, units = "cm"),
                        draw.ulim = F,
                        title.position = 'top',
                        title.hjust = 0.5,
@@ -235,8 +354,8 @@ sp_coverage <- ggplot(india_dist_def, aes(fill = coverage_all)) +
         panel.background = element_blank(),
         legend.position = 'bottom',
         legend.title = element_text(size = 10),
-        legend.text = element_text(size = 8))
-ggsave(paste('def_biodiv/docs/tex_doc/fig/coverage.pdf', sep=''))
+        legend.text = element_text(size = 15))
+ggsave(paste('def_biodiv/docs/tex_doc/fig/coverage.png', sep=''))
 ```
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
@@ -257,13 +376,14 @@ The user-level data aggregates species diversity across bird-watching trips in e
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
 ggplot(ebird_trunc, aes(n_trips)) +
   stat_ecdf(geom='step') +
-  ylab('Cumulative Probability') +
-  xlab('Number of Trips') +
+  ylab('Cumulative Probability\n') +
+  xlab('\nNumber of Trips') +
   scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
   theme(panel.grid.minor = element_blank(), 
         axis.line = element_blank(), 
-        axis.ticks = element_blank())
-ggsave(paste('def_biodiv/docs/tex_doc/fig/cdf_n_trips.png', sep=''))
+        axis.ticks = element_blank(),
+        text = element_text(size=20))
+ggsave(paste('def_biodiv/docs/jmp/tex_doc/fig/cdf_n_trips.png', sep=''))
 ```
 
 ### Number of Trips by Month
@@ -274,6 +394,7 @@ The plot confirms a seasonal trend in bird-watching. The number of trips are hig
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
 # Summarize trips/month
 ebird$month <- as.numeric(substr(ebird$YEARMONTH, 6,7))
+
 ebird_trips_month <- ebird %>%
   group_by(month) %>%
   mutate(n_trips = as.numeric(n_trips)) %>%
@@ -283,16 +404,18 @@ months <- c('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'
 ```
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
-n_trips_month_plot <- ggplot(ebird_trips_month, aes(x=month, y=n_trips)) +
+n_trips_month_plot <- ggplot(ebird_trips_month, aes(x=month, y=(n_trips/1000))) +
   geom_bar(stat="identity", width=0.5) +
-  ylab('Number of Trips') +
+  ylab('Number of Trips (Thousands)\n') +
   scale_x_continuous(breaks=1:12, labels=months) +
   theme(panel.grid.minor = element_blank(), 
         axis.line = element_blank(), 
         axis.title.x = element_blank(),
-        axis.ticks = element_blank())
+        axis.ticks = element_blank(),
+        text = element_text(size=17),
+        axis.text.x = element_text(angle=45, hjust=1))
 n_trips_month_plot
-ggsave(paste('def_biodiv/docs/tex_doc/fig/n_trips_month.png', sep=''))
+ggsave(paste('def_biodiv/docs/jmp/tex_doc/fig/n_trips_month.png', sep=''))
 ```
 
 ## Seasonality of Unique Species
@@ -316,19 +439,20 @@ n_species_ym$month <- as.numeric(substr(n_species_ym$YEARMONTH, 6,7))
 sp_ym <- ggplot(n_species_ym, aes(x=month, y=n_species, group=Year)) +
   geom_line(aes(color=Year)) +
   geom_point(aes(color=Year)) +
-  scale_x_continuous(breaks=1:12, labels=months) +
-  ylab('Species Richness') +
+  scale_x_continuous(breaks=1:12) +
+  ylab('Species Richness\n') +
   scale_color_viridis_d() + 
   theme(panel.grid.minor = element_blank(), 
+        text = element_text(size=17),
         axis.line = element_blank(), 
         axis.title.x = element_blank(),
-        axis.text.x = element_text(angle=45),
+        axis.text.x = element_blank(),
         axis.ticks = element_blank(),
         legend.position=c(0.56,0.92), 
         legend.direction="horizontal", 
         legend.background = element_rect(fill='transparent'))
 sp_ym
-ggsave(paste('def_biodiv/docs/tex_doc/fig/n_species_ym.png', sep=''))
+ggsave(paste('def_biodiv/docs/jmp/tex_doc/fig/n_species_ym.png', sep=''))
 ```
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
@@ -351,7 +475,7 @@ sp_yr <- ggplot(n_species_yr, aes(x=YEAR, y=n_species)) +
         axis.line = element_blank(), 
         axis.title.x = element_blank(),
         axis.ticks = element_blank())
-ggsave(paste('def_biodiv/docs/tex_doc/fig/n_species_yr.png', sep=''))
+ggsave(paste('def_biodiv/docs/jmp/tex_doc/fig/n_species_yr.png', sep=''))
 ```
 
 ### Unique Species Across Time
@@ -362,7 +486,37 @@ Another explanation is that increases in species diversity over time is driven b
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=9}
 # Combine year and year-month species plots
 ggarrange(sp_yr, sp_ym + rremove('y.title'), align='h', labels=c("A", "B"))
-ggsave(paste('def_biodiv/docs/tex_doc/fig/n_species_yr_ym.png', sep=''))
+ggsave(paste('def_biodiv/docs/jmp/tex_doc/fig/n_species_yr_ym.png', sep=''))
+```
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
+# Read
+n_species_uyr <- st_read(paste('def_biodiv/data/csv/', sep=''), 
+                    'n_species_uyr', stringsAsFactors = F)
+
+# Number Species per User-Year
+n_species_uyr <- n_species_uyr %>%
+  mutate(n_species=as.numeric(n_species)) %>%
+  filter(YEAR!="2019")
+```
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
+sr_uyr <- n_species_uyr %>%
+  mutate(YEAR=as.numeric(YEAR)) %>%
+  group_by(YEAR) %>%
+  summarize(md_sr = median(n_species, na.rm=T),
+            mn_sr = mean(n_species, na.rm=T))
+  
+sr_uyr_plot <- ggplot(sr_uyr, aes(x=YEAR, y=mn_sr)) +
+  geom_line() +
+  geom_point() +
+  ylab('Mean Species Richness\n') +
+  theme(panel.grid.minor = element_blank(), 
+        axis.line = element_blank(), 
+        axis.title.x = element_blank(),
+        axis.ticks = element_blank(),
+        text = element_text(size=17))
+ggsave(paste('def_biodiv/docs/jmp/tex_doc/fig/mean_species_uyr.png', sep=''))
 ```
 
 ### Trends in species diversity and bird-watching activity
@@ -370,15 +524,14 @@ The plot below compares seasonality of species diversity with seasonality in eBi
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=9}
 # Combine year and year-month species plots
-ggarrange(sp_ym, n_trips_month_plot, nrow=2, align='h', labels=c("A", "B"))
-ggsave(paste('def_biodiv/docs/tex_doc/fig/n_species_yr_ym.png', sep=''))
+ggarrange(sp_ym, n_trips_month_plot, nrow=2, align='h')
+ggsave(paste('def_biodiv/docs/jmp/tex_doc/fig/seasonality.png', sep=''))
 ```
 
 # User Characteristics
 The user-level data includes individual identifiers, so I can track an individual's trips across time and space. The plots below show the distribution of *per-user* characteristics. Across the sample period, most users take around 20 trips across 15 time periods and travel through 6 states and 10 districts. This provides a huge amount of variation to exploit in the trip-level analysis with individual fixed effects. 
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
-
 ebird$state_code_2011 <- substr(ebird$c_code_2011,1,3)
 
 # User-level Characteristics
@@ -391,6 +544,7 @@ ebird_user <- ebird %>%
   filter(`No. of Trips` < quantile(`No. of Trips`, 0.95)) %>%
   gather(user_characteristic, number, 2:5) %>%
   arrange(OBSERVER.ID, user_characteristic)
+
 ```
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
@@ -403,6 +557,7 @@ ggplot(ebird_user, aes(ebird_user$number)) +
   theme(panel.grid.minor = element_blank(), 
         axis.title.x = element_blank(),
         axis.line = element_blank(), 
-        axis.ticks = element_blank())
-ggsave(paste('def_biodiv/docs/tex_doc/fig/user_charac_hist.png', sep=''))
+        axis.ticks = element_blank(),
+        text = element_text(size=15))
+ggsave(paste('def_biodiv/docs/jmp/tex_doc/fig/user_charac_hist.png', sep=''))
 ```
