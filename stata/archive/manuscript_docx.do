@@ -210,7 +210,7 @@ if `robustness' == 1 {
 	local ctrls coverage tree_cover temp rain all_species
 	local slx_b dist_f_cum_km2_slx_bc dist_nf_cum_km2_slx_bc
 	la var dist_f_cum_km2 "Deforestation (Stage 2)"
-	la var dist_f_cum_km2_slx_bc "Deforestation
+	la var dist_f_cum_km2_slx_bc "Deforestation"
 	// SEASONALITY
 	
 	* 1. User x Month FE 
