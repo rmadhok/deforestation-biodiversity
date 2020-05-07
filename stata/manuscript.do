@@ -27,12 +27,13 @@ gl TABLE	"${ROOT}/docs/manuscript/"
 
 // Module
 local sumstats			0
+local learning			1
 local event_study		0
 local main_analysis		0
-local simulation		1
-local robustness		1
-	local spillovers	1
-	local others		1
+local simulation		0
+local robustness		0
+	local spillovers	0
+	local others		0
 	
 *===============================================================================
 * PROGRAMS
@@ -199,6 +200,23 @@ if `sumstats' == 1 {
 		noobs gap label 
 	eststo clear
 }
+
+*===============================================================================
+* LEARNING CURVE
+*===============================================================================
+if `learning' == 1 {
+
+	* Read
+	use "${DATA}/dta/fc_ebd_user", clear
+	drop_outliers
+	
+	collapse (mean) s_richness, by(user_id year_month)
+	
+	graph bar (mean) s_richness, over(year_month)
+	
+}
+
+
 
 *===============================================================================
 * EVENT STUDY

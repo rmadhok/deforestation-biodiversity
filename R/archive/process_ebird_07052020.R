@@ -57,7 +57,7 @@ ebird_oob <- ebird_oob %>% dplyr::select(-ID) %>% rename(c_code_2011 = c_code_11
 ebird <- filter(ebird, !is.na(c_code_2011))
 ebird <- rbind(ebird, ebird_oob) 
 
-# Keep necessary columns (n=12,839,677) # ADD START/END TIME
+# Keep necessary columns (n=12,839,677)
 ebird <- ebird %>% dplyr::select(-c(1,2,10:14,16:22,24,29,34,41:47))
 rm(list='ebird_oob')
 
@@ -79,19 +79,39 @@ rm(list=c('ebird_dd', 'ebird_m', 'ebird_nm'))
 
 ## 4. CONSTRUCT VARS -------------------------------------------------------------------
 
-# Higher Level Species Richness (~10 mins)
 ebird <- ebird %>%
-  group_by(YEARMONTH) %>%
-  mutate(s_richness_ym = n_distinct(TAXONOMIC.ORDER)) %>% # species richness per year-month (all users)
-  group_by(YEAR) %>%
-  mutate(s_richness_yr = n_distinct(TAXONOMIC.ORDER)) %>% # species richness per year
   group_by(OBSERVER.ID, YEAR) %>%
-  mutate(n_mon_yr = n_distinct(YEARMONTH), # Months per year of birding - 'high ability' users
-         s_richness_uyr = n_distinct(TAXONOMIC.ORDER)) %>% # species richnes per user-year
-  group_by(OBSERVER.ID, YEARMONTH) %>%
-  mutate(s_richness_uym = n_distinct(TAXONOMIC.ORDER)) %>% # species richness per user-year-month
-  group_by(OBSERVER.ID, c_code_2011, YEARMONTH) %>%
-  mutate(s_richness_udym = n_distinct(TAXONOMIC.ORDER)) # species richness per user-district-year-month
+  mutate(n_mon_yr = n_distinct(YEARMONTH)) %>% # Months-per-year by user - 'high-ability' users
+  group_by(YEARMONTH) %>%
+  mutate(s_richness_ym = n_distinct(TAXONOMIC.ORDER)) # species richness per year-month (all users)
+
+# Unique Species per yearmonth (for plot)
+n_species_ym <- ebird %>%
+  group_by(YEARMONTH) %>%
+  summarize(n_species = n_distinct(TAXONOMIC.ORDER), 
+            year=first(YEAR))
+
+write.csv(n_species_ym,
+          paste(save_path_head, 'data/csv/n_species_ym.csv', sep=""),
+          row.names = F)
+
+# Unique Species per Year (for plot)
+n_species_yr <- ebird %>%
+  group_by(YEAR) %>%
+  summarize(n_species = n_distinct(TAXONOMIC.ORDER))
+
+write.csv(n_species_yr,
+          paste(save_path_head, 'data/csv/n_species_yr.csv', sep=""),
+          row.names = F)
+
+# Unique Species per User-Year (for plot)
+n_species_uyr <- ebird %>%
+  group_by(OBSERVER.ID, YEAR) %>%
+  summarize(n_species = n_distinct(TAXONOMIC.ORDER))
+
+write.csv(n_species_uyr,
+          paste(save_path_head, 'data/csv/n_species_uyr.csv', sep=""),
+          row.names = F)
 
 ## 4. DIVERSITY INDICES ------------------------------------------------------------------
 
@@ -108,46 +128,32 @@ ebird <- ebird %>%
          si_index = 1 - ((sum(OBSERVATION.COUNT*(OBSERVATION.COUNT - 1), na.rm = T)) /
                                  (sum(OBSERVATION.COUNT, na.rm = T)*(sum(OBSERVATION.COUNT, na.rm = T) - 1))))
 
+# Species diversity per user-dist-ym across all trips (ROBUSTNESS CHECK)
+ebird <- ebird %>%
+  group_by(OBSERVER.ID, c_code_2011, YEARMONTH) %>%
+  mutate(s_richness_all = n_distinct(TAXONOMIC.ORDER))
+
 # Trip-level (n=636,211 trips, 12,606 users)
 ebird_trip <- ebird %>% 
   distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
-  dplyr::select(OBSERVATION.DATE, OBSERVER.ID, SAMPLING.EVENT.IDENTIFIER,
-                GROUP.IDENTIFIER, NUMBER.OBSERVERS, YEAR, YEARMONTH, 
-                ALL.SPECIES.REPORTED, DURATION.MINUTES, EFFORT.DISTANCE.KM, 
-                c_code_2011, n_mon_yr, starts_with('s_richness'), 
-                sh_index, si_index)
+  dplyr::select(OBSERVER.ID, SAMPLING.EVENT.IDENTIFIER, YEAR, 
+                ALL.SPECIES.REPORTED, DURATION.MINUTES, 
+                EFFORT.DISTANCE.KM, YEARMONTH, n_months, c_code_2011, 
+                s_richness, sh_index, si_index, s_richness_all)
 
-write.csv(ebird_trip,
-          paste(save_path_head, 'data/csv/ebird_trip.csv', sep=""),
-          row.names = F)
-
-# Number of Trips before Jan 2018
-ebird_j18 <- ebird_trip %>%
-  filter(YEAR < 2018) %>%
-  group_by(OBSERVER.ID) %>%
-  summarize(n_trips_18 = n())
-ebird_trip <- merge(ebird_trip, ebird_j18, by='OBSERVER.ID', all=T)
-rm(list='ebird_j18')
-
-# User-district-month (n=120,423)
+# User-district-month
 ebird_user <- ebird_trip %>%
   group_by(OBSERVER.ID, c_code_2011, YEARMONTH) %>%
   summarize(n_trips=n(),
             s_richness=mean(s_richness, na.rm=T),
-            s_richness_udym=first(s_richness_udym),
-            s_richness_uym=first(s_richness_uym),
-            s_richness_uyr=first(s_richness_uyr),
-            s_richness_ym=first(s_richness_ym),
-            s_richness_yr=first(s_richness_yr),
+            s_richness_all=first(s_richness_all),
             sh_index=mean(sh_index, na.rm=T),
             si_index=mean(si_index,na.rm=T),
             duration=mean(DURATION.MINUTES, na.rm=T),
             distance=mean(EFFORT.DISTANCE.KM,na.rm=T),
             all_species=mean(ALL.SPECIES.REPORTED,na.rm=T),
-            group_size=mean(NUMBER.OBSERVERS, na.rm=T),
-            n_trips_18=first(n_trips_18),
-            n_mon_yr=first(n_mon_yr),
-            year=first(YEAR))
+            year=first(YEAR),
+            n_mon_yr=first(n_months))
 
 write.csv(ebird_user,
           paste(save_path_head, 'data/csv/ebird_user.csv', sep=""),
