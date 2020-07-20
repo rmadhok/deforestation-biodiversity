@@ -143,7 +143,7 @@ foreach var of varlist sc_fam_disp st_fam_disp other_fam_disp ///
 		destring `var', replace
 		
 		}
-
+		
 // Categorize Project Type
 gen proj_cat = "electricity" if inlist(proj_category, "hydel", "sub station", "thermal", "transmission line", "village electricity", "wind power", "solar power")
 replace proj_cat = "transportation" if inlist(proj_category, "road", "approach access", "railway")

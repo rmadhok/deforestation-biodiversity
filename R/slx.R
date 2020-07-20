@@ -5,6 +5,7 @@
 
 # ----------- SET-UP -----------------------------------------------------
 # Directories
+rm(list=ls())
 path_head <- '/Users/rmadhok/Dropbox (Personal)/def_biodiv/'
 dist_shp <- '/Users/rmadhok/Dropbox (Personal)/IndiaPowerPlant/data/'
 
@@ -15,7 +16,7 @@ require(spatialreg)
 require(spdep)
 
 # Section (stage1 or stage2)
-section <- 'stage2'
+section <- 'stage1'
 # ------------------------------------------------------------------------
 
 # Read District Map
@@ -25,11 +26,20 @@ india_districts <- st_read(paste(dist_shp, "maps/india-district", sep=""),
   arrange(c_code_2011)
 
 # Read Data
-data <- read_csv(paste(path_head,'/data/csv/fc_dist_ym_', section, '.csv', sep='')) %>%
-  select(matches('^dist_.*_cum_km2$'), c_code_2011, year_month) %>%
-  arrange(year_month, c_code_2011) %>%
-  mutate(year_month=as.factor(year_month))
+if(section == 'stage2') {
+  data <- read_csv(paste(path_head,'/data/csv/fc_dist_ym_', section, '.csv', sep='')) %>%
+    select(matches('^dist_.*_cum_km2$'), c_code_2011, year_month) %>%
+    arrange(year_month, c_code_2011) %>%
+    mutate(year_month=as.factor(year_month))
+}
 
+if(section == 'stage1'){
+  data <- read_csv(paste(path_head,'/data/csv/fc_dist_ym_', section, '.csv', sep='')) %>%
+    select(matches('^dist_.*km2$'), c_code_2011, year_month) %>%
+    select(-contains('cum')) %>%
+    arrange(year_month, c_code_2011) %>%
+    mutate(year_month=as.factor(year_month))
+}
 #------------------------------------------------------------------------
 # MODEL 1 : Spatial Lag with Binary Contiguity
 #------------------------------------------------------------------------

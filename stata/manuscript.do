@@ -27,9 +27,9 @@ gl TABLE	"${ROOT}/docs/manuscript/"
 
 // Module
 local sumstats			0
-local learning			1
+local learning			0
 local event_study		0
-local main_analysis		0
+local main_analysis		1
 local simulation		0
 local robustness		0
 	local spillovers	0
@@ -51,7 +51,7 @@ program define reg_sat
 	local ctrls = substr("`varlist'", length("`depvar'") + ///
 		length("`indepvar'") + 3, length("`varlist'"))
 
-	qui reghdfe `depvar' `indepvar' `ctrls' [aweight=n_trips], ///
+	reghdfe `depvar' `indepvar' `ctrls' [aweight=n_trips], ///
 		a(user_id#year c_code_2011_num state_code_2011_num#month, savefe) ///
 		vce(cl state_code_2011_num#year) resid
 		estadd local user_y_fe "x"
@@ -91,7 +91,7 @@ if `sumstats' == 1 {
 	** Collect
 	local dist_vars tot_area pop_density n_users_dist n_trips_dist
 	local trip s_richness
-	local covariates tree_cover coverage rain temp
+	local covariates tree_cover coverage rain temp duration all_species
 	
 	*---------------------------------------
 	* OUTCOMES AND COVARIATES
@@ -131,18 +131,18 @@ if `sumstats' == 1 {
 	*-----------------------------------
 	* Forest Clearance
 	*-----------------------------------
-	
+
 	* Per-District Month
 	eststo clear
-	eststo B: estpost tabstat dist_f_elec-dist_f_pa if any_def, s(n mean sd) c(s)
+	eststo B: estpost tabstat dist_f_elec-dist_f_tran if any_def, s(n mean sd) c(s)
 
 	* Project-wise area totals and shares
 	use "${DATA}/dta/fc_clean", clear
 	keep if prop_status == "approved"
 	replace proj_cat = "other" if proj_cat == "industry" | proj_cat == "underground"
-	
 	levelsof proj_cat, local(category)
-	levelsof proj_shape, local(shape)
+	*levelsof proj_shape, local(shape)
+	
 	foreach cat of local category {
 		
 		gen `cat' = proj_area_forest2 if proj_cat == "`cat'"
@@ -151,7 +151,8 @@ if `sumstats' == 1 {
 		ren `cat'_sum `cat'
 		replace `cat' = . if proj_cat != "`cat'"
 	}
-
+	
+	/*
 	foreach sh of local shape {
 		gen `sh' = proj_area_forest2 if proj_shape == "`sh'"
 		egen `sh'_sum = total(`sh')
@@ -159,26 +160,29 @@ if `sumstats' == 1 {
 		ren `sh'_sum `sh'
 		replace `sh' = . if proj_shape != "`sh'"
 	}
+	*/
 	
+	/*
 	gen dist_f_pa = proj_area_forest2 if proj_in_pa_esz_num
 	egen dist_f_pa_sum = total(dist_f_pa)
 	drop dist_f_pa
 	ren dist_f_pa_sum dist_f_pa
 	replace dist_f_pa = . if proj_in_pa_esz_num == 0
 	la var dist_f_pa "Near Protected Area"
+	*/
 	
 	* Label
-	foreach v of varlist electricity-nonlinear {
+	foreach v of varlist electricity-transportation {
 		la var `v' "`v'"
 		local x : variable label `v'
 		local x = proper("`x'")
 		la var `v' "`x'"
 	}
-	ren (electricity irrigation mining other resettlement transportation hybrid linear nonlinear) ///
-		(dist_f_elec dist_f_irr dist_f_mine dist_f_o dist_f_res dist_f_tran dist_f_hyb dist_f_lin dist_f_nl)
+	ren (electricity irrigation mining other resettlement transportation) ///
+		(dist_f_elec dist_f_irr dist_f_mine dist_f_o dist_f_res dist_f_tran)
 	
 	* Totals
-	eststo A: estpost tabstat dist_f_elec-dist_f_pa, s(n mean sd) c(s)
+	eststo A: estpost tabstat dist_f_elec-dist_f_tran, s(n mean sd) c(s)
 	
 	esttab A B using "${TABLE}/tables/sumstats_deforest2.rtf", replace ///
 		label cells("count(fmt(0)) mean(fmt(2)) sd(fmt(2))") ///
@@ -187,7 +191,7 @@ if `sumstats' == 1 {
 		refcat(dist_f_elec "Project Type" dist_f_hyb "Project Group", nolabel) ///
 		nomtitle unstack nonumber
 	eststo clear
-	
+
 	** Spatial Correlation
 	egen num_districts = rownonmiss(district_0-district_9), s
 	la var num_districts "Districts"
@@ -209,14 +213,151 @@ if `learning' == 1 {
 	* Read
 	use "${DATA}/dta/fc_ebd_user", clear
 	drop_outliers
+
+	// 1. Seasonality
 	
-	collapse (mean) s_richness, by(user_id year_month)
+	* Total
+	preserve
+		
+		* Total species richness by ym across all users/trips
+		collapse (first) s_richness_ym (sum) n_trips, by(year_month)
+		replace n_trips = n_trips/1000
+		twoway bar n_trips year_month, yscale(alt) bcolor(gs10) ///
+			ytitle("Num. Trips (thousands)", size(medium) axis(alt)) ///
+			ylabel(, angle(hor)) || connected s_richness_ym year_month, ///
+			yaxis(2) yscale(alt axis(2) titlegap(3)) ///
+			ylabel(, axis(2) angle(hor)) ytitle("Species Richness", ///
+			size(medium) axis(2)) mcolor(gs3) msize(small) lcolor(black) ||, ///
+			graphregion(color(white)) bgcolor(white) xtitle("") ///
+			xlabel(660 "Jan-15" 666 "Jul-15" 672 "Jan-16" 678 "Jul-16" ///
+			684 "Jan-17" 690 "Jul-17" 696 "Jan-18" 702 "Jul-18", angle(45)) ///
+			legend(order(2 "Species" "Richness" 1 "Num." "Trips")) fysize(37.5) ///
+			title("A", pos(1)) saving(season.gph, replace) 
+	restore
+
+
+	// 2. Per User
+	preserve 
+		
+		collapse (first) s_richness_uym, by(user_id year_month)
+		statsby, by(year_month) clear: ci means s_richness_uym
+		format year_month %tmCCYY-NN
+		*ciplot s_richness_uym, by(year_month)
+		
+		twoway (rcap lb ub year_month, color(gs10)) ///
+		   (connected mean year_month, mcolor(black) ///
+		   lpattern(solid) lcolor(black) msymbol(o)), ///
+		   scheme(s2mono) yline(0) xline(0, lpattern(dash)) ///
+		   graphregion(color(white)) bgcolor(white) ///
+		   legend(on order(1 "95% CI" 2 "Mean")) ///
+		   xtitle("Time", size(medium)) ytitle("Species Richness" "(Per User)", ///
+		   size(medium)) yscale(titlegap(6)) xscale(titlegap(4)) ///
+		   xlabel(660 "Jan-15" 666 "Jul-15" 672 "Jan-16" 678 "Jul-16" ///
+		   684 "Jan-17" 690 "Jul-17" 696 "Jan-18" 702 "Jul-18", angle(45)) ///
+		   saving(season_u.gph, replace)
 	
-	graph bar (mean) s_richness, over(year_month)
+	restore
+
+	// 3. Learning and No Learning Overlay
+	
+	* No learning
+	preserve	
+		
+		* Residualize on User FE
+		reghdfe s_richness, a(user_id c_code_2011 state_code_2011_num#month year) resid
+	
+		* Average residual per user-yearmonth
+		collapse (mean) resid = _reghdfe_resid, by(user_id year)
+		statsby, by(year) clear: ci means resid
+		
+		tempfile temp
+		save "`temp'"
+	
+	restore
+	
+	* Linear experience
+	preserve	
+		
+		* Residualize on User FE, linear trend
+		reghdfe s_richness u_lin, a(user_id c_code_2011 state_code_2011_num#month year) resid
+	
+		* Average residual per user-yearmonth
+		collapse (mean) resid = _reghdfe_resid, by(user_id year)
+		statsby, by(year) clear: ci means resid
+		ren * *_nex
+		ren year_nex year
+		tempfile temp2
+		save "`temp2'"
+	
+	restore
+	
+	preserve
+		
+		* Residualize on User-Year FE
+		reghdfe s_richness u_lin, a(user_id#year c_code_2011 state_code_2011_num#month) resid
+		
+		* Average residual per user-yearmonth
+		collapse (mean) resid = _reghdfe_resid, by(user_id year)
+		statsby, by(year) clear: ci means resid
+		ren * *_nl
+		ren year_nl year
+		merge 1:1 year using "`temp'", nogen
+		merge 1:1 year using "`temp2'", nogen
+		
+		twoway scatter mean year, mfcolor(white) mcolor(maroon) ///
+			msize(small) || lfit mean year, lcolor(maroon) || ///
+			scatter mean_nex year, mfcolor(white) mcolor(navy) ///
+			msize(small) msymbol(triangle) || ///
+			lfit mean_nex year, lcolor(navy) || ///
+			scatter mean_nl year, mfcolor(white) mcolor(black) ///
+			msize(small) msymbol(square) || ///
+			lfit mean_nl year, lcolor(black) ||, ///
+			graphregion(color(white)) bgcolor(white) ylabel(, angle(hor)) ///
+			ytitle("Mean User Residual", size(medium)) xtitle("") ///
+			yscale(titlegap(*-30)) ///
+			legend(order(1 "Learning Bias" 3 "Minus Participation" ///
+			5 "No Learning Bias"))  ///
+			title("C", size(medium) pos(1)) fxsize(75) fysize(90) ///
+			saving(learn_nl.gph, replace)
+
+	restore
+
+	*xlabel(660 "Jan-15" 666 "Jul-15" 672 "Jan-16" 678 "Jul-16" 684 "Jan-17" 690 "Jul-17" 696 "Jan-18" 702 "Jul-18", angle(45))
+
+	// 4. BirdLife
+	preserve
+	
+		tempfile ebd
+		save "`ebd'"
+	
+		import delimited using "${DATA}/csv/bl_district.csv", clear
+		ren c_code_11 c_code_2011
+		gen s_richness_bl = 1
+	
+		collapse (count) s_richness_bl, by(c_code_2011)
+		merge 1:m c_code_2011 using "`ebd'", keep(3) nogen
+	
+		* Quantiles of species richness
+		xtile s_richness_bl_q3 = s_richness_bl, nquantiles(3)
+		statsby, by(s_richness_bl_q3) clear noisily: ci means n_trips 
+		
+		twoway bar mean s_richness_bl_q3, barwidth(0.7) color(gs8) ///
+			|| rcap ub lb s_richness_bl_q3, lcolor(black) ||, ///
+			xlabel(1 "Low" 2 "Medium"  3 "High") ylabel(3(0.5)5, angle(hor)) ///
+			ytitle("Num. Trips" "Per User-Month", size(medium)) ///
+			xtitle("District Species Diversity", size(medium)) ///
+			yscale(titlegap(3)) xscale(titlegap(3)) ///
+			graphregion(color(white)) bgcolor(white) ///
+			legend(order(1 "Mean" 2 "95% CI")) ///
+			title("B", pos(1)) fysize(37.5) saving(dist.gph, replace)
+	restore
+	
+	* combine
+	graph combine season.gph dist.gph, rows(2) saving(comb.gph, replace)
+	graph combine comb.gph learn_nl.gph, imargin(0 0 1 0)
+	graph export "${TABLE}/fig/bias_plot.png", replace
 	
 }
-
-
 
 *===============================================================================
 * EVENT STUDY
@@ -230,8 +371,9 @@ if `event_study' == 1 {
 	drop_outliers
 	keep user_id *code* year_month n_trips ///
 		 s_richness dist_f_cum_km2 coverage ///
-		 tree_cover temp rain all_species month year
-	local controls coverage tree_cover temp rain all_species
+		 tree_cover temp rain all_species ///
+		 group_size month year
+	local controls coverage tree_cover temp rain all_species duration
 	
 	* Construct Event Dummies
 	
@@ -250,7 +392,7 @@ if `event_study' == 1 {
 	
 	* Time to Construction
 	gen dif = year_month-event_date
-	keep if inrange(dif, -6, 6) // 6 month window
+	keep if inrange(dif, -6, 6) // 8 month window
 	
 	* Event dummies
 	tostring dif, replace
@@ -261,10 +403,10 @@ if `event_study' == 1 {
 		la var `v' "`y'"
 	}
 	
-	* Regression
+	* Regression (try 12)
 	reghdfe s_richness e_6 e_5 e_4 e_3 e_2 e_1 e_8-e_13 ///
 		`controls' [aweight=n_trips], ///
-		a(user_id c_code_2011_num state_code_2011_num#month)
+		a(user_id#year c_code_2011_num state_code_2011_num#month)
 	
 	parmest, label list(parm label estimate min* max* p) saving(results, replace)
 	use results, clear
@@ -296,9 +438,10 @@ if `main_analysis' == 1 {
 	use "${DATA}/dta/fc_ebd_user", clear
 	
 	* Prep
-	local ctrls coverage tree_cover temp rain all_species
+	local ctrls coverage tree_cover temp rain all_species duration
 	drop_outliers
 	la var dist_f_cum_km2 "Deforestation (\(km^{2}\))"
+	set scheme modern, perm
 	
 	* Fig 1 - Plot
 	eststo clear
@@ -312,10 +455,10 @@ if `main_analysis' == 1 {
 		vce(cl state_code_2011_num#year)
 		sum s_richness if e(sample)
 	
-	coefplot (m1, rename(dist_f_cum_km2 = "Learning Curve") \ m2, ///
-		rename(dist_f_cum_km2 = "No Learning Curve")), ///
+	coefplot (m1, rename(dist_f_cum_km2 = "Learning Bias") \ m2, ///
+		rename(dist_f_cum_km2 = "No Learning Bias")), ///
 		keep(dist_f*) xline(0, lcolor(gs5) lpattern(dash)) ///
-		coeflabels(, labsize(large)) mlabsize(medium) ///
+		coeflabels(, labsize(medium)) mlabsize(medium) ///
 		ciopts(recast(rcap)) msize(small) mfcolor(white) msymbol(D) ///
 		graphregion(color(white)) bgcolor(white) grid(glcolor(gs15)) ///
 		mlabel format(%9.2g) mlabposition(12) mlabgap(*2) ///
@@ -333,8 +476,9 @@ if `main_analysis' == 1 {
 	coefplot, keep(dist_f*) sort xline(0, lcolor(gs5) lpattern(dash)) ///
 		msize(small) mfcolor(white) msymbol(D) ciopts(recast(rcap)) ///
 		graphregion(color(white)) bgcolor(white) grid(glcolor(gs15))  ///
-		transform(* = min(max(@,-2),6)) mlabel format(%9.2g) mlabposition(12) /// 
-		coeflabels(, labsize(large)) mlabsize(medium) ///
+		mlabel format(%9.2g) mlabposition(12) /// 
+		coeflabels(, labsize(medium)) mlabsize(medium) ///
+		transform(* = min(max(@,-2),6)) ///
 		mlabgap(*2) title("B") saving(projwise, replace)
 	graph export "${TABLE}/fig/projwise.png", replace
 	
@@ -500,7 +644,7 @@ if `robustness' == 1 {
 		drop_outliers
 	
 		* Controls
-		local ctrls coverage tree_cover temp rain all_species
+		local ctrls coverage tree_cover temp rain all_species duration
 		local slx_b dist_f_cum_km2_slx_bc dist_nf_cum_km2_slx_bc
 		
 		*------------------------
@@ -590,7 +734,7 @@ if `robustness' == 1 {
 			graphregion(color(white)) bgcolor(white) grid(glcolor(gs15)) ///
 			mlabel format(%9.2g) mlabposition(12) mlabgap(*2) mlabsize(medium) ///
 			xlabel(-1.5(0.5)0) title("Panel B: Temporal Lag") saving(dlag, replace)
-		
+		eststo clear
 		graph combine slx.gph dlag.gph
 		graph export "${TABLE}/fig/spillovers.png", replace
 	}
@@ -602,15 +746,20 @@ if `robustness' == 1 {
 		drop_outliers
 	
 		* Controls
-		local ctrls coverage tree_cover temp rain all_species
+		local ctrls coverage tree_cover temp rain all_species duration
 		local slx_b dist_f_cum_km2_slx_bc dist_nf_cum_km2_slx_bc
 		la var dist_f_cum_km2 "Deforestation (Stage 2)"
 		la var dist_f_cum_km2_slx_bc "SLX Deforestation (Stage 2)"
 		
-		// Seasonality
+		// Additional Controls/FEs
 		
-		* 1. User x Month FE 
-		eststo: qui reghdfe s_richness dist_f_cum_km2 dist_nf_cum_km2 ///
+		* 1. Additional Controls
+		eststo clear
+		eststo: reg_sat s_richness dist_f_cum_km2 dist_nf_cum_km2 `ctrls' ///
+			group_size distance
+		
+		* 2. User x Month FE 
+		eststo: reghdfe s_richness dist_f_cum_km2 dist_nf_cum_km2 ///
 			`ctrls' n_mon_yr u_lin, ///
 			a(user_id#month c_code_2011_num state_code_2011_num#year) ///
 			vce(cl state_code_2011_num#year)
@@ -619,13 +768,13 @@ if `robustness' == 1 {
 				estadd local st_y_fe "x"
 				estadd local u_trend "Linear"
 		
-		* 2. User x Year, Cubic Trend
+		* 3. User x Year, Cubic Trend
 		eststo: reg_sat s_richness dist_f_cum_km2 dist_nf_cum_km2 `ctrls' u_cubic
 			estadd local u_trend "Cubic"
 		
 		// SLX Weight Matrix
 		
-		* 3. W = 1/d
+		* 4. W = 1/d
 		preserve
 			drop *_slx_bc
 			ren *_slx_i *_slx_bc
@@ -633,7 +782,7 @@ if `robustness' == 1 {
 				estadd local u_trend "None"
 			drop *_slx_bc
 		
-		* 4. W = 1/d^2
+		* 5. W = 1/d^2
 			ren *_slx_i2 *_slx_bc
 			eststo: reg_sat s_richness dist_f_cum_km2 dist_nf_cum_km2 `ctrls' `slx_b'
 				estadd local u_trend "None" 
@@ -641,25 +790,26 @@ if `robustness' == 1 {
 		
 		// Illegal Deforestation
 		
-		* 5. Stage 1
+		* 6. Stage 1
 		eststo: reg_sat s_richness dist_f_cum_km2 dist_nf_cum_km2 `ctrls' *_km2_s1
 			estadd local u_trend "None"
 		
-		* 6. Stage 1 SLX
+		* 7. Stage 1 SLX
 		eststo: reg_sat s_richness dist_f_cum_km2 dist_nf_cum_km2 `ctrls' *_s1
 			estadd local u_trend "None"
 		
 		// Alternative Outcomes
 		
-		* 7. IHS
-		eststo: reg_sat s_richness_ihs dist_f_cum_km2 dist_nf_cum_km2 `ctrls'
+		* 8. Semi-IHS
+		eststo: reg_sat s_richness dist_f_cum_ihs dist_nf_cum_ihs `ctrls'
 			estadd local u_trend "None"
 			
-		* 8. Species Richness (across all trips in dist-ym)
-		eststo: reg_sat s_richness_all dist_f_cum_km2 dist_nf_cum_km2 `ctrls'
+		* 9. Species Richness (across all trips in dist-ym)
+		eststo: reg_sat s_richness_udym dist_f_cum_km2 dist_nf_cum_km2 `ctrls'
 			estadd local u_trend "None"
+			sum s_richness_udym if e(sample)
 		
-		* 9. Only trips where all species reported
+		* 10. Only trips where all species reported
 		preserve
 			
 			use "${DATA}/dta/fc_ebd_user_allreported", clear
@@ -667,6 +817,7 @@ if `robustness' == 1 {
 			
 			eststo: reg_sat s_richness dist_f_cum_km2 dist_nf_cum_km2 `ctrls'
 				estadd local u_trend "None"
+				
 		
 		restore
 			
@@ -675,7 +826,7 @@ if `robustness' == 1 {
 			st_m_fe u_trend N r2, labels(`"User x Month FEs"' `"User x Year FEs"' ///
 			`"District FEs"' `"State x Year FEs"' `"State x Month FEs"' ///
 			`"User Trend"' `"N"' `"R^2"') fmt(0 0 0 0 0 0 0 3)) nomtitles ///
-			mlabel("User-Month" "User-Year" "W=1/d" "W=1/d^2" "Stage 1" "SLX Stage 1" ///
+			mlabel("Add. Controls" "User-Month" "User-Year" "W=1/d" "W=1/d^2" "Stage 1" "SLX Stage 1" ///
 			"IHS" "All Trips" "All Species Reported") star(* .1 ** .05 *** .01) label ///
 			nonotes se b(%5.3f) se(%5.3f)
 		eststo clear

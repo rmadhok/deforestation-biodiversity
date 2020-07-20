@@ -18,6 +18,7 @@ require(raster)
 require(lubridate)
 require(sp)
 require(rgdal)
+require(stargazer)
 
 # Read Custom Functions
 source(paste(save_path_head, 'scripts/R/ebird_functions.R', sep=''))
@@ -32,7 +33,22 @@ colnames(ebird) <- make.names(colnames(ebird))
 ebird$OBSERVATION.DATE <- ymd(ebird$OBSERVATION.DATE)
 ebird$YEAR <- year(ebird$OBSERVATION.DATE)
 ebird$YEARMONTH <- format(ebird$OBSERVATION.DATE, "%Y-%m")
-ebird <- filter(ebird, YEAR > 2014)
+ebird_14 <- filter(ebird, YEAR == 2014)
+ebird <- filter(ebird, YEAR > 2014) # n = 12,839,677
+
+usage14 <- ebird_14 %>% 
+  group_by(YEARMONTH) %>% 
+  summarize(users = n_distinct(OBSERVER.ID),
+            trips = n_distinct(SAMPLING.EVENT.IDENTIFIER),
+            districts = n_distinct(COUNTY),
+            mean = users/sum(users))
+
+usage15 <- ebird %>% 
+  filter(YEAR == 2015) %>%
+  group_by(YEARMONTH) %>% 
+  summarize(users = n_distinct(OBSERVER.ID),
+            trips = n_distinct(SAMPLING.EVENT.IDENTIFIER),
+            districts = n_distinct(COUNTY))
 
 ## 2. OVERLAY DISTRICT CENSUS CODES -----------------------------------------------------
 
@@ -65,6 +81,19 @@ rm(list='ebird_oob')
 
 # All species reported (n=12,380,423) (COMMENT OUT FOR MAIN ANALYSIS)
 #ebird <- filter(ebird, ALL.SPECIES.REPORTED == 1)
+
+# Export protocol list for SM
+protocol <- ebird %>%
+  distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
+  group_by(PROTOCOL.TYPE) %>%
+  summarize(`Num. Trips` = n()) %>%
+  mutate(Pct. = round((`Num. Trips`/sum(`Num. Trips`)*100),2)) %>%
+  rename(Protocol = PROTOCOL.TYPE) %>%
+  arrange(desc(Pct.))
+pcol_stat <- stargazer(protocol, 
+                       type = 'html', 
+                       summary=F, rownames=F, 
+                       out=paste(save_path_head, 'docs/manuscript/tables/protocol.doc', sep=''))
 
 # Protocol (stationary, travelling, banding, random) (n=12,252,132)
 ebird <- filter(ebird, PROTOCOL.CODE %in% c('P21', 'P22', 'P33', 'P48'))

@@ -9,15 +9,14 @@ replace state = "odisha" if state == "orissa"
 replace district = "nicobars" if district == "nicobar"
 replace district = "north & middle andaman" if district == "north and middle andaman"
 
-replace district = "y.s.r" if (state == "andhra pradesh" & district == "kadapa") | (state == "andhra pradesh" & district == "cuddapah")
-replace district = "sri potti sriramulu nellore" if state == "andhra pradesh" & district == "nellore"
-
 replace district = "balemu east kameng" if state == "arunachal pradesh" & district == "east kameng"
 
 replace district = "tinsukia" if state == "assam" & district == "digboi"
 replace district = "karbi anglong" if state == "assam" & district == "diphu"
 replace district = "dima hasao" if state == "assam" & district == "north cachar hills"
 replace district = "dima hasao" if state == "assam" & district == "haflong"
+replace district = "nagaon" if state == "assam" & district == "hojai" // new
+replace district = "karbi anglong" if district == "west karbi anglong" // new
 
 replace district = "kaimur (bhabua)" if state == "bihar" & district == "kaimur"
 replace district = "purba champaran" if state == "bihar" & district == "east champaran"
@@ -25,8 +24,15 @@ replace district = "purba champaran" if state == "bihar" & district == "east cha
 replace district = "dakshin bastar dantewada" if state == "chhattisgarh" & district == "dantewada"
 replace district = "kabeerdham" if state == "chhattisgarh" & district == "kabirdham"
 replace district = "uttar bastar kanker" if state == "chhattisgarh" & district == "kanker"
+replace district = "surguja" if state == "chhattisgarh" & district == "balrampur" //nwq
+replace district = "durg" if state == "chhattisgarh" & district == "bemetara" //mew
+replace district = "raipur" if state == "chhattisgarh" & district == "gariaband" //new
+replace district = "bastar" if state == "chhattisgarh" & district == "kondagaon" //new
+replace district = "bastar" if state == "chhattisgarh" & district == "sukma" //new
+replace district = "surguja" if state == "chhattisgarh" & district == "surajpur" //new
 
 replace district = "dadra & nagar haveli" if district == "dadra and nagar haveli"
+replace district = "dadra & nagar haveli" if district == "silvassa" //new
 
 replace district = "ahmadabad" if state == "gujarat" & district == "ahmedabad"
 replace district = "banas kantha" if state == "gujarat" & district == "banaskantha"
@@ -35,6 +41,10 @@ replace district = "the dangs" if state == "gujarat" & district == "dang"
 replace district = "junagadh" if state == "gujarat" & district == "junagarh"
 replace district = "kachchh" if state == "gujarat" & district == "kutch"
 replace district = "panch mahals" if state == "gujarat" & district == "panchmahal"
+replace district = "sabar kantha" if state == "gujarat" & district == "arvalli" //new
+replace district = "vadodara" if state == "gujarat" & district == "chhota udaipur" //ne
+replace district = "jamnagar" if state == "gujarat" & district == "devbhumi dwarka" //mew
+replace district = "junagadh" if state == "gujarat" & district == "gir somnath" //new
 
 replace district = "kangra" if state == "himachal pradesh" & district == "dharmshala"
 replace district = "lahul & spiti" if district == "lahul and spiti"
@@ -61,6 +71,8 @@ replace district = "pune" if state == "maharashtra" & district == "junnar"
 replace district = "mumbai suburban" if state == "maharashtra" & district == "mumbai (suburban)"
 replace district = "mumbai" if state == "maharashtra" & district == "mumbai city"
 replace district = "raigarh" if state == "maharashtra" & district == "raigad"
+replace district = "thane" if state == "maharashtra" & district == "palghar" //new
+
 
 replace district = "imphal east" if state == "manipur" & district == "manipur(east)"
 replace district = "imphal west" if state == "manipur" & district == "manipur(west)"
@@ -80,6 +92,8 @@ replace district = "shahid bhagat singh nagar" if (state == "punjab" & district 
 replace district = "tarn taran" if state == "punjab" & district == "tran taran"
 replace district = "rupnagar" if state == "punjab" & district == "ropar"
 replace district = "muktsar" if state == "punjab" & district == "shri muktsar sahib"
+replace district = "firozpur" if state == "punjab" & district == "fazilka" //nre
+replace district = "gurdaspur" if state == "punjab" & district == "pathankot" //new
 
 replace district = "chittaurgarh" if state == "rajasthan" & district == "chittorgarh"
 replace district = "dhaulpur" if state == "rajasthan" & district == "dholpur"
@@ -100,6 +114,9 @@ replace district = "tiruchirappalli" if state == "tamilnadu" & district == "tric
 replace district = "dhalai" if state == "tripura" & district == "dhalai district"
 replace district = "north tripura" if state == "tripura" & district == "district north"
 replace district = "south tripura" if state == "tripura" & district == "district south"
+replace district = "south tripura" if state == "tripura" & district == "gomati" // new
+replace district = "west tripura" if district == "khowai" | district == "sepahijala" //new
+replace district = "north tripura" if state == "tripura" & district == "unakoti" // new
 
 replace district = "baghpat" if state == "uttar pradesh" & district == "bagpat"
 replace district = "kanshiram nagar" if state == "uttar pradesh" & district == "kashiram nagar"
@@ -109,6 +126,9 @@ replace district = "rae bareli" if state == "uttar pradesh" & district == "raeba
 replace district = "sant ravidas nagar (bhadohi)" if state == "uttar pradesh" & district == "sant ravidas nagar"
 replace district = "sant ravidas nagar (bhadohi)" if state == "uttar pradesh" & district == "bhadoi"
 replace district = "mahamaya nagar" if state == "uttar pradesh" & district == "hathras"
+replace district = "jyotiba phule nagar" if state == "uttar pradesh" & district == "amroha" //new
+replace district = "kanshiram nagar" if state == "uttar pradesh" & district == "kasgang" //new
+replace district = "muzaffarnagar" if state == "uttar pradesh" & district == "shamli" //new
 
 replace district = "hardwar" if state == "uttarakhand" & district == "haridwar"
 replace district = "garhwal" if state == "uttarakhand" & district == "pauri garhwal"
@@ -118,4 +138,21 @@ replace district= "darjiling" if state == "west bengal" & district == "darjeelin
 replace district= "paschim medinipur" if state == "west bengal" & district == "medinipur"
 replace district= "paschim medinipur" if state == "west bengal" & district == "west medinipur"
 replace district= "puruliya" if state == "west bengal" & district == "purulia"
+
+
+// TELANGANA
+replace state = "andhra pradesh" if state == "telangana"
+replace district = "y.s.r" if (state == "andhra pradesh" & district == "kadapa") | (state == "andhra pradesh" & district == "cuddapah")
+replace district = "sri potti sriramulu nellore" if state == "andhra pradesh" & district == "nellore"
+replace district = "khammam" if district == "bhadradri kothagudem"
+replace district = "karimnagar" if district == "jagtiyal"
+replace district =  "warangal" if district == "jayashankar bhupalapalli"
+replace district = "adilabad" if district == "mancherial"
+replace district = "adilabad" if district == "nirmal"
+replace district = "nizamabad" if district == "komarambheem asifabad"
+replace district = "karimnagar" if district == "peddapalli"
+replace district = "medak" if district == "sangareddy"
+replace district = "rangareddy" if district == "rangareddi"
+replace district = "nizamabad" if district == "kamareddy"
+
 
