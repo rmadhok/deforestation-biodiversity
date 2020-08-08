@@ -5,7 +5,6 @@
 
 ### SET-UP
 # Directories
-rm(list=ls())
 read_path_head <- '/Volumes/Backup Plus/research/def_biodiv/ebird'
 save_path_head <- '/Users/rmadhok/Dropbox (Personal)/def_biodiv/'
 dist_shp <- '/Users/rmadhok/Dropbox (Personal)/IndiaPowerPlant/data/'
@@ -34,7 +33,7 @@ colnames(ebird) <- make.names(colnames(ebird))
 ebird$OBSERVATION.DATE <- ymd(ebird$OBSERVATION.DATE)
 ebird$YEAR <- year(ebird$OBSERVATION.DATE)
 ebird$YEARMONTH <- format(ebird$OBSERVATION.DATE, "%Y-%m")
-ebird <- filter(ebird, YEAR > 2014) # n = 12,839,677, 13484 users, 726,420 trips
+ebird <- filter(ebird, YEAR > 2014) # n = 12,839,677
 
 ## 2. INITIAL FILTERING --------------------------------------------------------------
 
@@ -68,13 +67,8 @@ ebird_dd <- distinct(ebird_nm, GROUP.IDENTIFIER, TAXONOMIC.ORDER, .keep_all = T)
 ebird <- rbind(ebird_m, ebird_dd)
 rm(list=c('ebird_dd', 'ebird_m', 'ebird_nm', 'protocol'))
 
-# Drop if species richness = 1 (n=8,514,319, 11,745 users)
-ebird <- ebird %>% 
-  group_by(SAMPLING.EVENT.IDENTIFIER) %>%
-  mutate(sr = n()) %>%
-  filter(sr > 1) %>%
-  ungroup()
-  
+
+
 ## 2. OVERLAY DISTRICT CENSUS CODES -----------------------------------------------------
 
 # Load Distric Map
@@ -87,10 +81,20 @@ ebird$c_code_2011 <- as.data.frame(st_join(st_as_sf(ebird,
                                                     crs = 4326), 
                                            india_districts, join = st_intersects))$c_code_11
 
-# Remove out-of-bounds birds (n = 8,479,171)
-ebird_oob <- ebird %>% filter(is.na(c_code_2011)) # (n=35,148, 805 users, 2570 trips, 64 districts)
+# Remove out-of-bounds birds (n = 8,528,858)
+ebird_oob <- ebird %>% filter(is.na(c_code_2011)) # 3429 trips in 65 (coastal?) districts have missing district codes.
 ebird <- ebird %>% filter(!is.na(c_code_2011))
 rm(list='ebird_oob')
+# Assign nearest district code to out-of-bounds trips
+#ebird_oob <- ebird %>% filter(is.na(c_code_2011)) %>% dplyr::select(-c_code_2011) # 3429 trips in 65 districts have missing overlay (boat trips)
+#ebird_oob$ID <- st_nearest_feature(st_as_sf(ebird_oob, 
+#                                            coords = c('LONGITUDE', 'LATITUDE'), 
+#                                            crs = 4326), india_districts) # ID of nearest district
+#ebird_oob <- merge(ebird_oob, st_drop_geometry(india_districts)[ ,c('ID','c_code_11')], 
+#                   by = 'ID', all.x = TRUE) # Get census code of nearest district
+#ebird_oob <- ebird_oob %>% dplyr::select(-ID) %>% rename(c_code_2011 = c_code_11)
+#ebird <- filter(ebird, !is.na(c_code_2011))
+#ebird <- rbind(ebird, ebird_oob) 
 
 ## 3. CONSTRUCT VARS -------------------------------------------------------------------
 
@@ -106,7 +110,11 @@ ebird <- ebird %>%
   group_by(OBSERVER.ID, YEARMONTH) %>%
   mutate(sr_uym = n_distinct(TAXONOMIC.ORDER)) %>% # species richness per user-year-month
   group_by(OBSERVER.ID, c_code_2011, YEARMONTH) %>%
-  mutate(sr_udym = n_distinct(TAXONOMIC.ORDER))
+  mutate(sr_udym = n_distinct(TAXONOMIC.ORDER)) %>%
+  group_by(OBSERVER.ID, c_code_2011, YEAR) %>%
+  mutate(sr_udyr = n_distinct(TAXONOMIC.ORDER)) %>% # species richness per user-district-year-month
+  group_by(SAMPLING.EVENT.IDENTIFIER) %>%
+  mutate(sr = n()) # Species richenss per trip
 
 ## 4. OTHER DIVERSITY INDICES ------------------------------------------------------------------
 
@@ -122,7 +130,7 @@ ebird <- ebird %>%
          si_index = 1 - ((sum(OBSERVATION.COUNT*(OBSERVATION.COUNT - 1), na.rm = T)) /
                                  (sum(OBSERVATION.COUNT, na.rm = T)*(sum(OBSERVATION.COUNT, na.rm = T) - 1))))
 
-# Trip-level (n=583,057 trips, 11,722 users)
+# Trip-level (n=632,744 trips, 12,579 users) // w/ OOB: (n=636,173 trips, 12,606 users)
 ebird_trip <- ebird %>% 
   distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
   dplyr::select(OBSERVATION.DATE, OBSERVER.ID, SAMPLING.EVENT.IDENTIFIER,
@@ -131,6 +139,28 @@ ebird_trip <- ebird %>%
                 c_code_2011, n_mon_yr, starts_with('sr'), sh_index, si_index)
 
 # ----- Additional Filtering ----------
+
+# Remove trips w/ only 1 speces (n = 583,057 trips, 11,722 users)
+#ebird_trip <- filter(ebird_trip, sr > 1)
+
+# Distribution of Duration (FIX HORIZONAL LABEL)
+#ggplot(ebird_trip, aes(x=DURATION.MINUTES)) + 
+#  stat_bin(aes(y=..count../sum(..count..)), binwidth = 60) +
+#  ylab('Density') +
+#  geom_vline(xintercept = quantile(ebird_trip$DURATION.MINUTES, probs = 0.95, na.rm=T), 
+#             linetype = 'dashed') +
+#  geom_text(aes(x=240, label="240 mins", y=0.3), angle=90) +
+#  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+#  theme(panel.grid.minor = element_blank(), 
+#        axis.title.x = element_blank(),
+#        axis.line = element_blank(), 
+#        axis.ticks = element_blank(),
+#        text = element_text(size=15))
+
+# Between 1st and 95% percentile (n=554,605 trips, 11,104 users)
+q1 <- quantile(ebird_trip$DURATION.MINUTES, probs = 0.01, na.rm=T)
+q95 <- quantile(ebird_trip$DURATION.MINUTES, probs = 0.95, na.rm=T) 
+ebird_trip <- filter(ebird_trip, DURATION.MINUTES >= q1 & DURATION.MINUTES <= q95)
 
 #write.csv(ebird_trip,
 #          paste(save_path_head, 'data/csv/ebird_trip.csv', sep=""),
@@ -142,6 +172,7 @@ ebird_user <- ebird_trip %>%
   summarize(n_trips=n(),
             sr=mean(sr, na.rm=T),
             sr_udym=first(sr_udym),
+            sr_udyr=first(sr_udyr),
             sr_uym=first(sr_uym),
             sr_uyr=first(sr_uyr),
             sr_ym=first(sr_ym),
@@ -177,12 +208,12 @@ count_df <- spatial_coverage(bird_coords, grid)
 # Aggregate to District
 coverage_all <- count_df %>% 
   group_by(c_code_2011) %>% 
-  summarize(coverage_all = mean(bird_obs, na.rm=T)) 
+  summarize(coverage_all = mean(bird_obs)) 
   
 # Write
-#write.csv(coverage_all, 
-#        paste(save_path_head, 'data/csv/coverage_dist_grid_', grid_res,'km.csv', sep=""),
-#        row.names = F)
+write.csv(coverage_all, 
+        paste(save_path_head, 'data/csv/coverage_dist_grid_', grid_res,'km.csv', sep=""),
+        row.names = F)
 
 # Compute Monthly Spatial Coverage
 ebird$YEARMONTH <- as.factor(ebird$YEARMONTH)
@@ -201,7 +232,7 @@ for(ym in levels(ebird$YEARMONTH)){
   # Aggregate to District
   dist_ym_coverage <- count_df %>%
     group_by(c_code_2011) %>%
-    summarize(coverage = mean(bird_obs, na.rm=T))
+    summarize(coverage = mean(bird_obs))
   
   # Time
   dist_ym_coverage$yearmonth <- ym
