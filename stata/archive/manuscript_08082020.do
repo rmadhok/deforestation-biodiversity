@@ -24,17 +24,15 @@ set matsize 10000
 gl ROOT 	"/Users/rmadhok/Dropbox (Personal)/def_biodiv"
 gl DATA 	"${ROOT}/data"
 gl TABLE	"${ROOT}/docs/manuscript/"
-cd "${TABLE}"
 
-// Modules
-local sumstats			0
+// Module
+local sumstats			1
 local learning			0
 local event_study		0
 local main_analysis		0
 local simulation		0
-local robustness		1
+local robustness		0
 	local spillovers	0
-	local patch			1
 	local others		0
 
 set scheme modern
@@ -79,7 +77,7 @@ if `sumstats' == 1 {
 	* Read
 	use "${DATA}/dta/fc_ebd_user", clear
 	drop_outliers
-
+	
 	* Tag district
 	bys c_code_2011: egen any_def = max(dist_f > 0 & dist_f!=.)
 	egen tag_d = tag(c_code_2011) //district-level
@@ -104,46 +102,25 @@ if `sumstats' == 1 {
 	eststo clear
 	eststo A: estpost tabstat `dist_vars' if tag_d & any_def, s(n mean sd) c(s)
 	eststo B: estpost tabstat `dist_vars' if tag_d & !any_def, s(n mean sd) c(s)
-	/*
 	esttab A B using "${TABLE}/tables/sumstats_biodiv.rtf", replace main(mean) ///
 		aux(sd) cells("mean(fmt(2)) sd(fmt(2)) count(fmt(0))") ///
 		mgroups("Deforestation Districts" "Non-deforestation Districts", pattern(1 1)) ///
 		collabel("Mean" "Std. Dev." "N") refcat(tot_area "District Variables", ///
 		nolabel) nomtitle noobs label unstack nonumber
-	*/
-	esttab A B using "/Users/rmadhok/Dropbox (Personal)/dissertation/proposal/tables/sumstats_ebd.tex", ///
-		replace f main(mean) aux(sd) cells("mean(fmt(2)) sd(fmt(2)) count(fmt(0))") ///
-		mgroups("Deforestation Districts" ///
-		"Non-deforestation Districts", pattern(1 1) ///
-		prefix(\multicolumn{@span}{c}{) suffix(}) span erepeat(\cmidrule(lr){@span})) ///
-		collabel("Mean" "Std. Dev." "N", prefix({) suffix(})) ///
-		refcat(tot_area "\underline{\emph{District Variables}}" , nolabel) ///
-		nomtitle booktabs noobs label unstack nonumber
-		
+	
 	** Birdwatching Details
 	eststo clear
 	eststo A: estpost tabstat `trip' if any_def, s(n mean med sd) c(s)
 	eststo B: estpost tabstat `trip' if !any_def, s(n mean med sd) c(s)
-	
-	/*
 	esttab A B using "${TABLE}/tables/sumstats_biodiv.rtf", append main(mean) aux(sd) ///
 		cells("mean(fmt(2)) sd(fmt(2)) count(fmt(0))") ///
 		refcat(sr "Outcome" , nolabel) nomtitle collabel(none) ///
 		noobs label unstack nonumber plain
-	*/	
-	
-	esttab A B using "/Users/rmadhok/Dropbox (Personal)/dissertation/proposal/tables/sumstats_ebd.tex", ///
-		append f main(mean) aux(sd) cells("mean(fmt(2)) sd(fmt(2)) count(fmt(0))") ///
-		refcat(sr "\underline{\emph{Outcome}}" , nolabel) nomtitle collabel(none) ///
-		width(\hsize) nomtitle booktabs noobs label ///
-		unstack nonumber plain
 	
 	** Covariates
 	eststo clear
 	eststo A: estpost tabstat `covariates' if any_def, s(n mean med sd) c(s)
 	eststo B: estpost tabstat `covariates' if !any_def, s(n mean med sd) c(s)
-	
-	/*
 	esttab A B using "${TABLE}/tables/sumstats_biodiv.rtf", append main(mean) ///
 		aux(sd) cells("mean(fmt(2)) sd(fmt(2)) count(fmt(0))") ///
 		refcat(tree_cover "Covariates" , nolabel) nomtitle collabel(none) ///
@@ -151,13 +128,6 @@ if `sumstats' == 1 {
 		addnotes("Note: Spatial coverage is the fraction of grid cells in a district" ///
 		"containing at least one bird observation over the study period using a" ///
 		"5km x 5km grid")
-	*/
-	
-	esttab A B using "/Users/rmadhok/Dropbox (Personal)/dissertation/proposal/tables/sumstats_ebd.tex", ///
-		append f main(mean) aux(sd) cells("mean(fmt(2)) sd(fmt(2)) count(fmt(0))") ///
-		width(\hsize) refcat(tree_cover "\underline{\emph{Covariates}}" , nolabel) ///
-		nomtitle collabel(none) booktabs noobs label unstack nonumber plain ///
-		addnotes("Note:") 
 	
 	*-----------------------------------
 	* 3. Table: CDF OF N_TRIPS
@@ -180,15 +150,14 @@ if `sumstats' == 1 {
 			local title: word `i' of `lab'
 			hist `v', frac bcolor(dknavy) ///
 				title("`title'") ytitle("% of Users") xtitle("") ///
-				saving("${TABLE}/fig/`v'.gph", replace)
+				saving(`v'.gph, replace)
 			graph export "${TABLE}/fig/hist_`v'.png", replace
 			local ++i
 		}
-		graph combine "${TABLE}/fig/n_st_user.gph" "${TABLE}/fig/n_dist_user.gph" "${TABLE}/fig/n_ym_user.gph", iscale(1.1)
+		graph combine n_st_user.gph n_dist_user.gph n_ym_user.gph
 		graph export "${TABLE}/fig/user_variation.png", replace
 	
-	restore
-	
+	restore	
 	*-----------------------------------
 	* 4. Table: Forest Clearance
 	*-----------------------------------
@@ -301,8 +270,32 @@ if `learning' == 1 {
 			684 "Jan-17" 690 "Jul-17" 696 "Jan-18" 702 "Jul-18", ///
 			labsize(medium)angle(45)) legend(order(2 "Species" "Richness" ///
 			1 "Num." "Trips") size(medsmall)) fysize(37.5) ///
-			title("A", pos(1) size(large)) saving(season.gph, replace) 
+			title("A", pos(1)) saving(season.gph, replace) 
 	restore
+
+	/*
+	// 2. Per User
+	preserve 
+		
+		collapse (first) sr_uym, by(user_id year_month)
+		statsby, by(year_month) clear: ci means sr_uym
+		format year_month %tmCCYY-NN
+		*ciplot s_richness_uym, by(year_month)
+		
+		twoway (rcap lb ub year_month, color(gs10)) ///
+		   (connected mean year_month, mcolor(black) ///
+		   lpattern(solid) lcolor(black) msymbol(o)), ///
+		   yline(0) xline(0, lpattern(dash)) ///
+		   graphregion(color(white)) bgcolor(white) ///
+		   legend(on order(1 "95% CI" 2 "Mean")) ///
+		   xtitle("Time", size(medium)) ytitle("Species Richness" "(Per User)", ///
+		   size(medium)) yscale(titlegap(6)) xscale(titlegap(4)) ///
+		   xlabel(660 "Jan-15" 666 "Jul-15" 672 "Jan-16" 678 "Jul-16" ///
+		   684 "Jan-17" 690 "Jul-17" 696 "Jan-18" 702 "Jul-18", ///
+		   angle(45) labsize(medsmall)) saving(season_u.gph, replace)
+	
+	restore
+	*/
 	
 	// 3. Learning and No Learning Overlay
 	
@@ -361,12 +354,14 @@ if `learning' == 1 {
 			graphregion(color(white)) bgcolor(white) ylabel(, angle(hor)) ///
 			ytitle("Mean User Residual", size(medium)) xtitle("") ///
 			yscale(titlegap(*-30)) ylabel(, labsize(medsmall)) ///
-			legend(order(1 "Full Learning Bias" 3 "Participation Covariate" ///
-			5 "No Learning Bias") size(medsmall) position(6)) ///
+			legend(order(1 "Learning Bias" 3 "Minus Participation" ///
+			5 "No Learning Bias") size(medsmall)) ///
 			xlabel(, labsize(medsmall)) title("C", size(medium) pos(1)) ///
 			fxsize(75) fysize(90) saving(learn_nl.gph, replace)
 
 	restore
+
+	*xlabel(660 "Jan-15" 666 "Jul-15" 672 "Jan-16" 678 "Jul-16" 684 "Jan-17" 690 "Jul-17" 696 "Jan-18" 702 "Jul-18", angle(45))
 
 	// 4. BirdLife
 	preserve
@@ -384,7 +379,7 @@ if `learning' == 1 {
 			yscale(titlegap(3)) xscale(titlegap(3)) ///
 			graphregion(color(white)) bgcolor(white) ///
 			legend(order(1 "Mean" 2 "95% CI") size(medium)) ///
-			title("B", pos(1) size(large)) fysize(37.5) saving(dist.gph, replace)
+			title("B", pos(1)) fysize(37.5) saving(dist.gph, replace)
 	restore
 	
 	* combine
@@ -402,73 +397,14 @@ if `event_study' == 1 {
 	* Read
 	use "${DATA}/dta/fc_ebd_user", clear
 	
-	//1. EVENT STUDY OF FIRST PROJECT OPENING
-	
 	* Prep
 	drop_outliers
 	keep user_id *code* year_month n_trips ///
 		 sr dist_f_cum_km2 coverage ///
 		 tree_cover temp rain all_species ///
-		 group_size month year duration u_lin
+		 group_size month year duration
 	local controls coverage tree_cover temp rain all_species duration
 	
-	* Event Date
-	bys c_code_2011 (year_month): gen e_date = year_month if ///
-		dist_f_cum_km2[_n] != dist_f_cum_km2[_n-1]
-	bys c_code_2011 (year_month): replace e_date = . if _n == 1 
-	
-	* Fill
-	bys c_code_2011 (year_month): carryforward e_date, gen(event_date)
-	gen nym = -year_month
-	bysort c_code_2011 (nym): carryforward event_date, replace
-	sort c_code_2011 year_month
-	drop nym
-	
-	* Keep First Project
-	bys c_code_2011 (year_month): egen first = min(event_date)
-	keep if event_date == first
-	drop if event_date == . & first == .
-	format event_date %tmCCYY-NN
-	
-	* Time to Construction
-	gen dif = year_month - event_date
-	*gen dif = (year_month-event_date) + 1 // relative to month before construction
-	keep if inrange(dif, -6, 10) // 6 month window
-	
-	* Event dummies
-	tostring dif, replace
-	tab dif, gen(e_)
-	foreach v of varlist e_* {
-		local x : variable label `v'
-		local y = subinstr("`x'", "dif==", "",.)
-		la var `v' "`y'"
-	}
-	
-	* Regression (try 12)
-	reghdfe sr e_6 e_5 e_4 e_3 e_2 e_1 e_8 e_10-e_17 e_9 ///
-		`controls' [aweight=n_trips], ///
-		a(user_id#year c_code_2011_num state_code_2011_num#month)
-	
-	parmest, label list(parm label estimate min* max* p) saving(results, replace)
-	use results, clear
-	
-	replace parm = label
-	destring parm, replace force
-	drop if parm == . | p == .
-	
-	twoway (rcap min95 max95 parm, sort color(gs5) lpattern(shortdash)) ///
-		   (connected  estimate parm, sort mcolor(black) mfcolor(white) ///
-		   lpattern(solid) lcolor(black) msymbol(D)), ///
-		   yline(0, lcolor(maroon) lpattern(solid)) ///
-		   xline(0, lcolor(maroon) lpattern(solid)) ///
-		   legend(on order(1 "95% CI" 2 "Coefficient")) ///
-		   xtitle("Months Since Construction", size(medium)) ///
-		   ytitle("Species Richness Relative" "To Month of Construction", ///
-		   size(medium)) yscale(titlegap(6)) xlabel(-6(2)10) ///
-		   saving("${TABLE}/fig/event_study.gph", replace)
-	graph export "${TABLE}/fig/event_study.png", width(1000) replace
-	
-	/*
 	* Construct Event Dummies
 	
 	* Event Date
@@ -483,7 +419,7 @@ if `event_study' == 1 {
 	sort c_code_2011 year_month
 	drop nym
 	format event_date %tmCCYY-NN
-
+	
 	* Time to Construction
 	gen dif = year_month-event_date
 	keep if inrange(dif, -6, 6) // 6 month window
@@ -520,7 +456,7 @@ if `event_study' == 1 {
 		   size(medium)) yscale(titlegap(6)) xlabel(-6(1)6) 
 
 	graph export "${TABLE}/fig/event_study.png", replace
-	*/
+	
 }
 
 *===============================================================================
@@ -537,45 +473,26 @@ if `main_analysis' == 1 {
 	
 	la var dist_f_cum_km2 "Deforestation (\(km^{2}\))"
 	
-	* Main Results
+	* Fig 1 - Plot
 	eststo clear
 	eststo m1: reghdfe sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls' [aweight=n_trips], ///
 		a(user_id c_code_2011_num state_code_2011_num#month year) ///
 		vce(cl state_code_2011_num#year)
-		
-		estadd local user_fe "x"
-		estadd local dist_fe "x"
-		estadd local st_m_fe "x"	
-		
 	eststo m2: reghdfe sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls' [aweight=n_trips], ///
 		a(user_id#year c_code_2011_num state_code_2011_num#month) ///
 		vce(cl state_code_2011_num#year)
-		
-		estadd local user_y_fe "x"
-		estadd local dist_fe "x"
-		estadd local st_m_fe "x"
 		sum sr if e(sample)
-
-	* Coefficient Plot
-	coefplot (m1, rename(dist_f_cum_km2 = `" "(1) Learning" "Bias" "') \ m2, ///
-		rename(dist_f_cum_km2 = `" "(2) No Learning" "Bias" "')), ///
-		keep(dist_f*) xline(0, lcolor(maroon) lpattern(solid)) ///
-		coeflabels(, labsize(medium)) mlabsize(medium) mlabcolor(black) ///
-		ciopts(recast(rcap) lpattern(shortdash) lcolor(gs5)) msize(medium) ///
-		mfcolor(white) msymbol(D) mlcolor(black) mlabel format(%9.2g) ///
-		mlabposition(1) mlabgap(*2) xlabel(, labsize(medium)) ///
-		ylabel(, labsize(medium)) title("A", size(large)) ///
-		saving("${TABLE}/fig/main.gph", replace)
-	graph export "${TABLE}/fig/main.png", replace
-	eststo clear
 	
-	* Table
-	esttab using "${TABLE}/tables/main.rtf", replace ///
-		stats(user_fe user_y_fe dist_fe st_m_fe N r2, ///
-		labels(`"User FEs"' `"User x Year FEs"' ///
-		`"District FEs"' `"State x Month FEs"'  `"N"' `"R2"') fmt(0 0 0 0 0 3)) ///
-		mlabel("Learning Bias" "No Learning Bias") star(* .1 ** .05 *** .01) ///
-		label nomtitles nonotes se b(%5.3f) se(%5.3f)
+	coefplot (m1, rename(dist_f_cum_km2 = "Learning Bias") \ m2, ///
+		rename(dist_f_cum_km2 = "No Learning Bias")), ///
+		keep(dist_f*) xline(0, lcolor(gs5) lpattern(dash)) ///
+		coeflabels(, labsize(medium)) mlabsize(medium) ///
+		ciopts(recast(rcap)) msize(small) mfcolor(white) msymbol(D) ///
+		graphregion(color(white)) bgcolor(white) grid(glcolor(gs15)) ///
+		mlabel format(%9.2g) mlabposition(12) mlabgap(*2) ///
+		xlabel(, labsize(medium)) ylabel(, labsize(medium)) ///
+		title("A") saving(main, replace)
+	graph export "${TABLE}/fig/main.png", replace
 
 	* Fig 2 - Project-Wise Impacts
 	eststo clear
@@ -585,52 +502,18 @@ if `main_analysis' == 1 {
 		dist_nf_mine_cum_km2 dist_nf_o_cum_km2 dist_nf_res_cum_km2 ///
 		dist_nf_tran_cum_km2 `ctrls'
 	
-	coefplot, keep(dist_f*) sort xline(0, lcolor(maroon) lpattern(solid)) ///
-		msize(small) mfcolor(white) msymbol(D) ///
-		ciopts(recast(rcap) lpattern(shortdash) lcolor(gs5)) ///
-		mlabel format(%9.2g) mlabposition(1) mlabcolor(black) /// 
-		coeflabels(, labsize(medium)) mlabsize(medium) mcolor(black) ///
+	coefplot, keep(dist_f*) sort xline(0, lcolor(gs5) lpattern(dash)) ///
+		msize(small) mfcolor(white) msymbol(D) ciopts(recast(rcap)) ///
+		graphregion(color(white)) bgcolor(white) grid(glcolor(gs15))  ///
+		mlabel format(%9.2g) mlabposition(12) /// 
+		coeflabels(, labsize(medium)) mlabsize(medium) ///
 		transform(* = min(max(@,-2),6)) xlabel(, labsize(medium)) ///
-		ylabel(, labsize(medium)) mlabgap(*2) title("B", size(large)) ///
-		saving("${TABLE}/fig/projwise.gph", replace)
+		ylabel(, labsize(medium)) mlabgap(*2) title("B") ///
+		saving(projwise, replace)
 	graph export "${TABLE}/fig/projwise.png", replace
 	
-	* Fragmentation Wise
-	g bin_0 = (dist_f_cum_km2 == 0)
-	g bin_2 = (dist_f_cum_km2 > 0 & dist_f_cum_km2 <=2)
-	g bin_4 = (dist_f_cum_km2 > 2 & dist_f_cum_km2 <=4)
-	g bin_6 = (dist_f_cum_km2 > 4 & dist_f_cum_km2 <=6)
-	g bin_8 = (dist_f_cum_km2 > 6 & dist_f_cum_km2 <=8)
-	g bin_max = (dist_f_cum_km2 > 8)
-	
-	local labels `" "0" "(0-2]" "(2-4]" "(4-6]" "(6-8]" "> 8" "'
-	local i=1
-	foreach x in 0 2 4 6 8 max {
-		local lab: word `i' of `labels'
-		la var bin_`x' "`lab'"
-		local ++i
-	}
-	
-	eststo clear
-	eststo: qui reghdfe sr bin_2-bin_max dist_nf_cum_km2 `ctrls' [aweight=n_trips], ///
-		a(user_id#year c_code_2011_num state_code_2011_num#month) ///
-		vce(cl state_code_2011_num#year)
-
-	coefplot, keep(bin_*) xline(0, lcolor(maroon) lpattern(solid)) ///
-		msize(small) mfcolor(white) msymbol(D) mlabcolor(black) ///
-		ciopts(recast(rcap) lpattern(shortdash) lcolor(gs5)) ///
-		mlabel ytitle("Cuml. Patch Area (km{sup:2})", size(large)) format(%9.2g) mlabposition(1) /// 
-		coeflabels(, labsize(medium)) mlabsize(medium) mcolor(black) ///
-		xlabel(-20(5)10, labsize(medium)) ylabel(, labsize(medium)) ///
-		mlabgap(*2) title("C", size(large)) ///
-		saving("${TABLE}/fig/fragwise.gph", replace)
-	graph export "${TABLE}/fig/fragwise.png", replace
-
-	* MAIN RESULTS
-	graph combine "${TABLE}/fig/main.gph" "${TABLE}/fig/projwise.gph" ///
-		"${TABLE}/fig/fragwise.gph", holes(4)
-	graph export "${TABLE}/fig/main_results.png", width(1000) replace
-		
+	graph combine main.gph projwise.gph
+	graph export "${TABLE}/fig/main_results.png", replace
 
 }
 
@@ -638,28 +521,114 @@ if `main_analysis' == 1 {
 * SIMULATION
 *===============================================================================
 if `simulation' == 1 {
-	*----------------------------------------------------
-	* BACKLOG BETWEEN 1975-2018
-	*----------------------------------------------------
 	
-	* Read post-2014 records
-	import delimited "${DATA}/csv/fc_records.csv", clear
-	keep proposal_status category area_applied state_name
-	replace proposal_status = lower(proposal_status)
-	keep if !inlist(proposal_status, "approved", "closed", "rejected", "rejected by rec", "withdrawn")
-	drop if area_applied > 1000 // 22 mega projects	
-	sum area_applied, d
-	local total_pre = r(sum)
+	* Read 
+	use "${DATA}/dta/fc_ebd_user", clear
+	
+	*-----------------------------------
+	* State-wise constraint
+	*-----------------------------------
+	
+	// State-wise mean species per dist
+	preserve
+		collapse (first) sr_bl state_code_2011, by(c_code_2011)
+		collapse (mean) sr_bl_st = sr_bl, by(state_code_2011)
+		tempfile temp 
+		save "`temp'"
+	restore
+	merge m:1 state_code_2011 using "`temp'", nogen
+	g sr_max = sr_bl_st / 12
+	
+	*-----------------------------------
+	* REDUCTION POLICY
+	*-----------------------------------
+	
+	* Read
+	drop_outliers
+	local ctrls coverage tree_cover temp rain all_species duration
+	
+	* Baseline
+	reg_sat sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls'
 
-	* Read pre-2014 records
-	import delimited "${DATA}/csv/fc_records_pre2014.csv", clear
-	keep proposal_status category area_applied state_name
-	keep if !inlist(proposal_status, "APPROVED", "REJECTED", "RETURNED", "REVOKED", "CLOSED", "WITHDRAWN")
-	drop if area_applied > 1000 // 82 mega projects
-	sum area_applied, d
-	local total_post = r(sum)
+	* Store
+	gen b_cons = _b[_cons]
+	foreach v of varlist dist_f_cum_km2 dist_nf_cum_km2 `ctrls' {
+		
+		gen b_`v' = _b[`v']
+	}
 	
-	local area_total = (`total_post' + `total_pre')/100 // 3817 km2 under review from 1975-2018
+	foreach v of varlist `ctrls' {
+		
+		egen `v'_mean = mean(`v')
+	}
+	
+	forvalues i = 95(-5)5 {
+		
+		di "Simulating Diversity Under `i' % Deforestation..."
+		
+		* Simulate
+		foreach v in dist_f dist_nf {
+			
+			gen `v'_red_`i' = 0 if `v'_cum_km2 != .
+			replace `v'_red_`i' = `v'_cum_km2 * (`i'/100) if `v'_cum_km2 > 0 & `v'_cum_km2 < .
+		}
+
+		* Predicted
+		gen sr_red_`i' = b_cons + (b_dist_f_cum_km2*dist_f_red_`i') + ///
+			(b_dist_nf_cum_km2*dist_nf_red_`i') + (b_coverage*coverage_mean) + ///
+			(b_tree_cover*tree_cover_mean) + (b_temp*temp_mean) + (b_rain*rain_mean) + ///
+			(b_all_species*all_species_mean) + (b_duration*duration_mean) + ///
+			__hdfe1__ + __hdfe2__ + __hdfe3__ + _reghdfe_resid
+		
+	}
+	
+	* State-wise counterfactuals 
+	preserve
+		
+		collapse (first) sr_max (mean) sr_red_*, by(state) 
+		drop if sr_red_30 == .
+		drop if sr_red_95 == sr_red_90
+		reshape long sr_red_, i(state) j(decline)
+		replace decline = 100 - decline
+	
+		// Export for better graphics in R
+		export delimited using "${DATA}/csv/sim_reduction.csv", replace
+	
+	restore
+	
+	*-----------------------------------
+	* RELOCATION POLICY
+	*-----------------------------------
+	drop *_red_*
+	
+	forvalues i = 95(-5)5 {
+		
+		di "Simulating Diversity Under `i' % Deforestation..."
+		
+		* Reduce Forest Diversion by x%
+		gen dist_f_rel_`i' = 0 if dist_f_cum_km2 != .
+		replace dist_f_rel_`i' = dist_f_cum_km2 * (`i'/100) if dist_f_cum_km2 > 0 & dist_f_cum_km2 < .
+		
+		* Shift forest to non-forest diversion
+		gen dist_nf_rel_`i' = dist_nf_cum_km2 + dist_f_cum_km2*((100-`i')/100)
+		
+		* Predicted
+		gen sr_rel_`i' = b_cons + (b_dist_f_cum_km2*dist_f_rel_`i') + ///
+			(b_dist_nf_cum_km2*dist_nf_rel_`i') + (b_coverage*coverage_mean) + ///
+			(b_tree_cover*tree_cover_mean) + (b_temp*temp_mean) + (b_rain*rain_mean) + ///
+			(b_all_species*all_species_mean) + (b_duration*duration_mean) + ///
+			__hdfe1__ + __hdfe2__ + __hdfe3__ + _reghdfe_resid	
+	
+	}
+	
+	collapse (first) sr_max (mean) sr_rel_*, by(state) 
+	drop if sr_rel_30 == .
+	drop if sr_rel_95 == sr_rel_90
+	reshape long sr_rel_, i(state) j(decline)
+	replace decline = 100 - decline
+	
+	// Export for better graphics in R
+	export delimited using "${DATA}/csv/sim_relocation.csv", replace
 
 }
 
@@ -677,7 +646,7 @@ if `robustness' == 1 {
 		* Controls
 		local ctrls coverage tree_cover temp rain all_species duration
 		local slx_b dist_f_cum_km2_slx_bc dist_nf_cum_km2_slx_bc
-
+		
 		*------------------------
 		* SPATIAL SPILLOVERS
 		*------------------------
@@ -688,13 +657,13 @@ if `robustness' == 1 {
 		eststo all_w: reg_sat sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls' `slx_b'
 		
 		// Baseline
-		eststo proj: qui reg_sat sr dist_f_elec_cum_km2 dist_f_irr_cum_km2 ///
+		eststo proj: reg_sat sr dist_f_elec_cum_km2 dist_f_irr_cum_km2 ///
 			dist_f_mine_cum_km2 dist_f_o_cum_km2 dist_f_res_cum_km2 ///
 			dist_f_tran_cum_km2 dist_nf_elec_cum_km2 dist_nf_irr_cum_km2 ///
 			dist_nf_mine_cum_km2 dist_nf_o_cum_km2 dist_nf_res_cum_km2 ///
 			dist_nf_tran_cum_km2 `ctrls'
 		// SLX
-		eststo proj_w: qui reg_sat sr ///
+		eststo proj_w: reg_sat sr ///
 			dist_f_elec_cum_km2 dist_nf_elec_cum_km2 dist_f_elec_cum_km2_slx_bc dist_nf_elec_cum_km2_slx_bc ///
 			dist_f_irr_cum_km2 dist_nf_irr_cum_km2 dist_f_irr_cum_km2_slx_bc dist_nf_irr_cum_km2_slx_bc ///
 			dist_f_mine_cum_km2 dist_nf_mine_cum_km2 dist_f_mine_cum_km2_slx_bc dist_nf_mine_cum_km2_slx_bc ///
@@ -705,16 +674,15 @@ if `robustness' == 1 {
 		
 		coefplot (all proj, label("Baseline")) ///
 				 (all_w proj_w, label("SLX")), ///
-				 keep(dist_f*km2) xline(0, lcolor(maroon) lpattern(solid)) ///
-				 ciopts(recast(rcap) lpattern(shortdash)) ///
+				 keep(dist_f*km2) xline(0, lcolor(gs5) lpattern(dash)) ///
 				 msymbol(D) mfcolor(white) msize(small) ///
-				 xlabel(, labsize(large)) ylabel(, labsize(large)) ///
+				 graphregion(color(white)) bgcolor(white) grid(glcolor(gs15)) ///
 				 transform(* = min(max(@,-5),5)) ///
 				 order(dist_f_cum_km2 dist_f_res_cum_km2 dist_f_o_cum_km2 ///
 				 dist_f_tran_cum_km2 dist_f_elec_cum_km2 dist_f_irr_cum_km2 ///
-				 dist_f_mine_cum_km2)
+				 dist_f_mine_cum_km2) xlabel(, labsize(medsmall))
 		graph export "${TABLE}/fig/projwise_slx.png", replace
-
+		
 		* All Projects
 		
 		// PANEL A: SPATIAL SPILLOVERS
@@ -722,13 +690,12 @@ if `robustness' == 1 {
 		la var dist_f_cum_km2_slx_bc "Spillover Effect"
 		eststo: reg_sat sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls' `slx_b' // binary cont.
 		
-		coefplot, keep(dist_f*) xline(0, lcolor(maroon) lpattern(solid)) ///
-			ciopts(recast(rcap) lpattern(shortdash) lcolor(gs5)) ///
-			msize(small) mfcolor(white) msymbol(D) mlcolor(black) ///
-			coeflabels(, labsize(large)) mlabel format(%9.2g) ///
-			mlabposition(12) mlabgap(*2) mlabsize(medium) mlabcolor(black) ///
-			xlabel(, labsize(large)) title("Panel A: Spatial Lag", size(large)) ///
-			saving("${TABLE}/fig/spatial.gph", replace)
+		coefplot, keep(dist_f*) xline(0, lcolor(gs5) lpattern(dash)) ///
+			ciopts(recast(rcap)) msize(small) mfcolor(white) msymbol(D) ///
+			coeflabels(, labsize(large)) graphregion(color(white)) ///
+			bgcolor(white) grid(glcolor(gs15)) mlabel format(%9.2g) ///
+			mlabposition(12) mlabgap(*2) mlabsize(medium) xlabel(, labsize(medsmall)) ///
+			title("Panel A: Spatial Lag", size(medium)) saving(slx, replace)
 		eststo clear
 		
 		// PANEL B: TEMPORAL SPILLOVERS
@@ -762,94 +729,14 @@ if `robustness' == 1 {
 		
 		coefplot (nolag, rename((1) = "Baseline") \ lag_1, rename((1) = "Sum L0-L1") \ ///
 			lag_3, rename((1) = "Sum L0-L3") \ lag_5, rename((1) = "Sum L0-L5")), ///
-			xline(0, lcolor(maroon) lpattern(solid)) msymbol(D) msize(small) ///
-			mfcolor(white) ciopts(recast(rcap) lcolor(gs5) lpattern(shortdash)) ///
-			coeflabels(, labsize(large)) mlabel format(%9.2g) mlcolor(black) ///
-			mlabposition(12) mlabgap(*2) mlabsize(medium) mlabcolor(black) ///
-			xlabel(-1.5(0.5)0, labsize(large)) title("Panel B: Temporal Lag", ///
-			size(large)) saving("${TABLE}/fig/temporal.gph", replace) 
+			xline(0, lcolor(gs5) lpattern(dash)) msymbol(D) msize(small) ///
+			mfcolor(white) ciopts(recast(rcap)) coeflabels(, labsize(large)) ///
+			graphregion(color(white)) bgcolor(white) grid(glcolor(gs15)) ///
+			mlabel format(%9.2g) mlabposition(12) mlabgap(*2) mlabsize(medium) ///
+			xlabel(-0.5(0.25)0, labsize(medsmall)) title("Panel B: Temporal Lag", size(medium)) saving(dlag, replace)
 		eststo clear
-		graph combine "${TABLE}/fig/spatial.gph" "${TABLE}/fig/temporal.gph"
-		graph export "${TABLE}/fig/spillovers.png", width(1000) replace
-		
-	}
-	
-	if `patch' == 1 {
-		
-		* Read
-		use "${DATA}/dta/fc_ebd_user", clear
-	
-		* Prep
-		local ctrls coverage tree_cover temp rain all_species duration
-		drop_outliers
-	
-		* Patch-wise
-		egen patch_cat = cut(n_patches_cum), at(0, 10, 20, 30, 40, 50, 60, 70)
-		table patch_cat, contents(min n_patches_cum max n_patches_cum)
-		tab patch_cat, gen(patch_cat_)
-		foreach v of varlist patch_cat_* { // interactions
-			g dist_f_`v' = dist_f_cum_km2 * `v'
-		}
-	
-		local labels `" "[0-9]" "[10-19]" "[20-29]" "[30-39]" "[40-49]" "[50-59]" "> 60" "'
-		local i=1
-		forvalues x=1/7 {
-			local lab: word `i' of `labels'
-			la var dist_f_patch_cat_`x' "`lab'"
-			local ++i
-		}
-		eststo clear
-		eststo: qui reghdfe sr dist_f_patch_cat_2-dist_f_patch_cat_7 ///
-			dist_f_cum_km2 patch_cat* dist_nf_cum_km2 `ctrls' [aweight=n_trips], ///
-			a(user_id#year c_code_2011_num state_code_2011_num#month) ///
-			vce(cl state_code_2011_num#year)
-	
-		coefplot, keep(dist_f_patch_*) xline(0, lcolor(maroon) lpattern(solid))  ///
-			msize(small) mfcolor(white) msymbol(D) mcolor(black) ///
-			ciopts(recast(rcap) lpattern(shortdash) lcolor(gs5)) ///
-			mlabel ytitle("Number of Patches", size(large)) format(%9.2g) ///
-			mlabposition(1) coeflabels(, labsize(medium)) mlabcolor(black) ///
-			mlabsize(medium) xlabel(-30(5)10, labsize(medium)) ///
-			ylabel(, labsize(medium)) mlabgap(*2) title("A", size(large)) ///
-			saving("${TABLE}/fig/patchwise.gph", replace)
-		graph export "${TABLE}/fig/patchwise.png", replace
-		
-		* Tree-cover wise
-		egen tcover_cat = cut(tree_cover), at(0, 10, 20, 30, 40, 50, 60, 80)
-		table tcover_cat, contents(min tree_cover max tree_cover)
-		tab tcover_cat, gen(tcover_cat_)
-		foreach v of varlist tcover_cat_* { // interactions
-			g dist_f_`v' = dist_f_cum_km2 * `v'
-		}
-	
-		local labels `" "[0-9]" "[10-19]" "[20-29]" "[30-39]" "[40-49]" "[50-59]" "> 60" "'
-		local i=1
-		forvalues x=1/7 {
-			local lab: word `i' of `labels'
-			la var dist_f_tcover_cat_`x' "`lab'"
-			local ++i
-		}
-		
-		eststo clear
-		eststo: reghdfe sr dist_f_tcover_cat_1-dist_f_tcover_cat_6 ///
-			dist_f_cum_km2 tcover_cat_* dist_nf_cum_km2 `ctrls' [aweight=n_trips], ///
-			a(user_id#year c_code_2011_num state_code_2011_num#month) ///
-			vce(cl state_code_2011_num#year)
-		
-		coefplot, keep(dist_f_tcover_*) xline(0, lcolor(maroon) lpattern(solid))  ///
-			msize(small) mfcolor(white) msymbol(D) mcolor(black) ///
-			ciopts(recast(rcap) lpattern(shortdash) lcolor(gs5)) ///
-			mlabel ytitle("Forest Cover (%)", size(large)) format(%9.2g) ///
-			mlabposition(1) coeflabels(, labsize(medium)) mlabsize(medium) ///
-			mlabcolor(black) xlabel(, labsize(medium)) ylabel(, labsize(medium)) ///
-			mlabgap(*2) transform(* = min(max(@,-5),5)) title("B", size(large)) ///
-			saving("${TABLE}/fig/tcoverwise.gph", replace)
-		graph export "${TABLE}/fig/tcoverwise.png", replace
-			
-		* PATCH GRAPH
-		graph combine "${TABLE}/fig/patchwise.gph" "${TABLE}/fig/tcoverwise.gph"
-		graph export "${TABLE}/fig/patch_analysis.png", width(1000) replace
-	
+		graph combine slx.gph dlag.gph
+		graph export "${TABLE}/fig/spillovers.png", replace
 	}
 	
 	if `others' == 1 {

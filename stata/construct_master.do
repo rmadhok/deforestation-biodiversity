@@ -28,7 +28,7 @@ gl DO		"${ROOT}/scripts/stata"
 // Module
 local ebird					0
 local district_forest		1
-local slx					0
+local slx					1
 local growth				0
 
 *===============================================================================
@@ -48,7 +48,7 @@ if `ebird' == 1 {
 	
 	* Read
 	import delimited using "${DATA}/csv/ebird_user.csv", clear
-
+	keep if year < 2019
 	* Clean
 	destring distance si_index group_size, replace force
 	
@@ -244,12 +244,16 @@ program define construct_deforest
 	keep state district c_code_2011
 	replace state = lower(state)
 	replace district = lower(district)
-	merge 1:m state district using "`fc_dist'", keep(3) nogen
-	
+	merge 1:m state district using "`fc_dist'", keep(3) nogen	
 	/*---------------------------------------
 	391 unmatched from master: no FC
 	 12 unmatched from FC: complex dist split (3 unique districts)
 	---------------------------------------*/
+	
+	g year = year(date_rec) 
+	bys year: egen n_dist_clear_yr = nvals(c_code_2011) // Number of districts with projects
+	bys year_month: egen n_dist_clear_ym = nvals(c_code_2011) 
+	drop year
 
 	* Sector Indicator
 	tab proj_cat, gen(proj_cat_)
@@ -277,7 +281,9 @@ program define construct_deforest
 	}
 	
 	* Aggregate
-	collapse (sum)  dist_f* dist_nf*, ///
+	g count = 1
+	collapse (sum)  dist_f* dist_nf* n_patches=count ///
+	         (first) n_dist_clear_*, ///
 			 by(c_code_2011 year_month)
 	
 	* Label
@@ -286,6 +292,7 @@ program define construct_deforest
 	}
 	la var dist_f "Deforestation"
 	la var dist_nf "Non-forest Diversion"
+	la var n_patches "Num. Patches"
 
 	//5. Balance Panel
 	
@@ -301,9 +308,9 @@ program define construct_deforest
 	tsfill, full
 	drop c_code_2011 _merge ym
 	decode c_code_2011_num, gen(c_code_2011)
-	
+
 	//6. Generate Variables
-	foreach var of varlist dist_f-dist_nf_tran {
+	foreach var of varlist dist_f-n_patches {
 		
 		* No deforestation
 		replace `var' = 0 if `var' == .
@@ -316,7 +323,6 @@ program define construct_deforest
 		* km2
 		g `var'_cum_km2 = `var'_cum / 100
 		la var `var'_cum_km2 "`vlab'"
-		
 		g `var'_km2 = `var'/100
 			
 		* Inverse Hyperbolic Sine
@@ -324,6 +330,14 @@ program define construct_deforest
 		la var `var'_cum_ihs "`vlab'"
 		
 	}
+	drop n_patches_cum_km2 n_patches_km2 n_patches_cum_ihs
+
+	* Front/Backfill
+	g year = year(dofm(year_month))
+	bys year: egen temp1 = min(n_dist_clear_yr)
+	bys year_month: egen temp2 = min(n_dist_clear_ym)
+	drop n_dist_clear_* year
+	ren (temp1 temp2) (n_dist_clear_yr n_dist_clear_ym)
 	
 	* State/Dist Strings
 	merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist", ///
@@ -332,11 +346,9 @@ program define construct_deforest
 	encode state_code_2011, gen(state_code_2011_num)
 	
 	* Dates
-	g date = dofm(year_month)
-	g year = year(date)
-	g month = month(date)
+	g year = year(dofm(year_month))
+	g month = month(dofm(year_month))
 	keep if inrange(year, 2015,2018)
-	drop date
 	
 	* Add Forest Cover
 	tempfile temp

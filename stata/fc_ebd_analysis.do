@@ -26,8 +26,8 @@ gl DATA 	"${ROOT}/data"
 gl TABLE	"${ROOT}/docs/jmp/tex_doc/"
 
 // Module
-local sumstats			1
-local main_analysis		0
+local sumstats			0
+local main_analysis		1
 local robustness		0
 local appendix			0
 
