@@ -1,79 +1,87 @@
 # PROJECT: Deforestation and Biodiversity
 # PURPOSE: Process Nightlight Data 
-# DATA SOURCE: https://www.ngdc.noaa.gov/eog/viirs/download_dnb_composites.html#NTL_2015
+# DATA SOURCE: https://eogdata.mines.edu/products/vnl/
 # AUTHOR: Raahil Madhok
-# DATE: Apr 16 2019 [created]
 # NOTES: units in nanoWatts/cm2/sr
 
-### SET-UP
+# ----------- SET-UP -----------------------------------------------------
 # Directories
-read_path <- '/Volumes/FreeAgent GoFlex Drive/Data/def_biodiv/'
-save_path <- '/Users/rmadhok/Documents/ubc/research/def_biodiv/data/'
-dist_shpf <- '/Users/rmadhok/Dropbox (CID)/IndiaPowerPlant/data/'
-setwd(read_path)
+rm(list=ls())
+READ.DIR <- '/Volumes/Backup Plus/research/data/def_biodiv/nightlights/'
+SAVE.DIR <- '/Users/rmadhok/Dropbox/def_biodiv/data/csv/'
+SHP <- '/Users/rmadhok/Dropbox/IndiaPowerPlant/data/'
 
 # Packages
 require(raster)
-require(rgdal) 
-require(sp)
-require(dplyr)
+require(tidyverse)
+require(sf)
+require(exactextractr)
+require(data.table)
+# ------------------------------------------------------------------------
 
-# Load india 2011 districts
-india.districts.2011 <- readOGR(paste(dist_shpf, "maps/india-district", sep=""), 
-                                'SDE_DATA_IN_F7DSTRBND_2011', stringsAsFactors = F)
+# Load Districts
+india_dist <- st_read(paste(SHP, "maps/india-district", sep=""),
+                      'SDE_DATA_IN_F7DSTRBND_2011', stringsAsFactors = F) %>%
+  dplyr::select(c_code_11) %>%
+  rename(c_code_2011=c_code_11)
 
-# Load TIFF list
-file_list <- list.files('nightlights')
-
-# Initiate Master DF
-df.nightlights <- data.frame()
-
-# Populate Dataframe
-for (i in 1:length(file_list)){
+# Convert raw tiles to cropped tifs (one run - 1.5 hrs)
+{
+raw_files <- list.files(paste(READ.DIR, 'raw', sep=''), full.names=T)
+crop_slice <- function(i) {
   
-  print(paste("Processing file: ", file_list[i]))
+  # read
+  r <- raster(raw_files[[i]])
   
-  # Read File
-  r <- raster(paste(read_path, 'nightlights/', file_list[i], sep=''))
-
-  # Sync Projection
-  proj4string(r) <- proj4string(india.districts.2011)
+  # date
+  date <- paste(substr(names(r), 11,14), substr(names(r), 15,16), sep='-')
+  print(paste('cropping and saving viirs for date: ', date, sep=''))
   
-  # Resample to higher resolution (4km x 4km)
-  #-- Note: Data is in 15 arc-seconds = 0.004 deg
-  r <- aggregate(r, fact = 10)
+  # Crop
+  crs(r) <- crs(india_dist)
+  r <- crop(r, india_dist)
   
-  # Crop to India Borders
-  r <- crop(r, extent(india.districts.2011))
-  r <- mask(r, india.districts.2011)
+  # Save
+  writeRaster(r, paste(READ.DIR, 'processed/india-viirs-', date, '.tif', sep=''), format='GTiff', overwrite=T)
   
-  # Raster to Dataframe
-  df.month <- as.data.frame(r, xy=TRUE)
-  colnames(df.month)[3] <- 'mean_radiance'
-  
-  # Overlay District
-  proj <- proj4string(india.districts.2011)
-  df.month$c_code_2011 <- over(SpatialPoints(df.month[,1:2], proj4string=CRS(proj)), india.districts.2011)$c_code_11
-  df.month <- df.month[!is.na(df.month$c_code_2011),]
-  
-  # Aggregate to District
-  df.month <- df.month %>% 
-    group_by(c_code_2011) %>% 
-    summarise(mean_lights = mean(mean_radiance, na.rm=T))
-  
-  # Timestamp
-  year <- substr(file_list[i], 11, 14)
-  month <- substr(file_list[i], 15, 16)
-  df.month$yearmonth <- paste(year, month, sep='-')
-  
-  # Append to Master
-  df.nightlights <- rbind(df.nightlights, df.month)
-
+}
+idx <- 1:length(raw_files)
+lapply(idx, crop_slice)
 }
 
-# Write
-write.csv(df.nightlights, 
-          paste(save_path, 'csv/india_nightlights.csv', sep=""),
-          row.names = F)
+# Stack Tifs (~500m resolution)
+setwd(paste(READ.DIR, '/processed', sep=''))
+tifs <- list.files()
+
+# Function to extract mean
+get_mean <- function(i) {
+  
+  # read raster
+  r <- raster(tifs[i])
+  
+  # date
+  date <- str_replace(substr(names(r), 13, 19), '\\.', '-')
+  print(paste('processing: ', date, sep=''))
+  
+  # Extract statistics
+  df <- cbind(st_drop_geometry(india_dist), exact_extract(r, india_dist, c('mean', 'sum')))
+  df$date <- date
+  
+  return(df)
+  
+}
+idx <- 1:length(tifs)
+results <- rbindlist(lapply(idx, get_mean))
+
+# Long Panel
+df <- results %>%
+  rename(yearmonth = date, 
+         rad_mean = mean,
+         rad_sum = sum) %>%
+  arrange(c_code_2011, yearmonth)
+
+# Save
+setwd(SAVE.DIR)
+write_csv(df, 'india_nightlights.csv')
 
 

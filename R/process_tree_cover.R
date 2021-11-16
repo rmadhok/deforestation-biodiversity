@@ -1,69 +1,84 @@
 # PROJECT: Deforestation and Biodiversity
 # PURPOSE: Process Tree Cover
 # AUTHOR: Raahil Madhok
-# DATE: Oct 4 2019
 
 # ----------- SET-UP -----------------------------------------------------
 # Directories
-read_path_head <- '/Volumes/Backup Plus/research/def_biodiv/forest_cover'
-save_path_head <- '/Users/rmadhok/Dropbox (Personal)/def_biodiv/'
-dist_shp <- '/Users/rmadhok/Dropbox (Personal)/IndiaPowerPlant/data/'
+rm(list=ls())
+READ.DIR <- '/Volumes/Backup Plus/research/data/def_biodiv/forest_cover/'
+SAVE.DIR <- '/Users/rmadhok/Dropbox/def_biodiv/data/csv/'
+SHP <- '/Users/rmadhok/Dropbox/IndiaPowerPlant/data/'
+setwd(READ.DIR)
 
 # Load Packages
 require(tidyverse)
 require(sf)
 require(raster)
-require(rgdal)
+require(exactextractr)
 # ------------------------------------------------------------------------
 
+#---------------------------------------------
+# PROCESS RASTERS
+#---------------------------------------------
+
 # Load district map
-india_districts <- st_read(paste(dist_shp, "maps/india-district", sep=""),
-                               'SDE_DATA_IN_F7DSTRBND_2011', stringsAsFactors = F)
+india_dist <- st_read(paste(SHP, "maps/india-district", sep=""),
+                      'SDE_DATA_IN_F7DSTRBND_2011', stringsAsFactors = F) %>%
+  dplyr::select(c_code_11) %>%
+  rename(c_code_2011=c_code_11)
 
-# Initiate master
-df <- data.frame()
+# Stack Rasters
+tifs <- list.files()
+rstack <- stack(tifs)
 
-# Process TIFFs
-setwd(paste(read_path_head, '/mosaic', sep=''))
-tif_list <- list.files()
-
-for(tif in tif_list) {
- 
-  print(paste('Processing: ', tif, sep=''))
-    
-  # read raster
-  r <- raster(tif)
-
-  # Convert to df
-  r_df <- as.data.frame(r, xy=T)
-  names(r_df) <- c('lon', 'lat', 'tree_cover')
-  
-  # Overlay district code 
-  r_df$c_code_2011 <- as.data.frame(st_join(st_as_sf(r_df, 
-                                                     coords = c('lon', 'lat'), 
-                                                     crs = 4326), 
-                                            india_districts, join = st_intersects))$c_code_11
-  
-  # Crop
-  r_df <- filter(r_df, !is.na(c_code_2011))
-      
-  # Aggregate
-  r_df <- r_df %>%
-    mutate(tree_cover=replace(tree_cover,tree_cover>100,NA)) %>%
-    filter(!is.na(tree_cover)) %>%
-    mutate(tree_cover_log = log(tree_cover+1), tree_cover_ihs=sinh(tree_cover)) %>%
-    group_by(c_code_2011) %>%
-    summarize(tree_cover_mean = mean(tree_cover),
-              tree_cover_ihs = sum(tree_cover_ihs),
-              tree_cover_log = sum(tree_cover_log))
-    
-  r_df$year <- substr(tif, 34,37)
-
-  # Append
-  df <- rbind(df, r_df)
+# Remove non-tree cells
+for(i in 1:nlayers(rstack)){
+  print(paste('layer: ', i, sep=''))
+  rstack[[i]][rstack[[i]] > 100] <- NA
 }
 
+# layer names
+names(rstack) <- c('tree_cover_2014', 'tree_cover_2015', 'tree_cover_2016', 
+                   'tree_cover_2017', 'tree_cover_2018', 'tree_cover_2019',
+                   'tree_cover_2020')
+
+# Resample to lower res (2km x 2km)
+# Raw: 250m x 250m
+#r <- raster::aggregate(rstack, fact = 10, fun=mean, na.rm=T)
+
+#---------------------------------------------
+# EXTRACT STATISTICS OVER DISTRICT BORDERS
+#---------------------------------------------
+
+# Mean forest cover in district 
+# weighted by cell coverage fraction
+df1 <- cbind(st_drop_geometry(india_dist), exact_extract(rstack, india_dist, 'mean'))
+
+# Long Panel
+df1_long <- df1 %>%
+  pivot_longer(cols = contains('tree'),
+               names_to = 'year',
+               values_to = 'tree_cover_pct',
+               names_prefix = 'mean.tree_cover_')
+
+# Total forest cover in district 
+# cell value x cell area x cell coverage fraction
+a <- area(rstack)
+rstack <- rstack / 100
+df2 <- cbind(st_drop_geometry(india_dist), 
+             exact_extract(rstack, india_dist, 
+                           fun='weighted_sum', weights = a))
+
+# Long Panel
+df2_long <- df2 %>%
+  pivot_longer(cols = contains('tree'),
+               names_to = 'year',
+               values_to = 'tree_cover_km2',
+               names_prefix = 'weighted_sum.tree_cover_')
+
+# Final panel
+df_long <- merge(df1_long, df2_long, by=c('c_code_2011','year'))
+
 # Write
-write.csv(df, 
-          paste(save_path_head, 'data/csv/forest_cover.csv', sep=""),
-          row.names = F)
+setwd(SAVE.DIR)
+write_csv(df_long, 'forest_cover.csv')

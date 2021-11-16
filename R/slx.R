@@ -1,65 +1,59 @@
 # PROJECT: Deforestation and Biodiversity
-# PURPOSE: Estimate Spatial Econometric Models
+# PURPOSE: Estimate spillover effects
 # AUTHOR: Raahil Madhok
-# DATE: Oct 17 2019
 
 # ----------- SET-UP -----------------------------------------------------
 # Directories
 rm(list=ls())
-path_head <- '/Users/rmadhok/Dropbox (Personal)/def_biodiv/'
-dist_shp <- '/Users/rmadhok/Dropbox (Personal)/IndiaPowerPlant/data/'
+path_head <- '/Users/rmadhok/Dropbox/def_biodiv/data/csv/'
+dist_shp <- '/Users/rmadhok/Dropbox/IndiaPowerPlant/data/'
+setwd(path_head)
 
 # Load Packages
 require(tidyverse)
 require(sf)
 require(spatialreg)
 require(spdep)
+require(units)
+require(data.table)
 
-# Section (stage1 or stage2)
-section <- 'stage1'
+# Module
+version <- 2 # set as 1 or 2 
+# version 1 = projects scraped up to 2018
+# version 2 = projects scraped up to 2020
 # ------------------------------------------------------------------------
 
 # Read District Map
-india_districts <- st_read(paste(dist_shp, "maps/india-district", sep=""),
+india_dist <- st_read(paste(dist_shp, "maps/india-district", sep=""),
                            'SDE_DATA_IN_F7DSTRBND_2011', stringsAsFactors = F) %>%
-  rename(c_code_2011=c_code_11) %>% filter(!is.na(c_code_2011)) %>%
+  select(c_code_11) %>%
+  rename(c_code_2011=c_code_11) %>% 
+  filter(!is.na(c_code_2011)) %>%
   arrange(c_code_2011)
 
-# Read Data
-if(section == 'stage2') {
-  data <- read_csv(paste(path_head,'/data/csv/fc_dist_ym_', section, '.csv', sep='')) %>%
+# Read deforestation
+data <- read_csv(paste('fc_dym_s2_v0', version,'.csv', sep='')) %>%
     select(matches('^dist_.*_cum_km2$'), c_code_2011, year_month) %>%
     arrange(year_month, c_code_2011) %>%
     mutate(year_month=as.factor(year_month))
-}
 
-if(section == 'stage1'){
-  data <- read_csv(paste(path_head,'/data/csv/fc_dist_ym_', section, '.csv', sep='')) %>%
-    select(matches('^dist_.*km2$'), c_code_2011, year_month) %>%
-    select(-contains('cum')) %>%
-    arrange(year_month, c_code_2011) %>%
-    mutate(year_month=as.factor(year_month))
-}
 #------------------------------------------------------------------------
-# MODEL 1 : Spatial Lag with Binary Contiguity
+# MODEL 1 : Binary Contiguity
 #------------------------------------------------------------------------
-
-# Spatial Lags
-# -------------------------
 # 1. Construct contiguity matrix 
 # 2. dynamically compute matrix product
 # 3. bind to original data
 
 # Binary Contiguity Matrix
-nb <- poly2nb(as(india_districts, 'Spatial'), queen = T, row.names=india_districts$c_code_2011)
+nb <- poly2nb(as(india_dist, 'Spatial'), queen = T, row.names=india_dist$c_code_2011)
 W <- nb2mat(nb, style='W', zero.policy=T) # row-standardized
 
 slag_bc <- data.frame()
 for(ym in levels(data$year_month)){
   
-  print(paste('Computing contiguous spatial lags in:', ym))
+  print(paste('Computing binary contiguity for: ', ym, sep=''))
   
-  # Spatial lag matrix
+  # Data matrix
   X <- as.matrix(data %>%
                    filter(year_month==ym) %>%
                    select(-c(c_code_2011, year_month)))
@@ -74,67 +68,87 @@ for(ym in levels(data$year_month)){
 }
 
 #------------------------------------------------------------------------
-# MODEL 2 : Spatial Lag with Inverse Distance
+# MODEL 2 : Inverse Distance
 #------------------------------------------------------------------------
-
-# Spatial Lags
-# -------------------------
 # 1. Construct inverse distance matrix
 # 2. dynamically compute matrix product
 # 3. Stack 
 
-# Extract centroids
-coords <- do.call(rbind, st_centroid(st_geometry(india_districts))) %>% 
-  as.data.frame() %>% setNames(c("lon","lat"))
-row.names(coords) <- india_districts$c_code_2011
+# Extract district centroids
+centroids <- as.data.frame(st_coordinates(st_centroid(india_dist$geometry))) %>% 
+  rename(lon = X, lat = Y)
+row.names(centroids) <- india_dist$c_code_2011
 
-# Inverse Distance Matrix
-W <- as.matrix(dist(coords, method = "euclidean"))
-W_i <- 1 / W
-W_i[W_i > quantile(W_i,0.3)] <- 0 # cutoff at 30th percentile 
-diag(W_i) <- 0
+# Inverse Distance
+inv_dist <- function(i){
+  
+  # distance cutoff
+  W <- st_distance(st_as_sf(centroids, coords = c('lon', 'lat'), crs=4326)) %>% set_units(km)
+  if(i == 0) {
+    W <- 1/W
+    diag(W) <- 0
+  }else{
+    W[W > set_units(i, km)] <- 0
+    W[W > set_units(0, km)] <- 1/W[W > set_units(0, km)]
+    diag(W) <- 0
+  }
 
-slag_inv <- data.frame()
-for(ym in levels(data$year_month)){
+  slag_inv <- data.frame()
+  for(ym in levels(data$year_month)){
   
-  print(paste('Computing inverse distance spatial lags in:', ym))
+    print(paste('Computing 1/d for:', ym, '; cutoff: ', i,' km'))
   
-  # Spatial lag matrix
-  X <- as.matrix(data %>%
+    # Spatial lag matrix
+    X <- as.matrix(data %>%
                    filter(year_month==ym) %>%
                    select(-c(c_code_2011, year_month)))
-  WX <- W_i %*% X
+    WX <- W %*% X
 
-  # Merge to data
-  WX <- as.data.frame(WX)
-  colnames(WX) <- paste(colnames(WX), "slx_i", sep = "_")
-  WX$year_month <- ym
-  WX$c_code_2011 <- row.names(WX)
-  slag_inv <- rbind(slag_inv,WX)
+    # Merge to data
+    WX <- as.data.frame(WX)
+    colnames(WX) <- paste(colnames(WX), "slx_i", i, sep = "_")
+    WX$year_month <- ym
+    WX$c_code_2011 <- row.names(centroids)
+    slag_inv <- rbind(slag_inv,WX)
+  }
+  return(slag_inv)
 }
+idx <- c(0, 100, 200, 500)
+slag_inv <- lapply(idx, inv_dist) %>% 
+  purrr::reduce(inner_join, by=c('c_code_2011', 'year_month'))
 
-# W = (1/d)^2
-W_i2 <- (1/W)^2
-diag(W_i2) <- 0
-slag_inv2 <- data.frame()
-for(ym in levels(data$year_month)){
-  
-  print(paste('Computing suqared inverse distance spatial lags in:', ym))
-  
-  # Spatial lag matrix
-  X <- as.matrix(data %>%
-                   filter(year_month==ym) %>%
-                   select(-c(c_code_2011, year_month)))
-  WX <- W_i2 %*% X
-  
-  # Merge to data
-  WX <- as.data.frame(WX)
-  colnames(WX) <- paste(colnames(WX), "slx_i2", sep = "_")
-  WX$year_month <- ym
-  WX$c_code_2011 <- row.names(WX)
-  slag_inv2 <- rbind(slag_inv2,WX)
-}
-
+# Save
 slag <- merge(slag_bc, slag_inv, by=c('c_code_2011', 'year_month'))
-slag <- merge(slag, slag_inv2, by=c('c_code_2011', 'year_month'))
-write_csv(slag, paste(path_head, 'data/csv/slx_', section, '.csv', sep=''))
+write_csv(slag, paste('slx_v0', version, '.csv', sep=''))
+
+#------------------------------------------------------------------------
+# MODEL 3: Inverse Distance Squared
+#------------------------------------------------------------------------
+
+# # Weight matrix
+# W <- st_distance(st_as_sf(centroids, coords = c('lon', 'lat'), crs=4326)) %>% set_units(km)
+# W <- 1/(W^2)
+# diag(W) <- 0
+# 
+# slag_inv2 <- data.frame()
+# for(ym in levels(data$year_month)){
+#   
+#   print(paste('Computing suqared inverse distance spatial lags in:', ym))
+#   
+#   # Spatial lag matrix
+#   X <- as.matrix(data %>%
+#                    filter(year_month==ym) %>%
+#                    select(-c(c_code_2011, year_month)))
+#   WX <- W %*% X
+#   
+#   # Merge to data
+#   WX <- as.data.frame(WX)
+#   colnames(WX) <- paste(colnames(WX), "slx_i2", sep = "_")
+#   WX$year_month <- ym
+#   WX$c_code_2011 <- row.names(centroids)
+#   slag_inv2 <- rbind(slag_inv2,WX)
+# }
+# 
+# slag <- merge(slag_bc, slag_inv, by=c('c_code_2011', 'year_month'))
+# slag <- merge(slag, slag_inv2, by=c('c_code_2011', 'year_month'))
+# write_csv(slag, 'slx.csv')

@@ -2,9 +2,7 @@
 *																			
 * PROJECT: 	Deforestation and Biodiversity											
 *																			
-* PURPOSE: Clean raw forest clearance data			    
-*																			
-* START DATE: November 22, 2018																	
+* PURPOSE: Clean raw forest clearance data			    																																		
 *																			
 * AUTHOR:  Raahil Madhok 													
 *																				
@@ -20,24 +18,23 @@ set more off
 set maxvar 10000
 
 //Set Directory Paths
-gl ROOT 	"/Users/rmadhok/Dropbox (Personal)/def_biodiv"
-gl DATA 	"${ROOT}/data"
-
+gl ROOT 	"/Volumes/Backup Plus/research/data/def_biodiv/parivesh"
+gl DATA 	"/Users/rmadhok/Dropbox/def_biodiv/data"
 
 *===============================================================================
 *CLEAN VARIABLE NAMES
 *===============================================================================
 
 // Read raw data
-import delimited using "${DATA}/csv/fc_raw_use.csv", encoding("utf-8")  clear
+import delimited using "${ROOT}/fc_raw_v01_use.csv", encoding("utf-8")  clear
 
 // Reduce Variable List
 drop adateofsubmissionofproposals astatusoftheenvironmentalclearan ///
 	bdegradedforestareaonwhichcahast benvironmentalclearancefileno ///
 	careaofnonforestorrevenueforestl ddateofgrantofenvironmentalclear ///
 	iienvironmentalclearancefileno *_ccopyofkmlfile* *_dkhasra* *_epresentowner ///
-	page_no *_fcopyofownership* *_gcopyofmouagree* cdateofapproval ///
-	v10 *_hcopyofnonencumber* *_avillage villageswisebreakupsno* 
+	cdateofapproval *_fcopyofownership* *_gcopyofmouagree* ///
+	v10 *_hcopyofnonencumber* *_avillage
 
 // Clean Names
 ren atotalnumberoffamilies fam_num
@@ -81,24 +78,14 @@ foreach v of varlist districtwisebreakupdistrictname_-v527 {
    ren `v' `y'
 }
 
-** villages
-foreach v of varlist villageswisebreakupforestlandha_-v2143 {
-   local x : variable label `v'
-   local y = subinstr("`x'", " ", "", .)
-   local y = subinstr("`y'", "(ha.)", "", .)
-   local y = subinstr("`y'", "wisebreakup", "", .)
-   local y = subinstr("`y'", "-", "", .)
-   ren `v' `y'
-}
+* Drop compensatory afforestation vars
+drop district1-district9_bareainha
 
 ren DistrictName* district*
 ren ForestLand* dist_f*
 ren NonForestLand* dist_nf*
-ren villageswisebreakup* *
-ren VillagesForestLand* vil_f*
-ren VillagesNonForestLand* vil_nf*
-ren district# ca_dist_#
-ren district#_bareainha ca_dist_nfl_#
+*ren district# ca_dist_#
+*ren district#_bareainha ca_dist_nfl_#
 
 *===============================================================================
 * DATA CLEANING
@@ -126,23 +113,15 @@ foreach var of varlist displacement proj_in_pa* proj_scheduledarea ///
 	ua_legal_status employment  {
 		
 		replace `var' = "" if `var' == "nil"
-	
 	}
-
-ds ca_dist_nfl*, has(type string)
-foreach var of varlist `r(varlist)' ca_nfl_rfl_area {
-	replace `var' = "" if `var' == "nil"
-	destring `var', replace
-}
 	
 ** zero
 foreach var of varlist sc_fam_disp st_fam_disp other_fam_disp ///
-	power_cap proj_cost ca_num_districts {
+	power_cap proj_cost ca_num_districts ca_nfl_rfl_area {
 		
 		replace `var' = "0" if `var' == "nil"
 		destring `var', replace
-		
-		}
+	}
 		
 // Categorize Project Type
 gen proj_cat = "electricity" if inlist(proj_category, "hydel", "sub station", "thermal", "transmission line", "village electricity", "wind power", "solar power")
@@ -173,7 +152,7 @@ tempfile temp
 save "`temp'"
 
 // Read
-import delimited "${DATA}/csv/fc_records.csv", clear
+import delimited "${ROOT}/fc_records_v2.csv", clear
 
 // Sync to FC data
 keep proposal_no area_applied proposal_status proposal_name date_of_recomm date_from_ua_to_nodal
@@ -184,8 +163,8 @@ replace prop_no = trim(itrim(lower(prop_no)))
 replace prop_status = trim(itrim(lower(prop_status)))
 duplicates drop prop_no, force
 
-// Merge 
-merge 1:1 prop_no using "`temp'", keep(2 3) nogen
+// Merge
+merge 1:1 prop_no using "`temp'", keep(3) nogen
 
 // Re-categorize "other"
 replace prop_name = trim(itrim(lower(prop_name)))
@@ -217,7 +196,7 @@ gen date_rec = date(date_recomm, "DM20Y")
 format date_submit date_rec %td
 
 // Save
-drop village* vil_* // reduce file size
+drop prop_name proj_category // reduce file size
 order state prop_no prop_status date_submit date_rec proj_area_forest* proj*
 sort state prop_no
-save "${DATA}/dta/fc_clean.dta", replace
+save "${DATA}/dta/fc_clean_v01.dta", replace

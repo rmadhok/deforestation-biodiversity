@@ -56,13 +56,15 @@ def scrapeTables(page):
 
 		# Scrape only district and village tables
 		for table in tables[2:4]:
+			
 			rows = table.findAll('tr')
+			
 			if len(rows) > 2:
+
 				#Collect column names in list
 				keys = []
 				headers = table.findAll('th')
 				prefix = headers[0].text
-
 				for header in headers[1:5]:
 					keys.append(prefix + header.text)
 
@@ -70,6 +72,7 @@ def scrapeTables(page):
 				table_data = [[td.text for td in rows[i].findAll('td')] for i in range(len(rows))][2:]
 				table_data = [row for row in table_data if len(row) == 4] #Only table rows with 4 columns - eliminates bottom row (total)
 
+				# Make data frame of table
 				df = pd.DataFrame(table_data, columns=keys)
 
 				# Only non-empty tables
@@ -80,7 +83,7 @@ def scrapeTables(page):
 					df.columns = df.columns.map('{0[0]}_{0[1]}'.format)
 
 					#convert to temp dictionary and populate main
-					temp = df.to_dict('record')[0]
+					temp = df.to_dict('records')[0]
 					item_table.update(temp)
 
 	else:

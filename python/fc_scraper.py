@@ -3,9 +3,13 @@
 The scraper cycles through every page on the start url
 and builds a useable dataset. 
 """
+#----------------------
+# Settings
+#----------------------
+
 # META
 __author__ = "Raahil Madhok"
-__copyright__ = "Copyright 2018"
+__copyright__ = "Copyright 2021"
 __version__ = "1.0"
 __maintainer__ = "Raahil Madhok"
 __email__ = "madhok.raahil@gmail.com"
@@ -18,32 +22,44 @@ from   bs4 import BeautifulSoup
 import os
 import pandas as pd
 import urllib
-import mechanize
 import time
+import re
 from func_timeout import func_timeout, FunctionTimedOut
 from scrape_functions import *
 
 ## Set Parameters
-# Set Directory for Writing Data
-dir = '/Users/rmadhok/Documents/ubc/research/def_biodiv/data/csv'
-# Set top URL to follow and scrape
-url = 'http://forestsclearance.nic.in/'            
+url = 'http://forestsclearance.nic.in/'         
+dir = '/Volumes/Backup Plus/research/data/def_biodiv/parivesh/'
+#dir = '/Users/rmadhok/Dropbox/def_biodiv/data/raw/'
+os.chdir(dir)       
+
+#-----------------------
+# Landing Page
+#-----------------------
+
+# Session object(persist parameters across request)
+s = requests.Session()
 
 #Open Search Page
-r = requests.get(url + 'Online_Status.aspx')
-
-#Set Post Parameters
-VIEWSTATE, GENERATOR, VALIDATION = getFormData(r.content)
-cookies = {
-    'ASP.NET_SessionId': 'kaqs1jzegnfn4zxpwio4jthl',
-    'countrytabs': '0',
-    'countrytabs1': '0',
-    'acopendivids': 'Omfc,Email,Campa,support,livestat,commitee,Links',
-    'acgroupswithpersist': 'nada',
+s.headers = {
+	'Connection': 'keep-alive',
+	'Cache-Control': 'no-cache',
+	'Upgrade-Insecure-Requests': '1',
+	'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36',
+	'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+	'Accept-Encoding': 'gzip, deflate',
+	'Accept-Language': 'en-GB,en-US;q=0.9,en;q=0.8',
 }
+
+r = s.get(url + 'Online_Status.aspx')
+
+# Soupify
+soup = BeautifulSoup(r.content, 'html.parser')
+
+# Set post parameters
 headers = {
     'Connection': 'keep-alive',
-    'Cache-Control': 'max-age=0',
+    'Cache-Control': 'no-cache',
     'Upgrade-Insecure-Requests': '1',
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
@@ -51,46 +67,47 @@ headers = {
     'Accept-Language': 'en-GB,en-US;q=0.9,en;q=0.8',
 }
 
-#Post to Page 1
-r = requests.post(
-    url + 'Online_Status.aspx',
-    headers=headers,
-    cookies=cookies,
-    data = {
-    	'ctl00$ScriptManager1': 'ctl00$ContentPlaceHolder1$UpdatePanel1|ctl00$ContentPlaceHolder1$Button1',
-        '__EVENTARGUMENT': '',
-        '__EVENTTARGET': '',
-        '__VIEWSTATE': VIEWSTATE,
-        '__VIEWSTATEGENERATOR': GENERATOR,
-        '__VIEWSTATEENCRYPTED': '',
-        '__EVENTVALIDATION': VALIDATION,
-        'ctl00$ContentPlaceHolder1$ddlyear': '-All Years-',
-        'ctl00$ContentPlaceHolder1$ddl1': 'Select',
-        'ctl00$ContentPlaceHolder1$ddl3': 'Select',
-        'ctl00$ContentPlaceHolder1$ddlcategory': '-Select All-',
-        'ctl00$ContentPlaceHolder1$DropDownList1': '-Select All-',
-        'ctl00$ContentPlaceHolder1$txtsearch': '',
-        'ctl00$ContentPlaceHolder1$HiddenField1': '',
-        'ctl00$ContentPlaceHolder1$HiddenField2': '',
-        '__ASYNCPOST': 'false',
-        'ctl00$ContentPlaceHolder1$Button1': 'SEARCH',
-    }
-)
+data = {
+    '__EVENTTARGET': '',
+    '__EVENTARGUMENT': '',
+    '__VIEWSTATEENCRYPTED': '',
+	'ctl00$ContentPlaceHolder1$RadioButtonList1': 'New',
+    'ctl00$ContentPlaceHolder1$ddlyear': '-All Years-',
+    'ctl00$ContentPlaceHolder1$ddl1': 'Select',
+    'ctl00$ContentPlaceHolder1$ddl3': 'Select',
+    'ctl00$ContentPlaceHolder1$ddlcategory': '-Select All-',
+    'ctl00$ContentPlaceHolder1$DropDownList1': '-Select All-',
+    'ctl00$ContentPlaceHolder1$txtsearch': '',
+    'ctl00$ContentPlaceHolder1$Button1': 'SEARCH',
+    'ctl00$ContentPlaceHolder1$hdstatus': 'New',
+    '__ASYNCPOST': 'true',
+}
 
-#Scrape Page 1
-###################################################
+# Add dynamic args
+data['__VIEWSTATE']          = soup.find('input', {'id': '__VIEWSTATE'         })['value']
+data['__VIEWSTATEGENERATOR'] = soup.find('input', {'id': '__VIEWSTATEGENERATOR'})['value']
+data['__EVENTVALIDATION']    = soup.find('input', {'id': '__EVENTVALIDATION'   })['value']
+
+#Post to Page 1
+r = s.post(url + 'Online_Status.aspx', data = data)
+
+#--------------------
+# Scrape Page 1
+#--------------------
 
 #Initiate master data list
-data = []
+master = []
 
 #Soupify
 soup = BeautifulSoup(r.content, 'lxml')
 table = soup.find('table', {'id' : 'ctl00_ContentPlaceHolder1_grdevents'})
 page_no = int(table.find('tr', {'class': 'pagi'}).span.text)
 rows = table.findAll('tr')
+
+# Scrape
 for row in rows[1:len(rows)-2]:
 
-	print 'Scraping Project ' + str(rows.index(row)) + ' From Page 1...'
+	print('Scraping Project ' + str(rows.index(row)) + ' From Page 1...')
 	
 	#Create data containers
 	project_data = []
@@ -103,10 +120,8 @@ for row in rows[1:len(rows)-2]:
 	if report_url.startswith('viewreport'):
 		
 		#Scrape Report Data
-		report_page = requests.get(url + report_url)
+		report_page = s.get(url + report_url)
 		item.update(scrapeReport(report_page.content))
-
-		#Scrape report tables
 		item.update(scrapeTables(report_page.content))
 
 	#Scrape Timeline
@@ -116,55 +131,46 @@ for row in rows[1:len(rows)-2]:
 	#	item.update(scrapeTimeline(timeline_page.content))
 
 	project_data.append(item)
-	data += project_data
+	master += project_data
 
-#Get form data for next page post request
-VIEWSTATE, GENERATOR, VALIDATION = getFormData(r.content)
+#------------------------
+# Scrape Remaining Pages
+#------------------------
 
+# update post parameters
+del data['ctl00$ContentPlaceHolder1$Button1']
+data['ctl00$ScriptManager1'] = 'ctl00$ContentPlaceHolder1$rr|ctl00$ContentPlaceHolder1$grdevents'
+data['__EVENTTARGET']        = 'ctl00$ContentPlaceHolder1$grdevents'
 
-#Scrape remaining pages
-pageDelay = [50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600]
-lastPage = 651
-for page in range(2, lastPage + 1):
-
+# 964 pages total.
+lastPage = 970
+pageDelay = list(range(50,lastPage+1,50))
+pageRange = list(range(2, lastPage+1))
+broken = {119, 129, 495, 525, 579, 851, 887, 909, 920} # old: 885, 907, 918
+pageRange = [e for e in pageRange if e not in broken]
+for page in pageRange:
 	
 	try:
 		
 		if page % 5 == 0:
 
 			#Export to CSV
-			os.chdir(dir)
-			df = pd.DataFrame(data)
-			df.to_csv('fc_raw2.csv', encoding = 'utf-8')
+			df = pd.DataFrame(master)
+			df.to_excel('fc_raw3.xlsx', encoding = 'utf-8')
 
 		if page in pageDelay:
-			print "Sleeping for 5 mins..."
-			time.sleep(300)
+			print("Sleeping for 2 mins...")
+			time.sleep(120)
 
-		r = func_timeout(600, 
-			requests.post, 
-			args=(url + 'Online_Status.aspx', 
-				cookies, 
-				{'ctl00$ScriptManager1': 'ctl00$ContentPlaceHolder1$UpdatePanel1|ctl00$ContentPlaceHolder1$Button1',
-				'ctl00$ContentPlaceHolder1$RadioButtonList1': 'New',
-				'__EVENTARGUMENT': 'Page${}'.format(page),
-				'__EVENTTARGET': 'ctl00$ContentPlaceHolder1$grdevents',
-				'__VIEWSTATE': VIEWSTATE,
-				'__VIEWSTATEGENERATOR': GENERATOR,
-				'__VIEWSTATEENCRYPTED': '',
-				'__EVENTVALIDATION': VALIDATION,
-				'ctl00$ContentPlaceHolder1$ddlyear': '-All Years-',
-				'ctl00$ContentPlaceHolder1$ddl1': 'Select',
-				'ctl00$ContentPlaceHolder1$ddl3': 'Select',
-				'ctl00$ContentPlaceHolder1$ddlcategory': '-Select All-',
-				'ctl00$ContentPlaceHolder1$DropDownList1': '-Select All-',
-				'ctl00$ContentPlaceHolder1$txtsearch': '',
-				'ctl00$ContentPlaceHolder1$HiddenField1': '',
-				'ctl00$ContentPlaceHolder1$HiddenField2': '',
-				'__ASYNCPOST': 'false',}
-				)
-			)
+		#update post parameters
+		data['__VIEWSTATE']          = re.search(r'__VIEWSTATE\|([^|]+)', r.text)[1]
+		data['__VIEWSTATEGENERATOR'] = re.search(r'__VIEWSTATEGENERATOR\|([^|]+)', r.text)[1]
+		data['__EVENTVALIDATION']    = re.search(r'__EVENTVALIDATION\|([^|]+)', r.text)[1]
+		data['__EVENTARGUMENT']      = 'Page${}'.format(page)
 
+		# Post to page
+		r = func_timeout(600, s.post, args = (url+'Online_Status.aspx', data))
+		
 		#Soupify
 		soup = BeautifulSoup(r.content, 'lxml')
 		table = soup.find('table', {'id' : 'ctl00_ContentPlaceHolder1_grdevents'})
@@ -173,7 +179,9 @@ for page in range(2, lastPage + 1):
 		for row in rows[1:len(rows)-2]:
 
 			try:
-				print 'Scraping Project ' + str(rows.index(row)) + ' From Page ' + str(page) + '...'
+				
+				print('Scraping Project ' + str(rows.index(row)) + ' From Page ' + str(page) + '...')
+				
 				#Create data containers
 				project_data = []
 				item = {}
@@ -184,16 +192,12 @@ for page in range(2, lastPage + 1):
 				report_url = cols[10].find('a')['href']
 				if report_url.startswith('viewreport'):
 					
-					#Scrape Report Data
-					report_page = func_timeout(
-						600,
-						requests.get,
-						args=(url + report_url)
-						)
+					# Clink report link
+					report_page = s.get(url + report_url)
+					#report_page = func_timeout(600, s.get, args=(url+report_url))
 					
+					#Scrape report data
 					item.update(scrapeReport(report_page.content))
-					
-					#Scrape report tables
 					item.update(scrapeTables(report_page.content))
 				
 				#Scrape Timeline
@@ -203,33 +207,28 @@ for page in range(2, lastPage + 1):
 				#	item.update(scrapeTimeline(timeline_page.content))
 				
 				project_data.append(item)
-				data += project_data
+				master += project_data
 
-			except FunctionTimedOut:
-				print "Project Link was Hanging. Moving to next one..."
-				time.sleep(200)
-				continue
+			#except FunctionTimedOut:
+			#	print("Project Link was Hanging. Moving to next one...")
+			#	time.sleep(200)
+			#	continue
 
 			except:
-				print "Could not reach project link. Moving to next project..."
-				time.sleep(300)
+				print("Could not reach project link. Moving to next project...")
+				time.sleep(120)
 				continue
 
-		#Get form data for next page post request
-		VIEWSTATE, GENERATOR, VALIDATION = getFormData(r.content)
-
 	except FunctionTimedOut:
-		print "Page was hanging. Moving to next one..."
-		time.sleep(200)
+		print("Page was hanging. Moving to next one...")
+		time.sleep(120)
 		continue
 
 	except:
-		print "Could not reach page. Trying next one..."
-		time.sleep(300)
+		print("Could not reach page. Trying next one...")
+		time.sleep(120)
 		continue
 
-
 # Write to CSV
-os.chdir(dir)
-df = pd.DataFrame(data)
-df.to_csv('fc_raw2.csv', encoding = 'utf-8')
+df = pd.DataFrame(master)
+df.to_excel('fc_raw3.xlsx', encoding = 'utf-8')

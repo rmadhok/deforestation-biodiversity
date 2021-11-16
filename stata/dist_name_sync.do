@@ -1,9 +1,11 @@
+*-------- 2015-2018 DATA -------------------------------------------------------
 replace state = "andaman & nicobar islands" if state == "andaman and nicobar"
 replace state = "puducherry" if state == "pondicherry"
 replace state = "dadra & nagar haveli" if state == "dadar & nagar haveli"
 replace state = "daman & diu" if state == "daman and diu"
 replace state = "tamilnadu" if state == "tamil nadu"
 replace state = "odisha" if state == "orissa"
+replace state = "jammu & kashmir" if state == "jammu and kashmir"
 
 * Districts
 replace district = "nicobars" if district == "nicobar"
@@ -24,8 +26,8 @@ replace district = "purba champaran" if state == "bihar" & district == "east cha
 replace district = "dakshin bastar dantewada" if state == "chhattisgarh" & district == "dantewada"
 replace district = "kabeerdham" if state == "chhattisgarh" & district == "kabirdham"
 replace district = "uttar bastar kanker" if state == "chhattisgarh" & district == "kanker"
-replace district = "surguja" if state == "chhattisgarh" & district == "balrampur" //nwq
-replace district = "durg" if state == "chhattisgarh" & district == "bemetara" //mew
+replace district = "surguja" if state == "chhattisgarh" & district == "balrampur" //new
+replace district = "durg" if state == "chhattisgarh" & district == "bemetara" //new
 replace district = "raipur" if state == "chhattisgarh" & district == "gariaband" //new
 replace district = "bastar" if state == "chhattisgarh" & district == "kondagaon" //new
 replace district = "bastar" if state == "chhattisgarh" & district == "sukma" //new
@@ -42,8 +44,8 @@ replace district = "junagadh" if state == "gujarat" & district == "junagarh"
 replace district = "kachchh" if state == "gujarat" & district == "kutch"
 replace district = "panch mahals" if state == "gujarat" & district == "panchmahal"
 replace district = "sabar kantha" if state == "gujarat" & district == "arvalli" //new
-replace district = "vadodara" if state == "gujarat" & district == "chhota udaipur" //ne
-replace district = "jamnagar" if state == "gujarat" & district == "devbhumi dwarka" //mew
+replace district = "vadodara" if state == "gujarat" & district == "chhota udaipur" //new
+replace district = "jamnagar" if state == "gujarat" & district == "devbhumi dwarka" //new
 replace district = "junagadh" if state == "gujarat" & district == "gir somnath" //new
 
 replace district = "kangra" if state == "himachal pradesh" & district == "dharmshala"
@@ -138,6 +140,9 @@ replace district= "darjiling" if state == "west bengal" & district == "darjeelin
 replace district= "paschim medinipur" if state == "west bengal" & district == "medinipur"
 replace district= "paschim medinipur" if state == "west bengal" & district == "west medinipur"
 replace district= "puruliya" if state == "west bengal" & district == "purulia"
+replace district= "hugli" if state == "west bengal" & district == "hooghly" 
+replace district= "north twenty four parganas" if district == "24 parganas"
+replace district= "haora" if state == "west bengal" & district == "howrah"
 
 
 // TELANGANA
@@ -154,5 +159,18 @@ replace district = "karimnagar" if district == "peddapalli"
 replace district = "medak" if district == "sangareddy"
 replace district = "rangareddy" if district == "rangareddi"
 replace district = "nizamabad" if district == "kamareddy"
+replace district = "rangareddy" if district == "medchal"
 
+*-------- 2015-2020 DATA -------------------------------------------------------
+
+// ANDHRA PRADESH
+replace district = "rangareddy" if district == "medchal malkajgiri" // new (TG)
+replace district = "mahbubnagar" if district == "wanaparthy" //new (TG)
+
+// ARUNACHAL
+replace district = "lohit" if district == "namsai"
+replace district = "bhiwani" if district == "charkhi dadri"
+
+// MP
+replace district = "shajapur" if district == "agar malwa"
 
