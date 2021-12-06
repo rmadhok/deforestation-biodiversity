@@ -152,6 +152,7 @@ tempfile temp
 save "`temp'"
 
 // Read
+* Use fc_records_[date] for 2018 version
 import delimited "${ROOT}/fc_records_v2.csv", clear
 
 // Sync to FC data

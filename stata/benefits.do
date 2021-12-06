@@ -29,7 +29,7 @@ cd "${TABLE}"
 *-------------------------------------------------------------------------------
 
 * Read
-use "${DATA}/dta/benefits_iv_v01", clear
+use "${DATA}/dta/benefits_iv_v02", clear
 
 * Label
 la var tot_pop_ha "Pop/ha."
@@ -87,14 +87,14 @@ esttab using "${TABLE}/v3/tables/benefits_fra_seats.tex", keep(iv_*_r_seats) rep
 	fmt(0 0 0 0 3)) wrap nocons nonotes booktabs nomtitles ///
 	star(* .1 ** .05 *** .01) label se b(%5.3f) width(\hsize)
 eststo clear
-kk
+
 
 * BENEFITS
 g ln_rad_mean = log(rad_mean)
 g ln_rad_sum = log(rad_sum)
-ivreghdfe ln_rad_mean (dist_f_cum_km2 = iv_tot_pop_ha) st_f_cum_km2_p s*_pop_p, ///
+ivreghdfe ln_rad_sum (dist_f_cum_km2 = iv_scst_pop_cfr_ha) st_f_cum_km2_p s*_pop_p, ///
 		a(c_code_2011_num state_code_2011_num#month year) cluster(c_code_2011_num)
-
+ll
 ivreghdfe ln_rad_mean (dist_f_cum_km2 = iv_tot_pop_ha_r_seats) iv_tot_pop_ha ///
 	iv_r_seats tot_pop_ha_r_seats r_seats st_f_cum_km2_p s*_pop_p, ///
 		a(c_code_2011_num state_code_2011_num#month year) cluster(c_code_2011_num)

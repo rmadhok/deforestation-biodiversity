@@ -106,7 +106,7 @@ if `sumstats' == 1 {
 		mgroups("Deforestation Districts" "Non-deforestation Districts", pattern(1 1) ///
 		prefix(\multicolumn{@span}{c}{) suffix(}) span erepeat(\cmidrule(lr){@span})) ///
 		collabel("Mean" "Std. Dev." "N", prefix({) suffix(})) ///
-		refcat(n_users_dist "\underline{\emph{District Variables}}" , nolabel) ///
+		refcat(n_users_dist "\underline{\emph{District Variables}}", nolabel) ///
 		nomtitle booktabs noobs label unstack nonumber
 
 	** Birdwatching Details

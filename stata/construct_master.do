@@ -38,15 +38,8 @@ empty
 -----------------------------------------*/
 if `ebird' == 1 {
 	
-	local data "" // set as "" (main) or "_allreported"
-	
-	//1. Clean
-	
-	* Read
-	import delimited using "${DATA}/csv/ebird_user`data'_v02.csv", clear
-	
-	* Clean
-	destring distance si_index group_size, replace force
+	**# Read
+	import delimited using "${DATA}/csv/ebird_user_cell.csv", clear
 	
 	* Format Date
 	g year_month = ym(year, month(date(yearmonth, "20YM")))
@@ -56,9 +49,8 @@ if `ebird' == 1 {
 	tempfile ebd_user
 	save "`ebd_user'"
 	
-	//2. Merge temporal data
-	
-	foreach file in "coverage_ym_grid_5km`data'" "india_rainfall_gpm" "india_temperature_era" {
+	**# Add Weather
+	foreach file in "coverage_ym_grid_5km" "india_rainfall_gpm" "india_temperature_era" {
 	
 		import delimited "${DATA}/csv/`file'", varn(1) clear
 		g year_month = ym(year(date(yearmonth, "20YM")), month(date(yearmonth, "20YM")))
@@ -70,7 +62,7 @@ if `ebird' == 1 {
 		save "`ebd_user'", replace
 	}
 
-	//3. Merge with District Data
+	**# Merge with District Data
 	
 	* Coverage
 	import delimited "${DATA}/csv/coverage_dist_grid_5km", clear
@@ -84,16 +76,14 @@ if `ebird' == 1 {
 	merge 1:m c_code_2011 using "`ebd_user'", keep(3) nogen
 	save "`ebd_user'", replace
 	
-	//4. Biome Clusters
+	*Biome Clusters
 	import delimited "${DATA}/csv/biome_cluster", clear
 	merge 1:m c_code_2011 using "`ebd_user'", keep(2 3) nogen
 	replace biome = 888 if biome == . // note: only 1 district w missing biome (Diu)
 	
-	//5. Clean Variables
-	replace coverage = coverage * 100
-	replace coverage_all = coverage_all * 100
+	**# Clean Variables
 	
-	* Generate vars
+	* Construct
 	g state_code_2011 = substr(c_code_2011, 1, 3)
 	bys observerid: egen n_st_user = nvals(state_code_2011)
 	bys observerid: egen n_dist_user = nvals(c_code_2011)
@@ -102,13 +92,18 @@ if `ebird' == 1 {
 	bys c_code_2011: egen n_users_dist = nvals(observerid)
 	bys c_code_2011: egen n_trips_dist = total(n_trips)
 	bys c_code_2011 year_month: egen n_users_dym = nvals(observerid)
+	sort observerid year_month state_code_2011 c_code_2011
+	
 	g pop_density = tot_pop / tot_area
+	g ln_exp_idx = ln(exp_idx)
+	g ln_duration = ln(duration)
+	g ln_distance = asinh(distance)
+	
+	* Clean
+	destring si_index*, replace force
 	ren (temp_era rain_gpm) (temp rain)
-	destring temp, force replace
 	encode observerid, gen(user_id)
 	drop state_code_2011
-	
-	* Label
 	la var tot_area "District Area (\(km^{2}\))"
 	la var pop_density "Population Density (per \(km^{2}\))"
 	la var n_ym_user "Num. Year-months"
@@ -120,6 +115,7 @@ if `ebird' == 1 {
 	la var n_trips_user "Num. Trips"
 	la var n_users_dym "Num. Users per District-Yearmonth"
 	la var sr "Species Richness"
+	la var sr_hr "Species Richness/Hr."
 	la var sr_udym "Species richness across all trips in district-month"
 	la var sr_uym "Species richness across all trips in year-month"
 	la var sr_uyr "Species richness across all trips in year"
@@ -127,20 +123,24 @@ if `ebird' == 1 {
 	la var sr_yr "Species richness across all users in year"
 	la var group_size "Group Size"
 	la var sh_index "Shannon Index"
+	la var sh_index_hr "Shannon Index/Hr."
 	la var si_index "Simpson Index"
+	la var si_index_hr "Simpson Index/Hr."
 	la var coverage "Spatial Coverage (\%)"
 	la var duration "Duration (min)"
 	la var distance "Distance (km)"
 	la var rain "Rainfall (mm)"
 	la var temp "Temperature ($\degree$ C)"
-	la var all_species "\% Full Reporting"
 	la var n_mon_yr "Birding Rate (Months/Year)"
 	la var exp_idx "Experience" 
+	la var ln_exp_idx "Experience" 
+	la var ln_duration "Duration (min)"
+	la var ln_distance "Distance (km)"
 	
 	* Save
 	order user_id c_code_2011 year_month sr* *_index
 	sort user_id c_code_2011 year_month
-	save "${DATA}/dta/ebird_user`data'", replace
+	save "${DATA}/dta/ebird_user_cell", replace
 
 }
 
@@ -165,14 +165,14 @@ if `ebird' == 1 {
 capture program drop construct_deforest
 program define construct_deforest
 
-	syntax, stage(integer) [restrict(string)] [drop_projects(string)]
+	syntax, stage(integer) version(integer) [restrict(string)] [drop_projects(string)]
 	
 	*------------------------
 	* SELECT APPROVAL STAGE
 	*------------------------
 	
 	* Read 
-	use "${DATA}/dta/fc_clean_v02", clear
+	use "${DATA}/dta/fc_clean_v0`version'", clear
 
 	* Select Stage
 	if `stage' == 2 {
@@ -242,7 +242,7 @@ program define construct_deforest
 	/*---------------------------------------
 	non-matched:
 		v01: 220 w/ no FC; 9 w complex splits
-		v02: 215 w/ no FC; 8 w complex splits
+		v02: 199 w/ no FC; 8 w complex splits
 	---------------------------------------*/
 	
 	*------------------------------
@@ -261,7 +261,8 @@ program define construct_deforest
 	
 	* Aggregate
 	collapse (sum) dist_f* dist_nf* n_* ///
-		     (count) n_patches = dist_id, ///
+			 (first) n_patches = patches ///
+		     (count) n_proj = dist_id, ///
 			 by(c_code_2011 year_month)
 
 	* Label
@@ -293,7 +294,7 @@ program define construct_deforest
 	g year = year(dofm(year_month))
 	g month = month(dofm(year_month))
 	keep if inrange(year, 2015, 2020)
-	kk
+
 	*------------------------------
 	* CONSTRUCT VARIABLES
 	*------------------------------
@@ -306,7 +307,7 @@ program define construct_deforest
 	
 	* Baseline tree cover
 	bys c_code_2011 (year_month): g tree_cover_base = tree_cover_km2 if _n == 1
-	bys c_code_2011 (year_month): g tree_cover_pt_base = tree_cover_pct if _n == 1
+	*bys c_code_2011 (year_month): g tree_cover_pt_base = tree_cover_pct if _n == 1
 	bys c_code_2011: carryforward tree_cover*base, replace
 
 	* Encroachment Area
@@ -336,7 +337,7 @@ program define construct_deforest
 	}
 	
 	* Number of Projects
-	foreach var of varlist n_ele-n_patches {
+	foreach var of varlist n_ele-n_proj {
 		
 		* No deforestation
 		replace `var' = 0 if `var' == .
@@ -373,28 +374,22 @@ end
 
 if `district_forest' == 1 {
 	
-	// Main (drop 3 mega, drop mines)
-	*construct_deforest, stage(2) restrict("drop") drop_projects("mining")
-	*save "${DATA}/dta/fc_dist_ym_stage2", replace
-	*export delimited "${DATA}/csv/fc_dist_ym_stage2.csv", replace
-	
-	* Stage 1 (drop 3 mega projects)
-	construct_deforest, stage(1) restrict("drop")
-	save "${DATA}/dta/fc_dym_s1_v02", replace
-	
-	* Stage 2
-	// Main (drop 3 mega projects)
-	construct_deforest, stage(2) restrict("drop")
+	* Stage 2 (drop 3 mega projects)
+	construct_deforest, version(2) stage(2) restrict("drop")
 	save "${DATA}/dta/fc_dym_s2_v02", replace
 	export delimited "${DATA}/csv/fc_dym_s2_v02.csv", replace
+	
+	* Stage 1 (drop 3 mega projects)
+	construct_deforest, version(2) stage(1) restrict("drop")
+	save "${DATA}/dta/fc_dym_s1_v02", replace
 
-	// Truncate at 99th pctile
-	construct_deforest, stage(2) restrict("trunc")
-	save "${DATA}/dta/fc_dym_s2_trunc99_v01", replace
+	// Stage 2 - Truncate at 99th pctile
+	construct_deforest, version(2) stage(2) restrict("trunc")
+	save "${DATA}/dta/fc_dym_s2_trunc99_v02", replace
 	
 	// Full
-	construct_deforest, stage(2)
-	save "${DATA}/dta/fc_dym_s2_full_v01", replace
+	construct_deforest, version(2) stage(2)
+	save "${DATA}/dta/fc_dym_s2_full_v02", replace
 }
 
 *===============================================================================
@@ -402,13 +397,8 @@ if `district_forest' == 1 {
 *===============================================================================
 if `merge' == 1 {
 	
-	local fc_data "" // either "" (main dataset), "full", or "trunc99"
-	local ebd_restrict "" // either "" (main) or "_allreported" 
-	local version 2 
-	/*---------------------------------------
-	For complete lists, set `restrict' to 
-	"_allreported"
-	----------------------------------------*/
+	local fc_data "" // either "" (main dataset), "full", or "trunc99" 
+	local version 2
 	
 	if "`fc_data'" == "" {
 		
@@ -446,7 +436,7 @@ if `merge' == 1 {
 		merge 1:1 c_code_2011 year_month using "`stage1'", nogen // 2 variables
 	
 		* Merge to ebird
-		merge 1:m c_code_2011 year_month using "${DATA}/dta/ebird_user`ebd_restrict'", keep(3) nogen
+		merge 1:m c_code_2011 year_month using "${DATA}/dta/ebird_user_cell", keep(3) nogen
 		
 		* User Time Trend
 		bys user_id (year_month): g u_lin = sum(year_month != year_month[_n-1]) // Linear 
@@ -457,7 +447,7 @@ if `merge' == 1 {
 		* Save
 		sort user_id year_month
 		order user_id *_code_2011 year_month state district sr *_index
-		save "${DATA}/dta/fc_ebd_user`ebd_restrict'_v0`version'", replace
+		save "${DATA}/dta/fc_ebd_user_cell_v0`version'", replace
 	}
 	
 	else {

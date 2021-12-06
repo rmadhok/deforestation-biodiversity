@@ -278,7 +278,7 @@ if `benefits' == 1 {
 	*----------------------------
 	
 	* Read FC
-	use "${DATA}/dta/fc_dym_s2_v01", clear
+	use "${DATA}/dta/fc_dym_s2_v02", clear
 
 	* Reduce
 	keep *_code_2011* year year_month month dist_f*cum_km2 dist_nf*cum_km2 // n_*cum
@@ -343,7 +343,7 @@ if `benefits' == 1 {
 	}
 	
 	*---------------------------
-	* MERGE TO ATREE CFR (LATER)
+	* MERGE TO ATREE CFR
 	*---------------------------
 	
 	* Merge
@@ -416,7 +416,7 @@ if `benefits' == 1 {
 	g sc_pop_p = (sc_pop/tot_pop) * st_f_cum_km2_p
 	
 	* Save
-	save "${DATA}/dta/benefits_iv_v01", replace
+	save "${DATA}/dta/benefits_iv_v02", replace
 
 }
 

@@ -29,8 +29,8 @@ from scrape_functions import *
 
 ## Set Parameters
 url = 'http://forestsclearance.nic.in/'         
-dir = '/Volumes/Backup Plus/research/data/def_biodiv/parivesh/'
-#dir = '/Users/rmadhok/Dropbox/def_biodiv/data/raw/'
+#dir = '/Volumes/Backup Plus/research/data/def_biodiv/parivesh/'
+dir = '/Users/rmadhok/Dropbox/def_biodiv/data/raw/'
 os.chdir(dir)       
 
 #-----------------------
@@ -143,10 +143,10 @@ data['ctl00$ScriptManager1'] = 'ctl00$ContentPlaceHolder1$rr|ctl00$ContentPlaceH
 data['__EVENTTARGET']        = 'ctl00$ContentPlaceHolder1$grdevents'
 
 # 964 pages total.
-lastPage = 970
+lastPage = 976
 pageDelay = list(range(50,lastPage+1,50))
 pageRange = list(range(2, lastPage+1))
-broken = {119, 129, 495, 525, 579, 851, 887, 909, 920} # old: 885, 907, 918
+broken = {120, 129, 499, 529, 583, 856, 892, 915, 925} 
 pageRange = [e for e in pageRange if e not in broken]
 for page in pageRange:
 	
