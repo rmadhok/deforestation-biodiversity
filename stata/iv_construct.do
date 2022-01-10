@@ -281,24 +281,22 @@ if `benefits' == 1 {
 	use "${DATA}/dta/fc_dym_s2_v02", clear
 
 	* Reduce
-	keep *_code_2011* year year_month month dist_f*cum_km2 dist_nf*cum_km2 // n_*cum
+	keep *_code_2011* year year_month month dist_f*cum_km2 dist_nf*cum_km2
 	
 	* 2015 State Fractions
 	preserve
 	
 		* Pre-period 
 		keep if year == 2015
-		keep c_code_2011 state_code_2011 year_month dist_f_cum_km2 // n_patches_cum
+		keep c_code_2011 state_code_2011 year_month dist_f_cum_km2
 		
 		* State cumulatives
 		bys state_code_2011 year_month: egen st_f_cum_km2 = total(dist_f_cum_km2)
-		*bys state_code_2011 year_month: egen st_patches_cum = total(n_patches_cum)
 		bys state_code_2011 year_month: keep if _n == 1
-		drop dist_f_cum_km2 c_code_2011 // n_patches_cum
+		drop dist_f_cum_km2 c_code_2011
 		
 		* National deforestation
 		bys year_month: egen nat_f_cum_km2 = total(st_f_cum_km2)
-		*bys year_month: egen nat_patches_cum = total(st_patches_cum)
 		
 		* Collapse
 		sort state_code_2011 year_month
@@ -306,7 +304,6 @@ if `benefits' == 1 {
 		
 		* Share
 		g st_f_share = st_f_cum_km2 / nat_f_cum_km2
-		*g st_patches_share = st_patches_cum / nat_patches_cum
 		
 		* Save
 		keep state_code_2011 *_share
@@ -321,9 +318,7 @@ if `benefits' == 1 {
 	
 	* Predicted state deforestation
 	bys year_month: egen nat_f_cum_km2 = total(dist_f_cum_km2)
-	*bys year_month: egen nat_patches_cum = total(n_patches_cum)
 	g st_f_cum_km2_p = st_f_share * nat_f_cum_km2
-	*g st_patches_cum_p = st_patches_share * nat_patches_cum
 	sort c_code_2011 year_month
 	
 	*-------------------------
@@ -334,12 +329,10 @@ if `benefits' == 1 {
 	merge m:1 c_code_2011 using "${DATA}/dta/iv_fra", nogen
 	sort c_code_2011 year_month
 	
-	* IV
+	* IV - STATE DEF'N X FRA
 	foreach v of varlist f_vil-scst_pop_ha f_rev_tot_pop-tot_pop_d_ha {
 		
-		// state def'n X fra
 		g iv_`v' = `v' * st_f_cum_km2_p 
-		*g p_`v'_iv = `v' * st_patches_cum_p
 	}
 	
 	*---------------------------
@@ -349,14 +342,13 @@ if `benefits' == 1 {
 	* Merge
 	merge m:1 c_code_2011 using "${DATA}/dta/iv_cfr", nogen
 	
-	* construct
+	* Population/ha 
 	foreach v of varlist sc_pop st_pop scst_pop {
 		g `v'_cfr_ha = (`v' / cfr_tot)/1000
 	}
 	
-	* IV
+	* IV - STATE DEF'N X CFR
 	foreach v of varlist *_cfr_ha {
-		
 		g iv_`v' = `v' * st_f_cum_km2_p
 	}
 	
@@ -367,24 +359,21 @@ if `benefits' == 1 {
 	* Merge
 	merge m:1 c_code_2011 year using "${DATA}/dta/iv_scst_seats", keep(1 3) nogen
 	
-	* IV (double interactions)
+	* IV - STATE DEF'N x SEATS
 	foreach v of varlist st_seats sc_seats r_seats {
 		
-		// state def'n X seats
 		g iv_`v' = `v' * st_f_cum_km2_p
-		*g iv_p_`v' = `v' * st_patches_cum_p
 	}
 	
-	* IV (triple interactions)
+	* IV - STATE DEF'N X FRA X SEATS
 	foreach i of varlist f_vil-scst_pop_ha f_rev_tot_pop-tot_pop_d_ha sc_pop_cfr_ha-scst_pop_cfr_ha {
 		foreach j of varlist st_seats sc_seats r_seats {
 			
-			// fra X seats
+			* FRA x SEATS
 			g `i'_`j' = `i' * `j' 
 			
-			// state def'n X fra X seats
+			* STATE DEF'N X FRA X SEATS
 			g iv_`i'_`j' = `i' * `j' * st_f_cum_km2_p
-			*g `i'_`j'_iv = `i' * `j' * st_patches_cum_p
 		}
 	}
 	

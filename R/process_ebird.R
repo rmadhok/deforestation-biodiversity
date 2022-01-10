@@ -146,14 +146,15 @@ ebird_trip <- ebird %>%
   mutate(sr_hr = (sr/DURATION.MINUTES)*60, # species diversity per hr
          sh_index_hr = (sh_index/DURATION.MINUTES)*60,
          si_index_hr = (si_index/DURATION.MINUTES)*60) %>%
-  left_join(experience, by=c('OBSERVER.ID', 'YEARMONTH')) # add experience
+  left_join(experience, by=c('OBSERVER.ID', 'YEARMONTH')) %>% # add experience
+  ungroup()
 
 # Grid cell
 grid <- raster(extent(india_dist))
 res(grid) <- .1
 crs(grid) <- crs(india_dist)
 grid <- setValues(grid, 1:ncell(grid))
-ebird_trip$cell <- extract(grid, st_as_sf(ebird_trip, 
+ebird_trip$cell <- extract(grid, st_as_sf(as.data.frame(ebird_trip %>% ungroup()), 
                                           coords = c('LONGITUDE', 'LATITUDE'), 
                                           crs = 4326))
 write.csv(ebird_trip, 'ebird_trip.csv', row.names = F)

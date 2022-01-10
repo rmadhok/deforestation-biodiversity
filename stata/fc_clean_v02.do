@@ -99,7 +99,7 @@ ren DistrictName* district*
 ren ForestLand* dist_f*
 ren NonForestLand* dist_nf*
 
-* Patches
+* Patches (linear = segments; non-linear=patches)
 ren division*_anoofpatches div*_patches
 ren division*_bnoof* div*_segs
 foreach v of varlist *_patches *_segs {
@@ -166,6 +166,15 @@ foreach v of varlist proj_cost proj_area_forest proj_area_nonforest ///
 		destring `v', replace force
 		replace `v' = . if `v' < 0
 	}
+	
+* Encode (yes/no)
+foreach var of varlist employment displacement cba ec_needed ///
+	proj_in_pa* proj_scheduledarea proj_fra {
+		
+		gen `var'_num = (`var' == "yes")
+		replace `var'_num = . if mi(`var')
+		drop `var'
+	}
 
 *------------------------------
 * CATEGORIES
@@ -173,7 +182,8 @@ foreach v of varlist proj_cost proj_area_forest proj_area_nonforest ///
 
 * Project Categorization
 gen proj_cat = "electricity" if inlist(proj_category, "hydel", "sub station", "thermal", "transmission line", "village electricity", "wind power", "solar power")
-replace proj_cat = "transportation" if inlist(proj_category, "road", "approach access", "railway")
+replace proj_cat = "transportation" if inlist(proj_category, "road", "railway") // approach road part of "other"
+*replace proj_cat = "transportation" if inlist(proj_category, "road", "approach access", "railway")
 replace proj_cat = "irrigation" if inlist(proj_category, "canal", "irrigation", "drinking water")
 replace proj_cat = "resettlement" if inlist(proj_category, "forest village conversion", "rehabilitation")
 replace proj_cat = "mining" if inlist(proj_category, "mining", "quarrying")
@@ -193,12 +203,14 @@ foreach v of varlist proj_name proj_narr {
 	replace proj_cat = "resettlement" if regexm(`v', "relocat")
 	
 	* Roads
-	replace proj_cat = "transportation" if regexm(`v', "approach") & proj_cat == "other"
-	replace proj_cat = "transportation" if regexm(`v', "access") & proj_cat == "other"
+	*replace proj_cat = "transportation" if regexm(`v', "approach") & proj_cat == "other"
+	*replace proj_cat = "transportation" if regexm(`v', "access") & proj_cat == "other"
 	
 	* Power
 	replace proj_cat = "electricity" if regexm(`v', "power") & proj_cat == "other"
 	replace proj_cat = "electricity" if regexm(`v', "substation") & proj_cat == "other"
+	replace proj_cat = "electricity" if regexm(`v', "sub-station") & proj_cat == "other"
+	replace proj_cat = "electricity" if regexm(`v', "kv") & proj_cat == "other"
 	replace proj_cat = "electricity" if regexm(`v', "transmission line") & proj_cat == "other"
 
 	* OFC
@@ -214,16 +226,14 @@ foreach v of varlist proj_name proj_narr {
 	replace proj_cat = "underground" if regexm(`v', "under") & regexm(`v', "water") & proj_cat == "other"
 	replace proj_cat = "underground" if regexm(`v', "under") & regexm(`v', "irrigation") & proj_cat == "other"
 }
-
-* Encode (yes/no)
-foreach var of varlist employment displacement cba ec_needed ///
-	proj_in_pa* proj_scheduledarea proj_fra {
-		
-		gen `var'_num = (`var' == "yes")
-		replace `var'_num = . if mi(`var')
-		drop `var'
-	}
 	
+* Company Status
+g proj_type = "central" if regexm(ua_legal_status, "central")
+replace proj_type = "state" if regexm(ua_legal_status, "state")
+replace proj_type = "joint" if regexm(ua_legal_status, "joint")
+replace proj_type = "private" if ua_legal_status == "private"
+replace proj_type = "neither" if proj_type == ""
+drop ua_legal_status
 *===============================================================================
 * MERGE APPROVAL DETAILS
 *===============================================================================
@@ -256,4 +266,3 @@ drop proj_name proj_narr
 order state prop_no prop_status date_submit date_rec proj_area_forest* proj*
 sort state prop_no
 save "${SAVE}/dta/fc_clean_v02.dta", replace
-

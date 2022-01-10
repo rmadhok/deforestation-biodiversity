@@ -22,13 +22,14 @@ set matsize 10000
 //Set Directory Paths
 gl ROOT 	"/Users/rmadhok/Dropbox/def_biodiv"
 gl DATA 	"${ROOT}/data"
-gl TABLE	"${ROOT}/docs/jmp/tex_doc/v2"
+gl TABLE	"${ROOT}/docs/jmp/tex_doc/v3"
 cd "${TABLE}"
 
 // Modules
 local sumstats			0
-local learning			1
+local learning			0
 local event_study		0
+local valuation			1
 
 set scheme modern
 *===============================================================================
@@ -446,4 +447,155 @@ if `event_study' == 1 {
 		   saving("${TABLE}/fig/event_study.gph", replace)
 	graph export "${TABLE}/fig/event_study.png", width(1000) replace
 	
+}
+
+*===============================================================================
+* VALUATION
+*===============================================================================
+if `valuation' == 1 {
+	
+	*----------------------
+	* Load Datasets
+	*----------------------
+	
+	* Read deforestation
+	use "${DATA}/dta/fc_dym_s2_v02", clear
+
+	* Reduce
+	keep c_code_2011 year_month year month state ///
+		 dist_f*cum_km2 tree_cover_km2 st_fam_disp_cum
+	keep if year == 2020 & month == 12 // total forest occupied by infrastructure at end of study
+	tempfile temp
+	save "`temp'"
+	
+	* Read valuation
+	import delimited "${DATA}/csv/dist_forest_value.csv", clear
+	
+	* Merge
+	merge 1:1 c_code_2011 using "`temp'", keep(3) nogen
+	order c_code_2011 year_month, first
+
+	*----------------------
+	* Calculate Values
+	*----------------------
+
+	* Convert from ha to km2
+	foreach v of varlist nwfp-npv {
+		replace `v' = `v' / 100
+	}
+	
+	* NPV of each benefit flow
+	/*--------------------------------
+	Data = annual flow of NWFP benefits, 
+	carbon sequestration etc*. 
+	Convert to NPV w/ annuity
+	formula w/ 4% discount rate and
+	60 year rotation period
+	
+	* carbon storage is a stock - add
+	to total ex-post
+	---------------------------------*/
+	foreach v of varlist nwfp cseq seed tev { // Rs./km2
+	
+		g `v'_npv = (((1-(1/(1.04)^60))/0.04) * `v')
+	}
+	
+	* Project Eco-Valuation (NPV Rs.)
+	foreach v of varlist nwfp_npv cseq_npv csto seed_npv tev_npv {
+		g dist_f_`v'= dist_f_cum_km2 * `v'
+	}
+	
+	*----------------------
+	* Tabulate
+	*----------------------
+	replace state = subinstr(state, "&", "and", .)
+	eststo clear
+	eststo: estpost tabstat dist_f_nwfp_npv, by(state) c(s) s(sum)
+	eststo: estpost tabstat dist_f_cseq_npv, by(state) c(s) s(sum)
+	eststo: estpost tabstat dist_f_csto, by(state) c(s) s(sum)
+	eststo: estpost tabstat dist_f_seed_npv, by(state) c(s) s(sum)
+	
+	esttab using "${TABLE}/tables/valuation_boe.tex", replace ///
+		cells("sum(fmt(0) label())") mgroups("NWFP" "Carbon Seq." ///
+		"Carbon Stock" "Seed Dispersal", pattern(1 1 1 1) ///
+		prefix(\multicolumn{@span}{c}{) suffix(}) span ///
+		erepeat(\cmidrule(lr){@span})) mlabel("NPV (Rs.)" "NPV (Rs.)" ///
+		"Rs." "NPV (Rs.)") collabel(none) booktabs noobs label unstack nonumber
+	
+	*----------------------
+	* Value of a bird
+	*----------------------
+	* Assume birds contribute
+	* 50% of seed dispersal service
+	
+	* Pollination/Seed dispersal NPV (Rs./km2)
+	g bird_npv = seed_npv*0.5
+	
+	* species/district (from BirdLife)
+	save "`temp'", replace
+	import delimited "${DATA}/csv/bl_district.csv", clear
+	keep if presenc == 1 & seasona == 1 // currently extant and resident
+	ren c_code_11 c_code_2011
+	g n_species = 1
+	collapse (sum) n_species, by(c_code_2011) // num species/district
+	merge 1:1 c_code_2011 using "`temp'", keep(3) nogen
+	
+	* species per forest km2
+	g species_km2 = n_species/tree_cover_km2
+	
+	* Species value (mean = Rs. 3220 per species) 
+	g species_value = bird_npv / species_km2 // (=Rs./species)
+	
+	* Histogram -- variation comes from species spatial distribution
+	su species_value, d
+	local mean = round(r(mean),.01)
+	twoway hist species_value, frac bcolor(navy8) ///
+		xtitle("Species Value (Rs.)", size(medium)) ///
+		ytitle("Proportion of Districts", size(medium)) ///
+		xlabel(,labsize(medium)) ylabel(,labsize(medium)) ///
+		xline(`mean', lcolor(red)) ///
+		text(0.2 4000 "Mean = `mean' Rs.", place(e) color(red))
+	graph export "${TABLE}/fig/hist_species_value.png", replace
+	
+	*----------------------
+	* Livelihood Loss
+	*----------------------
+	/*--------------------------------------
+	NWFP is in NPV Rs/Km2. Spread this across
+	tribal families per km2 --> NWFP per ST. 
+	scale by number of STs displaced 
+	---------------------------------------*/
+	
+	* Merge ST from census
+	save "`temp'", replace
+	import delimited "${DATA}/csv/2011_india_dist.csv", clear
+	keep c_code_11 tot_nm_hh tot_pop tot_st
+	ren c_code_11 c_code_2011
+	merge 1:1 c_code_2011 using "`temp'", keep(3) nogen
+	
+	* ST families per km2 forest
+	g n_st_hh = tot_st / (tot_pop / tot_nm_hh) // assume mean hh size
+	g n_st_hh_km2 = n_st_hh / tree_cover_km2
+	
+	* NWFP benefit per ST hh (Rs./hh)
+	g nwfp_st_value = nwfp_npv / n_st_hh_km2 // mean = Rs. 425
+	
+	* Mean ST income from IHDS (for reference)
+	preserve
+		
+		* Read
+		use "/Volumes/Backup Plus/dropbox/Dropbox (CID)/IndiaPowerPlant/data/ihds/wave2/36151-0002-Data" , clear
+		
+		* Main income source
+		tab ID14 if ID13==5 // dominant income source = cultivation
+		sum INCOME if ID13 == 5 [aw=WT] // mean = 75,216 Rs.
+		di r(mean)
+		sum INCCROP if ID13 == 5 [aw=WT] // mean = 20,283 Rs.
+		di r(mean)
+	restore
+	
+	
+	
+	
+		
 }

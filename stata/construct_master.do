@@ -25,8 +25,8 @@ gl DO		"${ROOT}/scripts/stata"
 
 // Module
 local ebird					0
-local district_forest		0
-local merge					1
+local district_forest		1
+local merge					0
 *===============================================================================
 * BIODIVERSITY
 *===============================================================================
@@ -178,27 +178,26 @@ program define construct_deforest
 	if `stage' == 2 {
 		keep if prop_status == "approved"
 	}
-	
 	if `stage' == 1 {
 		keep if prop_status == "approved by rohq" | regexm(prop_status, "principle") == 1 | regexm(prop_status, "pending at ho") == 1 | prop_status == "pending at ro for stage-ii" // 3,858 (4068) projects
 	}
 	
-	* Format Date
+	* Date
 	g year_month = ym(year(date_rec), month(date_rec))
 	format year_month %tmCCYY-NN
 	drop if year_month == .
 
 	* Alternative Distribution
 	/*---------------------------------------
-	* 2 mega project in TG - laying of canals, 
+	* 2 megaprojects in TG - laying of canals, 
 	  tunnels, power lines for lift irrigation
 	* 1 coal PP - 4400MW and 2400MW stations
 	-----------------------------------------*/
-	// Drop 3 megaprojects
+	* Drop 3 megaprojects
 	if "`restrict'" == "drop" {
 		drop if proj_area_forest2 > 1000 // drops 3 megaprojects > 10 km2
 	}
-	// Keep all projects - truncate size
+	* Keep all projects - truncate size
 	if "`restrict'" == "trunc" {
 		winsor2 proj_area_forest2, cut(0 99) replace
 	}
@@ -206,21 +205,19 @@ program define construct_deforest
 	*-----------------------------------
 	* RESHAPE TO PROJECT-DISTRICT LEVEL
 	*-----------------------------------
-	
-	* Re-categorize projects
-	/*------------------------------------------------------------
-	there are 42 ind. projects which cause miniscule def'n. 
-	296 underground projects (pipelines, OFC) which cause almost no 
-	def'n. SE's are massive in own category. I lump into "other"
-	-------------------------------------------------------------*/
-	replace proj_cat = "other" if inlist(proj_cat, "industry", "underground")
+	/*-------------------------------------------------
+	- 47 industry projects w/ tiny def'n. 
+	- 296 UG projects (pipelines, OFC) w/ tiny def'n. 
+	- SE's huge in own category. add to "other"
+	---------------------------------------------------*/
+	replace proj_cat = "other" if inlist(proj_cat, "industry")
 	
 	* Drop projects in provided list
 	if "`drop_projects'" != "" {
 
 		foreach v of local drop_projects {
 			drop if proj_cat == "`v'"
-		}	
+		}
 	}
 	
 	* Reshape project-district level
@@ -249,7 +246,7 @@ program define construct_deforest
 	* AGGREGATE TO DISTRICT-MONTH
 	*------------------------------
 	
-	* Land Diversion by project type
+	* Land Diversion by project category
 	levelsof proj_cat, local(proj_cat)
 	foreach cat of local proj_cat {
 		
@@ -259,22 +256,44 @@ program define construct_deforest
 		g dist_nf_`abbrev_`cat'' = dist_nf if proj_cat == "`cat'"
 	}	
 	
+	* Land diversion by project type 
+	levelsof proj_type, local(proj_type)
+	foreach type of local proj_type {
+		
+		local abbrev_`type' = substr("`type'", 1, 3) // project abbrevation
+		g dist_f_`abbrev_`type'' = dist_f if proj_type == "`type'"
+		g n_`abbrev_`type'' = (proj_type == "`type'") // number of projects of type
+		g dist_nf_`abbrev_`type'' = dist_nf if proj_type == "`type'"
+	}
+	
+	* Protected area
+	g dist_f_pa = dist_f if proj_in_pa_esz_num == 1
+	g n_pa = (proj_in_pa_esz_num == 1)
+	g dist_nf_pa = dist_nf if proj_in_pa_esz_num == 1
+
 	* Aggregate
-	collapse (sum) dist_f* dist_nf* n_* ///
-			 (first) n_patches = patches ///
+	collapse (sum) dist_f* dist_nf* n_* st_fam* ///
 		     (count) n_proj = dist_id, ///
 			 by(c_code_2011 year_month)
 
 	* Label
 	la var dist_f "Deforestation"
 	la var dist_nf "Non-forest Diversion"
-	la var n_patches "Number of Patches"
+	la var dist_f_pa "Protected Area"
+	la var dist_nf_pa "Projected Area"
 	foreach cat of local proj_cat {
 		
 		local lab = proper("`cat'")
 		la var dist_f_`abbrev_`cat'' "`lab'"
 		la var n_`abbrev_`cat'' "`lab'"
 		la var dist_nf_`abbrev_`cat'' "`lab'"
+	}
+	foreach type of local proj_type {
+		
+		local lab = proper("`type'")
+		la var dist_f_`abbrev_`type'' "`lab'"
+		la var n_`abbrev_`type'' "`lab'"
+		la var dist_nf_`abbrev_`type'' "`lab'"
 	}
 	
 	* Add census codes for control group
@@ -299,7 +318,7 @@ program define construct_deforest
 	* CONSTRUCT VARIABLES
 	*------------------------------
 	
-	* Add district total forest area
+	* Add Forest Area
 	tempfile temp
 	save "`temp'"
 	import delimited "${DATA}/csv/forest_cover.csv", clear
@@ -317,15 +336,15 @@ program define construct_deforest
 		replace `var' = 0 if `var' == .
 		local vlab : var lab `var'
 	
-		* Cumulative
-		bys c_code_2011 (year_month): g `var'_cum = sum(`var')
-		la var `var'_cum "`vlab'"
-		
-		* km2
-		g `var'_km2 = `var' / 100
-		la var `var'_km2 "`vlab'"
-		g `var'_cum_km2 = `var'_cum / 100
+		* Cumulative km2
+		bys c_code_2011 (year_month): g `var'_cum_km2 = sum(`var')/100
 		la var `var'_cum_km2 "`vlab'"
+		kk
+		* km2
+		*g `var'_km2 = `var' / 100
+		*la var `var'_km2 "`vlab'"
+		*g `var'_cum_km2 = `var'_cum / 100
+		*la var `var'_cum_km2 "`vlab'"
 		
 		* Share of forest area
 		g `var'_cum_km2_s = (`var'_cum_km2 / tree_cover_base)*100
@@ -378,7 +397,7 @@ if `district_forest' == 1 {
 	construct_deforest, version(2) stage(2) restrict("drop")
 	save "${DATA}/dta/fc_dym_s2_v02", replace
 	export delimited "${DATA}/csv/fc_dym_s2_v02.csv", replace
-	
+	jjj
 	* Stage 1 (drop 3 mega projects)
 	construct_deforest, version(2) stage(1) restrict("drop")
 	save "${DATA}/dta/fc_dym_s1_v02", replace
