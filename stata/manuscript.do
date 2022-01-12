@@ -238,7 +238,9 @@ if `mechanism' == 1 {
 	
 	* Read
 	use "${DATA}/dta/fc_ebd_user_v02", clear
-	local ctrls coverage temp rain tree_cover_km2 ln_duration ln_exp_idx
+	g ln_coverage = ln(coverage)
+	local ctrls ln_coverage temp rain tree_cover_km2 ln_duration ln_exp_idx ln_distance
+	
 	*drop_outliers
 
 	**# 2. Endogeneity: Do users move to other districts?
@@ -392,21 +394,35 @@ if `mechanism' == 1 {
 	*/
 	**# 3. Fixing Location
 	*-------------------------------------------------------
-	use "${DATA}/dta/fc_ebd_user_v02", clear
+	*use "${DATA}/dta/fc_ebd_user_v02", clear
+	
+	/*
+	// good results if remove nf controls.
+	reg_sat sr dist_f_cen_cum_km2 dist_f_joi_cum_km2 ///
+			   dist_f_pri_cum_km2 dist_f_sta_cum_km2 ///
+			   dist_nf_cen_cum_km2 dist_nf_joi_cum_km2  ///
+			   dist_nf_pri_cum_km2 dist_nf_sta_cum_km2  ///
+			   `ctrls'
+	
+	
+	reg_sat sr dist_f_ele_cum_km2 dist_f_irr_cum_km2 ///
+		dist_f_min_cum_km2 dist_f_oth_cum_km2 dist_f_res_cum_km2 ///
+		dist_f_tra_cum_km2 `ctrls'
+	
 	
 	* Main (For Reference)
-	eststo: reghdfe sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
-		a(user_id#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
-		
+	eststo: reghdfe sr dist_f_cum_km2 `ctrls', ///
+		a(c_code_2011_num state_code_2011_num#month year) vce(cl biome)
+	
 		estadd local agg "User-District-Month"
 		estadd local user_y_fe "$\checkmark$"
 		estadd local dist_fe "$\checkmark$"
 		estadd local st_m_fe "$\checkmark$"
-		
+	*/
 	* Users who stay in one district
-	eststo: reghdfe sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls' if n_dist_user == 1, ///
-		a(user_id#year state_code_2011_num#month) vce(cl biome)
-	
+	eststo: reghdfe sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
+		a(user_id#c_code_2011_num#year state_code_2011_num#month) vce(cl biome)
+	kk
 	
 	// Note: Negative effect. But, may be driven by users being driven to new 
 	// locations following construction. 
@@ -414,7 +430,7 @@ if `mechanism' == 1 {
 	* District FE
 	eststo: reghdfe sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
 		a(c_code_2011_num state_code_2011_num#month year) vce(cl biome)
-		
+	kk
 		estadd local agg "User-District-Month"
 		estadd local year_fe "$\checkmark$"
 		estadd local dist_fe "$\checkmark$"

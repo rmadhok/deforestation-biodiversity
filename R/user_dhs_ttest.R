@@ -139,9 +139,9 @@ df_u <- as.data.frame(rbindlist(lapply(idx, t_test, sample = 'U')))
 clean <- function(df) {
   
   # variable labels
-  df$Variable <- c('HH Size', 'Wealth Index', 'Bedrooms per Person', 'Fridge', 
-                     'Car', 'Landline', 'Sep. Kitchen', 'Colour TV', 'Internet', 
-                     'Washing Machine', 'Piped Water', 'Flush Toilet')
+  df$Variable <- c('HH Size', 'Wealth Index', 'Bedrooms per Person', 'Fridge (=1)', 
+                     'Car (=1)', 'Landline (=1)', 'Sep. Kitchen (=1)', 'Colour TV (=1)', 'Internet (=1)', 
+                     'Washing Machine (=1)', 'Piped Water (=1)', 'Flush Toilet (=1)')
 
   # Columns
   names(df) <- c('Variable', 'Matched DHS', 'DHS', 'Difference', 'p-value')
@@ -168,8 +168,8 @@ df_all <- df_clean$df_all
 rm(list='df_clean')
 
 # Write out
-stargazer(master, 
+stargazer(df_all, 
           summary=F, 
           rownames=F, 
-          out=paste(SAVE,'docs/jmp/tex_doc/v3/tables/ebd_dhs_ttest.tex', sep=''))
+          out=paste(SAVE,'docs/jmp/tex_doc/v3/tables/ebd_dhs_all_ttest.tex', sep=''))
 

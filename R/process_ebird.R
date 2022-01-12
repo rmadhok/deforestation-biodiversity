@@ -6,10 +6,10 @@
 ### SET-UP
 # Directories
 rm(list=ls())
-read_path_head <- '/Volumes/Backup Plus/research/data/def_biodiv/ebird'
-save_path_head <- '/Users/rmadhok/Dropbox/def_biodiv/'
-dist_shp <- '/Users/rmadhok/Dropbox/IndiaPowerPlant/data/'
-setwd(read_path_head)
+READ <- '/Volumes/Backup Plus/research/data/def_biodiv/ebird'
+SAVE <- '/Users/rmadhok/Dropbox/def_biodiv/'
+SHP <- '/Users/rmadhok/Dropbox/IndiaPowerPlant/data/'
+setwd(READ)
 
 # Load Packages
 require(data.table)
@@ -20,151 +20,192 @@ require(lubridate)
 require(sp)
 require(rgdal)
 require(stargazer)
+require(exactextractr)
 
 # Read Custom Functions
-source(paste(save_path_head, 'scripts/R/ebird_functions.R', sep=''))
+source(paste(SAVE, 'scripts/R/ebird_functions.R', sep=''))
 
-## 1. LOAD EBIRD -----------------------------------------------------------------------
+#----------------------------------------------------------------
+## 1. LOAD EBIRD + INITIAL CLEANING
+#----------------------------------------------------------------
 
 # Read (n=21,870,724)
 ebird <- fread('ebd_IN_201401_202012_relSep-2021.txt') # 2014-2020
-colnames(ebird) <- make.names(colnames(ebird))
+colnames(ebird) <- gsub('\\.', '_', tolower(make.names(colnames(ebird))))
 
 # Format Dates
-ebird$OBSERVATION.DATE <- ymd(ebird$OBSERVATION.DATE)
-ebird$YEAR <- year(ebird$OBSERVATION.DATE)
-ebird$YEARMONTH <- format(ebird$OBSERVATION.DATE, "%Y-%m")
+ebird$observation_date <- ymd(ebird$observation_date)
+ebird$year <- year(ebird$observation_date)
+ebird$yearmonth <- format(ebird$observation_date, "%Y-%m")
 
-# Experience from 2014
+# cumulative experience since 2014
 experience <- ebird %>%
-  group_by(OBSERVER.ID, OBSERVATION.DATE) %>%
-  summarize(trips_day = n_distinct(SAMPLING.EVENT.IDENTIFIER),
-            YEARMONTH = first(YEARMONTH)) %>%
-  group_by(OBSERVER.ID) %>%
-  arrange(OBSERVATION.DATE) %>%
+  group_by(observer_id, observation_date) %>%
+  summarize(trips_day = n_distinct(sampling_event_identifier),
+            yearmonth = first(yearmonth)) %>%
+  group_by(observer_id) %>%
+  arrange(observation_date) %>%
   mutate(exp_idx = cumsum(trips_day)) %>%
-  group_by(OBSERVER.ID, YEARMONTH) %>%
-  arrange(OBSERVATION.DATE) %>%
+  group_by(observer_id, yearmonth) %>%
+  arrange(observation_date) %>%
   summarize(exp_idx = last(exp_idx))
 
 # Keep necessary columns
-ebird <- ebird %>% dplyr::select(-c(1,2,4,6:8,10:15,17,19,20:23,25,30,35,42:48))
+ebird <- ebird %>%
+  dplyr::select('taxonomic_order', 'observation_count', 'state', 'county', 
+                'locality', 'locality_type', 'latitude', 'longitude',
+                'observation_date', 'observer_id', 'sampling_event_identifier', 
+                'protocol_type', 'protocol_code', 'duration_minutes', 
+                'effort_distance_km', 'effort_area_ha', 'number_observers', 
+                'all_species_reported', 'group_identifier', 'year', 'yearmonth')
 
-## 2. INITIAL FILTERING --------------------------------------------------------------
+# Clean names
+ebird <- ebird %>%
+  rename(species_id = taxonomic_order,
+         species_count = observation_count,
+         lat = latitude,
+         lon = longitude,
+         date = observation_date,
+         user_id = observer_id,
+         trip_id = sampling_event_identifier,
+         duration = duration_minutes,
+         distance = effort_distance_km,
+         area = effort_area_ha,
+         group_size = number_observers,
+         complete = all_species_reported,
+         group_id = group_identifier)
 
-# Filters from eBird manual (n=11,434,882)
+#----------------------------------------------------------------
+## 2. FILTERING 
+#----------------------------------------------------------------
+
+# Filters from eBird manual (n=18,096,733)
 ebird <- ebird %>%
   filter(
-    YEAR > 2014,
-    ALL.SPECIES.REPORTED == 1,
-    DURATION.MINUTES <= 5*60,
-    NUMBER.OBSERVERS <= 10
-  )
+    year > 2014,
+    complete == 1,
+    duration <= 5*60,
+    group_size <= 10
+  ) %>%
+  dplyr::select(-complete)
 
-# Export protocol list for SM (MOVE HIGHER?)
+# Export protocol list (appendix)
 protocol <- ebird %>%
-  distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
-  group_by(PROTOCOL.TYPE) %>%
+  distinct(trip_id, .keep_all = T) %>%
+  group_by(protocol_type) %>%
   summarize(`Num. Trips` = n()) %>%
   mutate(Pct. = round((`Num. Trips`/sum(`Num. Trips`)*100),2)) %>%
-  rename(Protocol = PROTOCOL.TYPE) %>%
+  rename(Protocol = protocol_type) %>%
   arrange(desc(Pct.))
 stargazer(protocol, 
           summary=F, 
           rownames=F, 
-          out=paste(save_path_head,'docs/jmp/tex_doc/v3/tables/protocol.tex', sep=''))
+          out=paste(SAVE,'docs/jmp/tex_doc/v3/tables/protocol.tex', sep=''))
 
-# Filter Protocol (stationary, travelling) (n=11,375,851)
-ebird <- filter(ebird, PROTOCOL.CODE %in% c('P21', 'P22'))
+# Filter Protocol (stationary, travelling) (n=17,953,834)
+ebird <- filter(ebird, protocol_code %in% c('P21', 'P22'))
 
-# Drop Duplicates (n=8,564,865; n=14,458,040)
+# Drop Duplicates
 #ebird$GROUP.IDENTIFIER[ebird$GROUP.IDENTIFIER == ''] <- NA
 #ebird_m <- ebird %>% filter(is.na(GROUP.IDENTIFIER))
 #ebird_nm <- ebird %>% filter(!is.na(GROUP.IDENTIFIER))
 #ebird_dd <- distinct(ebird_nm, GROUP.IDENTIFIER, TAXONOMIC.ORDER, .keep_all = T)
 #ebird <- rbind(ebird_m, ebird_dd)
 #rm(list=c('ebird_dd', 'ebird_m', 'ebird_nm', 'protocol'))
-  
-## 2. OVERLAY DISTRICT CENSUS CODES -----------------------------------------------------
 
-# Load Distric Map
-india_dist <- st_read(paste(dist_shp, "maps/india-district", sep=""), 
+#----------------------------------------------------------------
+## 3. IDENTIFY DISTRICTS AND COASTAL TRIPS
+#----------------------------------------------------------------  
+
+# Distric Map
+india_dist <- st_read(paste(SHP, "maps/india-district", sep=""), 
                       'SDE_DATA_IN_F7DSTRBND_2011', 
-                      stringsAsFactors = F)
+                      stringsAsFactors = F) %>%
+  dplyr::select(c_code_11) %>% 
+  rename(c_code_2011=c_code_11)
 
 # Overlay (point-in-poly) - 10 mins
-ebird$c_code_2011 <- as.data.frame(st_join(st_as_sf(ebird, 
-                                                    coords = c('LONGITUDE', 'LATITUDE'), 
-                                                    crs = 4326), 
-                                           india_dist, join = st_intersects))$c_code_11
+ebird$c_code_2011 <- st_join(st_as_sf(ebird, coords = c('lon', 'lat'), crs = 4326), 
+                             india_dist, join = st_intersects)$c_code_2011
 
-# Remove out-of-bounds birds (n = 11,319,749)
-ebird_oob <- ebird %>% filter(is.na(c_code_2011)) # (n=47,611, 813 users, 3311 trips, 62 districts)
+# Remove out-of-bounds birds (n = 17,888,672)
+ebird_oob <- ebird %>% filter(is.na(c_code_2011)) # (n=4964 trips, 68 districts)
 ebird <- ebird %>% filter(!is.na(c_code_2011))
 rm(list='ebird_oob')
 
-## 3. CONSTRUCT VARS -------------------------------------------------------------------
+#----------------------------------------------------------------
+## 4. CONSTRUCT SPECIES DIVERSITY
+#---------------------------------------------------------------- 
 
 # Higher Level Species Richness (~10 mins)
 ebird <- ebird %>%
-  group_by(YEARMONTH) %>%
-  mutate(sr_ym = n_distinct(TAXONOMIC.ORDER)) %>% # species richness per year-month (all users)
-  group_by(YEAR) %>%
-  mutate(sr_yr = n_distinct(TAXONOMIC.ORDER)) %>% # species richness per year
-  group_by(OBSERVER.ID, YEAR) %>%
-  mutate(n_mon_yr = n_distinct(YEARMONTH), # Months per year of birding - 'high ability' users
-         sr_uyr = n_distinct(TAXONOMIC.ORDER)) %>% # species richnes per user-year
-  group_by(OBSERVER.ID, YEARMONTH) %>%
-  mutate(sr_uym = n_distinct(TAXONOMIC.ORDER)) %>% # species richness per user-year-month
-  group_by(OBSERVER.ID, c_code_2011, YEARMONTH) %>%
-  mutate(sr_udym = n_distinct(TAXONOMIC.ORDER))
-
-## 4. OTHER DIVERSITY INDICES ------------------------------------------------------------------
+  group_by(yearmonth) %>%
+  mutate(sr_ym = n_distinct(species_id)) %>% # species richness per year-month (all users)
+  group_by(year) %>%
+  mutate(sr_yr = n_distinct(species_id)) %>% # species richness per year
+  group_by(user_id, year) %>%
+  mutate(n_mon_yr = n_distinct(yearmonth), # Months per year of birding - 'high ability' users
+         sr_uyr = n_distinct(species_id)) %>% # species richnes per user-year
+  group_by(user_id, yearmonth) %>%
+  mutate(sr_uym = n_distinct(species_id)) %>% # species richness per user-year-month
+  group_by(user_id, c_code_2011, yearmonth) %>%
+  mutate(sr_udym = n_distinct(species_id))
 
 # Convert count to numeric
-ebird$OBSERVATION.COUNT[ebird$OBSERVATION.COUNT == 'X'] <- NA
-ebird$OBSERVATION.COUNT <- as.numeric(ebird$OBSERVATION.COUNT)
+ebird$species_count[ebird$species_count == 'X'] <- NA
+ebird$species_count <- as.numeric(ebird$species_count)
 
-# ----- Species diversity per trip ----------
+# Species diversity per trip
 ebird <- ebird %>% 
-  group_by(SAMPLING.EVENT.IDENTIFIER) %>% 
+  group_by(trip_id) %>% 
   mutate(sr = n(),
-         sh_index = -sum((OBSERVATION.COUNT / sum(OBSERVATION.COUNT, na.rm = T))*
-                                log(OBSERVATION.COUNT / sum(OBSERVATION.COUNT, na.rm = T)), na.rm = T),
-         si_index = 1 - ((sum(OBSERVATION.COUNT*(OBSERVATION.COUNT - 1), na.rm = T)) /
-                                 (sum(OBSERVATION.COUNT, na.rm = T)*(sum(OBSERVATION.COUNT, na.rm = T) - 1))))
+         sh_index = -sum((species_count / sum(species_count, na.rm = T))*
+                                log(species_count / sum(species_count, na.rm = T)), na.rm = T),
+         si_index = 1 - ((sum(species_count*(species_count - 1), na.rm = T)) /
+                                 (sum(species_count, na.rm = T)*(sum(species_count, na.rm = T) - 1))))
 
-## 4. TRIP LEVEL ------------------------------------------------------------------
+#----------------------------------------------------------------
+## 5. ALLOCATE TRIPS TO GRID CELLS
+#---------------------------------------------------------------- 
 
-# Collapse (n=552,117 trips, 12,452 users)
+# Trip level (n=1,023,573, 16,908 users)
 ebird_trip <- ebird %>% 
-  distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
-  dplyr::select(OBSERVATION.DATE, OBSERVER.ID, SAMPLING.EVENT.IDENTIFIER,
-                GROUP.IDENTIFIER, NUMBER.OBSERVERS, YEAR, YEARMONTH, 
-                DURATION.MINUTES, EFFORT.DISTANCE.KM, LATITUDE, LONGITUDE,
-                c_code_2011, n_mon_yr, starts_with('sr'), sh_index, si_index) %>%
-  mutate(sr_hr = (sr/DURATION.MINUTES)*60, # species diversity per hr
-         sh_index_hr = (sh_index/DURATION.MINUTES)*60,
-         si_index_hr = (si_index/DURATION.MINUTES)*60) %>%
-  left_join(experience, by=c('OBSERVER.ID', 'YEARMONTH')) %>% # add experience
+  ungroup() %>%
+  distinct(trip_id, .keep_all = T) %>%
+  dplyr::select(date, user_id, trip_id, group_id, group_size, year,
+                yearmonth, duration, distance, area, lat, lon, c_code_2011, 
+                protocol_code, n_mon_yr, starts_with('sr'), sh_index, si_index) %>%
+  mutate(sr_hr = (sr/duration)*60,
+         distance = replace(distance, is.na(distance), 0),
+         area = replace(area, is.na(area), 0),
+         traveling = ifelse(protocol_code == 'P22', 1, 0)) %>%
+  left_join(experience, by=c('user_id'='observer_id', 'yearmonth')) %>% # add experience
   ungroup()
 
-# Grid cell
+# Set India grid
 grid <- raster(extent(india_dist))
 res(grid) <- .1
 crs(grid) <- crs(india_dist)
 grid <- setValues(grid, 1:ncell(grid))
-ebird_trip$cell <- extract(grid, st_as_sf(as.data.frame(ebird_trip %>% ungroup()), 
-                                          coords = c('LONGITUDE', 'LATITUDE'), 
-                                          crs = 4326))
-write.csv(ebird_trip, 'ebird_trip.csv', row.names = F)
 
-# ----- Additional Filtering ----------
+# Assign cell id of trip
+ebird_trip$cell_id <- extract(grid, st_as_sf(ebird_trip, coords = c('lon', 'lat'), crs = 4326))
+
+# Number of cells per district
+n_cells_dist <- cbind(st_drop_geometry(india_dist), exact_extract(grid, india_dist, 'count'))
+names(n_cells_dist)[2] <- 'n_cells_dist'
+ebird_trip <- left_join(ebird_trip, n_cells_dist, by='c_code_2011')
+
+#----------------------------------------------------------------
+## 5. EXPORT FINAL DATASETS
+#---------------------------------------------------------------- 
+
+# Trip Level
+write_csv(ebird_trip, 'ebird_trip.csv')
 
 # User-gridcell-month
 ebird_user_cell <- ebird_trip %>%
-  mutate(distance = replace(EFFORT.DISTANCE.KM, is.na(EFFORT.DISTANCE.KM), 0)) %>%
-  group_by(OBSERVER.ID, cell, YEARMONTH) %>%
+  group_by(user_id, cell_id, yearmonth) %>%
   summarize(n_trips=n(),
             sr=mean(sr, na.rm=T),
             sr_hr=mean(sr_hr, na.rm=T),
@@ -174,24 +215,30 @@ ebird_user_cell <- ebird_trip %>%
             sr_ym=first(sr_ym),
             sr_yr=first(sr_yr),
             sh_index=mean(sh_index, na.rm=T),
-            sh_index_hr=mean(sh_index_hr, na.rm=T),
-            si_index=mean(si_index,na.rm=T),
-            si_index_hr=mean(si_index_hr, na.rm=T),
-            duration=mean(DURATION.MINUTES, na.rm=T),
+            si_index=mean(si_index, na.rm=T),
+            duration=mean(duration, na.rm=T),
             distance=mean(distance,na.rm=T),
-            group_size=mean(NUMBER.OBSERVERS, na.rm=T),
+            area=mean(area, na.rm=T),
+            traveling = mean(traveling, na.rm=T)*100,
+            group_size=mean(group_size, na.rm=T),
             n_mon_yr=first(n_mon_yr),
             exp_idx=first(exp_idx),
-            year=first(YEAR),
-            c_code_2011=first(c_code_2011))
+            year=first(year),
+            c_code_2011=first(c_code_2011),
+            n_cells_dist=first(n_cells_dist))
 
-write_csv(ebird_user_cell,
-          paste(save_path_head, 'data/csv/ebird_user_cell.csv', sep=""))
+write_csv(ebird_user_cell, paste(SAVE, 'data/csv/ebird_user_cell.csv', sep=""))
 
-# User-district-month (n=123,898)
-ebird_user <- ebird_trip %>%
-  mutate(distance = replace(EFFORT.DISTANCE.KM, is.na(EFFORT.DISTANCE.KM), 0)) %>%
-  group_by(OBSERVER.ID, c_code_2011, YEARMONTH) %>%
+# User-district-month
+ebird_user <- ebird_trip %>% 
+  ungroup() %>%
+  group_by(c_code_2011) %>%
+  mutate(coverage_d = n_distinct(cell_id)) %>%
+  ungroup() %>%
+  group_by(c_code_2011, yearmonth) %>% 
+  mutate(coverage_dym = n_distinct(cell_id)) %>%
+  ungroup() %>%
+  group_by(user_id, c_code_2011, yearmonth) %>%
   summarize(n_trips=n(),
             sr=mean(sr, na.rm=T),
             sr_hr=mean(sr_hr, na.rm=T),
@@ -201,15 +248,18 @@ ebird_user <- ebird_trip %>%
             sr_ym=first(sr_ym),
             sr_yr=first(sr_yr),
             sh_index=mean(sh_index, na.rm=T),
-            sh_index_hr=mean(sh_index_hr, na.rm=T),
-            si_index=mean(si_index,na.rm=T),
-            si_index_hr=mean(si_index_hr, na.rm=T),
-            duration=mean(DURATION.MINUTES, na.rm=T),
-            distance=mean(distance,na.rm=T),
-            group_size=mean(NUMBER.OBSERVERS, na.rm=T),
+            si_index=mean(si_index, na.rm=T),
+            duration=mean(duration, na.rm=T),
+            distance=mean(distance, na.rm=T),
+            area=mean(area, na.rm=T),
+            group_size=mean(group_size, na.rm=T),
             n_mon_yr=first(n_mon_yr),
             exp_idx=first(exp_idx),
-            year=first(YEAR))
+            year=first(year),
+            coverage_udym=n_distinct(cell_id),
+            coverage_dym=first(coverage_dym),
+            coverage_d=first(coverage_d),
+            n_cells_dist=first(n_cells_dist))
 
 write_csv(ebird_user,
           paste(save_path_head, 'data/csv/ebird_user.csv', sep=""))

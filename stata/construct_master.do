@@ -25,8 +25,8 @@ gl DO		"${ROOT}/scripts/stata"
 
 // Module
 local ebird					0
-local district_forest		1
-local merge					0
+local district_forest		0
+local merge					1
 *===============================================================================
 * BIODIVERSITY
 *===============================================================================
@@ -207,11 +207,11 @@ program define construct_deforest
 	*-----------------------------------
 	/*-------------------------------------------------
 	- 47 industry projects w/ tiny def'n. 
-	- 296 UG projects (pipelines, OFC) w/ tiny def'n. 
+	- UG projects (pipelines, OFC) have tiny def'n. 
 	- SE's huge in own category. add to "other"
 	---------------------------------------------------*/
-	replace proj_cat = "other" if inlist(proj_cat, "industry")
-	
+	replace proj_cat = "other" if inlist(proj_cat, "underground", "industry")
+
 	* Drop projects in provided list
 	if "`drop_projects'" != "" {
 
@@ -265,11 +265,6 @@ program define construct_deforest
 		g n_`abbrev_`type'' = (proj_type == "`type'") // number of projects of type
 		g dist_nf_`abbrev_`type'' = dist_nf if proj_type == "`type'"
 	}
-	
-	* Protected area
-	g dist_f_pa = dist_f if proj_in_pa_esz_num == 1
-	g n_pa = (proj_in_pa_esz_num == 1)
-	g dist_nf_pa = dist_nf if proj_in_pa_esz_num == 1
 
 	* Aggregate
 	collapse (sum) dist_f* dist_nf* n_* st_fam* ///
@@ -279,8 +274,6 @@ program define construct_deforest
 	* Label
 	la var dist_f "Deforestation"
 	la var dist_nf "Non-forest Diversion"
-	la var dist_f_pa "Protected Area"
-	la var dist_nf_pa "Projected Area"
 	foreach cat of local proj_cat {
 		
 		local lab = proper("`cat'")
@@ -326,33 +319,19 @@ program define construct_deforest
 	
 	* Baseline tree cover
 	bys c_code_2011 (year_month): g tree_cover_base = tree_cover_km2 if _n == 1
-	*bys c_code_2011 (year_month): g tree_cover_pt_base = tree_cover_pct if _n == 1
-	bys c_code_2011: carryforward tree_cover*base, replace
+	bys c_code_2011: carryforward tree_cover_base, replace
 
 	* Encroachment Area
-	foreach var of varlist dist_f-dist_nf_tra {
+	foreach var of varlist dist_f-dist_nf_sta {
 		
 		* No deforestation
 		replace `var' = 0 if `var' == .
 		local vlab : var lab `var'
 	
 		* Cumulative km2
-		bys c_code_2011 (year_month): g `var'_cum_km2 = sum(`var')/100
+		bys c_code_2011 (year_month): g `var'_cum_km2 = sum(`var')/100 // cumulative
 		la var `var'_cum_km2 "`vlab'"
-		kk
-		* km2
-		*g `var'_km2 = `var' / 100
-		*la var `var'_km2 "`vlab'"
-		*g `var'_cum_km2 = `var'_cum / 100
-		*la var `var'_cum_km2 "`vlab'"
-		
-		* Share of forest area
-		g `var'_cum_km2_s = (`var'_cum_km2 / tree_cover_base)*100
-		la var `var'_cum_km2_s "`vlab'"
-			
-		* Inverse Hyperbolic Sine
-		g `var'_cum_ihs = asinh(`var'_cum_km2)
-		la var `var'_cum_ihs "`vlab'"
+		drop `var'
 	}
 	
 	* Number of Projects
@@ -365,18 +344,16 @@ program define construct_deforest
 		* Cumulative
 		bys c_code_2011 (year_month): g `var'_cum = sum(`var')
 		la var `var'_cum "`vlab'"
-		
-		* Projects per 10 km2 of forest
-		g `var'_cum_s = (`var'_cum / tree_cover_base)*10
-		la var `var'_cum_s "`vlab'"
+		drop `var'
 	}
-
+	
 	* Share of total projects
-	foreach var of varlist n_ele_cum - n_tra_cum {
+	foreach var of varlist n_ele_cum - n_sta_cum {
 		local vlab : var lab `var'
-		g `var'_proj_s = 0 
-		la var `var'_proj_s "`vlab' (share of total projects)"
-		replace `var'_proj_s = `var' / n_patches_cum if n_patches_cum > 0
+		g `var'_s = 0 
+		la var `var'_s "`vlab' (Pct. of total)"
+		replace `var'_s = (`var' / n_proj_cum)*100 if n_proj_cum > 0
+		drop `var'
 	}
 	
 	* State/Dist Strings
@@ -397,11 +374,11 @@ if `district_forest' == 1 {
 	construct_deforest, version(2) stage(2) restrict("drop")
 	save "${DATA}/dta/fc_dym_s2_v02", replace
 	export delimited "${DATA}/csv/fc_dym_s2_v02.csv", replace
-	jjj
+	
 	* Stage 1 (drop 3 mega projects)
 	construct_deforest, version(2) stage(1) restrict("drop")
 	save "${DATA}/dta/fc_dym_s1_v02", replace
-
+kk
 	// Stage 2 - Truncate at 99th pctile
 	construct_deforest, version(2) stage(2) restrict("trunc")
 	save "${DATA}/dta/fc_dym_s2_trunc99_v02", replace
@@ -423,9 +400,8 @@ if `merge' == 1 {
 		
 		* Prepare Stage I Deforestation
 		use "${DATA}/dta/fc_dym_s1_v0`version'", clear
-		keep c_code_2011 year_month dist_f_km2 dist_nf_km2
-		ren (dist_f_km2 dist_nf_km2) (dist_f_km2_s1 dist_nf_km2_s1)
-		la var dist_f_km2_s1 "Deforestation (Stage 1)"
+		keep c_code_2011 year_month dist_f_cum_km2 dist_nf_cum_km2
+		ren (dist_f_cum_km2 dist_nf_cum_km2) (dist_f_cum_km2_s1 dist_nf_cum_km2_s1)
 		tempfile stage1
 		save "`stage1'"
 		
@@ -455,7 +431,7 @@ if `merge' == 1 {
 		merge 1:1 c_code_2011 year_month using "`stage1'", nogen // 2 variables
 	
 		* Merge to ebird
-		merge 1:m c_code_2011 year_month using "${DATA}/dta/ebird_user_cell", keep(3) nogen
+		merge 1:m c_code_2011 year_month using "${DATA}/dta/ebird_user", keep(3) nogen
 		
 		* User Time Trend
 		bys user_id (year_month): g u_lin = sum(year_month != year_month[_n-1]) // Linear 
@@ -466,7 +442,7 @@ if `merge' == 1 {
 		* Save
 		sort user_id year_month
 		order user_id *_code_2011 year_month state district sr *_index
-		save "${DATA}/dta/fc_ebd_user_cell_v0`version'", replace
+		save "${DATA}/dta/fc_ebd_user_v0`version'", replace
 	}
 	
 	else {
