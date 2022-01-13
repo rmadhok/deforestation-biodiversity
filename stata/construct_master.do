@@ -18,28 +18,25 @@ set more off
 set maxvar 10000
 set matsize 10000
 
-//Set Directory Paths
+// Set Directory Paths
 gl ROOT 	"/Users/rmadhok/Dropbox/def_biodiv"
 gl DATA 	"${ROOT}/data"
 gl DO		"${ROOT}/scripts/stata"
 
 // Module
 local ebird					0
-local district_forest		0
-local merge					1
+local district_forest		1
+local merge					0
 *===============================================================================
 * BIODIVERSITY
 *===============================================================================
-/*---------------------------------------
-For dataset restricted to trips with 
-all species reported, set local `data'
-to "_allreported", otherwise leave `data'
-empty
------------------------------------------*/
+
 if `ebird' == 1 {
 	
+	local level "udt" // udt = user-district-yearmonth, uct = user-cell-yearmonth
+	
 	**# Read
-	import delimited using "${DATA}/csv/ebird_user_cell.csv", clear
+	import delimited using "${DATA}/csv/ebird_`level'.csv", clear
 	
 	* Format Date
 	g year_month = ym(year, month(date(yearmonth, "20YM")))
@@ -49,8 +46,10 @@ if `ebird' == 1 {
 	tempfile ebd_user
 	save "`ebd_user'"
 	
-	**# Add Weather
-	foreach file in "coverage_ym_grid_5km" "india_rainfall_gpm" "india_temperature_era" {
+	**# Merge to external data
+	
+	* Weather
+	foreach file in "india_rainfall_gpm" "india_temperature_era" {
 	
 		import delimited "${DATA}/csv/`file'", varn(1) clear
 		g year_month = ym(year(date(yearmonth, "20YM")), month(date(yearmonth, "20YM")))
@@ -61,48 +60,59 @@ if `ebird' == 1 {
 		merge 1:m c_code_2011 year_month using "`ebd_user'", keep (2 3) nogen
 		save "`ebd_user'", replace
 	}
-
-	**# Merge with District Data
-	
-	* Coverage
-	import delimited "${DATA}/csv/coverage_dist_grid_5km", clear
 	
 	* Census Vars
-	merge 1:1 c_code_2011 using "${DATA}/dta/2011_india_dist", ///
-		keepus(state district tot_pop tot_area) nogen
-	
-	* BirdLife
-	merge 1:1 c_code_2011 using "${DATA}/dta/bl_district", nogen
-	merge 1:m c_code_2011 using "`ebd_user'", keep(3) nogen
+	merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist", ///
+		keepus(state district tot_pop tot_area) keep(1 3) nogen
 	save "`ebd_user'", replace
 	
-	*Biome Clusters
+	* BirdLife
+	import excel "${DATA}/csv/bl_district.xlsx", first clear
+	ren c_code_11 c_code_2011
+	drop if c_code_2011 == ""
+	keep if PRESENC == 1 | PRESENC == 3
+	bys c_code_2011: egen sr_bl = nvals(SISID)
+	collapse (first) sr_bl, by(c_code_2011)
+	merge 1:m c_code_2011 using "`ebd_user'", keep(2 3) nogen // all match
+	save "`ebd_user'", replace
+	
+	* Biome Clusters
 	import delimited "${DATA}/csv/biome_cluster", clear
 	merge 1:m c_code_2011 using "`ebd_user'", keep(2 3) nogen
 	replace biome = 888 if biome == . // note: only 1 district w missing biome (Diu)
 	
 	**# Clean Variables
 	
-	* Construct
 	g state_code_2011 = substr(c_code_2011, 1, 3)
-	bys observerid: egen n_st_user = nvals(state_code_2011)
-	bys observerid: egen n_dist_user = nvals(c_code_2011)
-	bys observerid: egen n_ym_user = nvals(year_month)
-	bys observerid: egen n_trips_user = total(n_trips)
-	bys c_code_2011: egen n_users_dist = nvals(observerid)
+	bys user_id: egen n_st_user = nvals(state_code_2011)
+	bys user_id: egen n_dist_user = nvals(c_code_2011)
+	bys user_id: egen n_ym_user = nvals(year_month)
+	bys user_id: egen n_trips_user = total(n_trips)
+	bys c_code_2011: egen n_users_dist = nvals(user_id)
 	bys c_code_2011: egen n_trips_dist = total(n_trips)
-	bys c_code_2011 year_month: egen n_users_dym = nvals(observerid)
-	sort observerid year_month state_code_2011 c_code_2011
+	bys c_code_2011 year_month: egen n_users_dym = nvals(user_id)
 	
 	g pop_density = tot_pop / tot_area
 	g ln_exp_idx = ln(exp_idx)
 	g ln_duration = ln(duration)
 	g ln_distance = asinh(distance)
 	
+	* Coverage fraction
+	if "`level'" == "udt" {
+		
+		foreach v of varlist coverage* {
+			replace `v' = (`v' / n_cells_dist)*100 // fraction of district covered
+			replace `v' = 100 if `v' > 100 // possible bc num cells/district weighted by overlap fraction
+		}
+		la var coverage_d "Coverage (\%)"
+		la var coverage_dym "Coverage (\%)"
+		la var coverage_udym "Coverage (\%)"
+	}
+	
 	* Clean
 	destring si_index*, replace force
 	ren (temp_era rain_gpm) (temp rain)
-	encode observerid, gen(user_id)
+	encode user_id, gen(uid)
 	drop state_code_2011
 	la var tot_area "District Area (\(km^{2}\))"
 	la var pop_density "Population Density (per \(km^{2}\))"
@@ -123,10 +133,7 @@ if `ebird' == 1 {
 	la var sr_yr "Species richness across all users in year"
 	la var group_size "Group Size"
 	la var sh_index "Shannon Index"
-	la var sh_index_hr "Shannon Index/Hr."
 	la var si_index "Simpson Index"
-	la var si_index_hr "Simpson Index/Hr."
-	la var coverage "Spatial Coverage (\%)"
 	la var duration "Duration (min)"
 	la var distance "Distance (km)"
 	la var rain "Rainfall (mm)"
@@ -136,11 +143,13 @@ if `ebird' == 1 {
 	la var ln_exp_idx "Experience" 
 	la var ln_duration "Duration (min)"
 	la var ln_distance "Distance (km)"
+	la var traveling "\% Travelling Trips"
 	
 	* Save
+	drop sr_uyr sr_uym sr_yr n_cells_dist tot_area tot_pop
 	order user_id c_code_2011 year_month sr* *_index
 	sort user_id c_code_2011 year_month
-	save "${DATA}/dta/ebird_user_cell", replace
+	save "${DATA}/dta/ebird_`level'", replace
 
 }
 
@@ -378,7 +387,7 @@ if `district_forest' == 1 {
 	* Stage 1 (drop 3 mega projects)
 	construct_deforest, version(2) stage(1) restrict("drop")
 	save "${DATA}/dta/fc_dym_s1_v02", replace
-kk
+
 	// Stage 2 - Truncate at 99th pctile
 	construct_deforest, version(2) stage(2) restrict("trunc")
 	save "${DATA}/dta/fc_dym_s2_trunc99_v02", replace
@@ -394,6 +403,7 @@ kk
 if `merge' == 1 {
 	
 	local fc_data "" // either "" (main dataset), "full", or "trunc99" 
+	local level "uct" // udt (user-dist-time) or uct (user-cell-time)
 	local version 2
 	
 	if "`fc_data'" == "" {
@@ -423,26 +433,14 @@ if `merge' == 1 {
 		
 		* Read Stage II Deforestation (main)
 		use "${DATA}/dta/fc_dym_s2_v0`version'", clear
-		
-		* Merge SLX
-		merge 1:1 c_code_2011 year_month using "`slx'", nogen
-		
-		* Merge Stage I Deforestation
-		merge 1:1 c_code_2011 year_month using "`stage1'", nogen // 2 variables
-	
-		* Merge to ebird
-		merge 1:m c_code_2011 year_month using "${DATA}/dta/ebird_user", keep(3) nogen
-		
-		* User Time Trend
-		bys user_id (year_month): g u_lin = sum(year_month != year_month[_n-1]) // Linear 
-		la var u_lin "Linear Trend"
-		g u_cubic = u_lin^3
-		la var u_cubic "Cubic Trend"
+		merge 1:1 c_code_2011 year_month using "`slx'", nogen // merge slx
+		merge 1:1 c_code_2011 year_month using "`stage1'", nogen // merge stage 1
+		merge 1:m c_code_2011 year_month using "${DATA}/dta/ebird_`level'", keep(3) nogen // merge ebird
 		
 		* Save
-		sort user_id year_month
+		sort user_id c_code_2011 year_month
 		order user_id *_code_2011 year_month state district sr *_index
-		save "${DATA}/dta/fc_ebd_user_v0`version'", replace
+		save "${DATA}/dta/fc_ebd_`level'_v0`version'", replace
 	}
 	
 	else {

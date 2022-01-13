@@ -1,7 +1,6 @@
 # PROJECT: Deforestation and Biodiversity
 # PURPOSE: Prepare eBird for Analysis
 # AUTHOR: Raahil Madhok
-# DATE: Dec 26, 2018 [created]
 
 ### SET-UP
 # Directories
@@ -17,14 +16,8 @@ require(tidyverse)
 require(sf)
 require(raster)
 require(lubridate)
-require(sp)
-require(rgdal)
 require(stargazer)
 require(exactextractr)
-
-# Read Custom Functions
-source(paste(SAVE, 'scripts/R/ebird_functions.R', sep=''))
-
 #----------------------------------------------------------------
 ## 1. LOAD EBIRD + INITIAL CLEANING
 #----------------------------------------------------------------
@@ -56,8 +49,8 @@ ebird <- ebird %>%
                 'locality', 'locality_type', 'latitude', 'longitude',
                 'observation_date', 'observer_id', 'sampling_event_identifier', 
                 'protocol_type', 'protocol_code', 'duration_minutes', 
-                'effort_distance_km', 'effort_area_ha', 'number_observers', 
-                'all_species_reported', 'group_identifier', 'year', 'yearmonth')
+                'effort_distance_km', 'number_observers', 'all_species_reported', 
+                'group_identifier', 'year', 'yearmonth')
 
 # Clean names
 ebird <- ebird %>%
@@ -70,7 +63,6 @@ ebird <- ebird %>%
          trip_id = sampling_event_identifier,
          duration = duration_minutes,
          distance = effort_distance_km,
-         area = effort_area_ha,
          group_size = number_observers,
          complete = all_species_reported,
          group_id = group_identifier)
@@ -104,15 +96,6 @@ stargazer(protocol,
 
 # Filter Protocol (stationary, travelling) (n=17,953,834)
 ebird <- filter(ebird, protocol_code %in% c('P21', 'P22'))
-
-# Drop Duplicates
-#ebird$GROUP.IDENTIFIER[ebird$GROUP.IDENTIFIER == ''] <- NA
-#ebird_m <- ebird %>% filter(is.na(GROUP.IDENTIFIER))
-#ebird_nm <- ebird %>% filter(!is.na(GROUP.IDENTIFIER))
-#ebird_dd <- distinct(ebird_nm, GROUP.IDENTIFIER, TAXONOMIC.ORDER, .keep_all = T)
-#ebird <- rbind(ebird_m, ebird_dd)
-#rm(list=c('ebird_dd', 'ebird_m', 'ebird_nm', 'protocol'))
-
 #----------------------------------------------------------------
 ## 3. IDENTIFY DISTRICTS AND COASTAL TRIPS
 #----------------------------------------------------------------  
@@ -173,11 +156,10 @@ ebird_trip <- ebird %>%
   ungroup() %>%
   distinct(trip_id, .keep_all = T) %>%
   dplyr::select(date, user_id, trip_id, group_id, group_size, year,
-                yearmonth, duration, distance, area, lat, lon, c_code_2011, 
+                yearmonth, duration, distance, lat, lon, c_code_2011, 
                 protocol_code, n_mon_yr, starts_with('sr'), sh_index, si_index) %>%
   mutate(sr_hr = (sr/duration)*60,
          distance = replace(distance, is.na(distance), 0),
-         area = replace(area, is.na(area), 0),
          traveling = ifelse(protocol_code == 'P22', 1, 0)) %>%
   left_join(experience, by=c('user_id'='observer_id', 'yearmonth')) %>% # add experience
   ungroup()
@@ -218,7 +200,6 @@ ebird_user_cell <- ebird_trip %>%
             si_index=mean(si_index, na.rm=T),
             duration=mean(duration, na.rm=T),
             distance=mean(distance,na.rm=T),
-            area=mean(area, na.rm=T),
             traveling = mean(traveling, na.rm=T)*100,
             group_size=mean(group_size, na.rm=T),
             n_mon_yr=first(n_mon_yr),
@@ -227,17 +208,14 @@ ebird_user_cell <- ebird_trip %>%
             c_code_2011=first(c_code_2011),
             n_cells_dist=first(n_cells_dist))
 
-write_csv(ebird_user_cell, paste(SAVE, 'data/csv/ebird_user_cell.csv', sep=""))
+write_csv(ebird_user_cell, paste(SAVE, 'data/csv/ebird_uct.csv', sep=""))
 
 # User-district-month
 ebird_user <- ebird_trip %>% 
-  ungroup() %>%
   group_by(c_code_2011) %>%
   mutate(coverage_d = n_distinct(cell_id)) %>%
-  ungroup() %>%
   group_by(c_code_2011, yearmonth) %>% 
   mutate(coverage_dym = n_distinct(cell_id)) %>%
-  ungroup() %>%
   group_by(user_id, c_code_2011, yearmonth) %>%
   summarize(n_trips=n(),
             sr=mean(sr, na.rm=T),
@@ -251,7 +229,7 @@ ebird_user <- ebird_trip %>%
             si_index=mean(si_index, na.rm=T),
             duration=mean(duration, na.rm=T),
             distance=mean(distance, na.rm=T),
-            area=mean(area, na.rm=T),
+            traveling=mean(traveling, na.rm=T)*100,
             group_size=mean(group_size, na.rm=T),
             n_mon_yr=first(n_mon_yr),
             exp_idx=first(exp_idx),
@@ -261,61 +239,4 @@ ebird_user <- ebird_trip %>%
             coverage_d=first(coverage_d),
             n_cells_dist=first(n_cells_dist))
 
-write_csv(ebird_user,
-          paste(save_path_head, 'data/csv/ebird_user.csv', sep=""))
-
-## 5. SPATIAL COVERAGE ----------------------------------------------------------
-
-# Initialize Grid
-india_districts_shp <- readOGR(paste(dist_shp, "maps/india-district", sep=""),
-                                'SDE_DATA_IN_F7DSTRBND_2011', stringsAsFactors = F)
-
-grid <- raster(extent(india_districts_shp))
-res(grid) <- .05 # (or .01)
-grid_res <- res(grid)[1]*100
-proj4string(grid) <- proj4string(india_districts_shp)
-
-# Cell Counts of Birds
-bird_coords <- SpatialPoints(ebird[, 9:8], proj4string = crs(grid))
-count_df <- spatial_coverage(bird_coords, grid)
- 
-# Aggregate to District
-coverage_all <- count_df %>% 
-  group_by(c_code_2011) %>% 
-  summarize(coverage_all = mean(bird_obs, na.rm=T)*100) 
-  
-# Write
-write.csv(coverage_all, 
-        paste(save_path_head, 'data/csv/coverage_dist_grid_', grid_res,'km.csv', sep=""),
-        row.names = F)
-
-# Compute Monthly Spatial Coverage
-ebird$YEARMONTH <- as.factor(ebird$YEARMONTH)
-coverage_ym <- data.frame()
-for(ym in levels(ebird$YEARMONTH)){
-  
-  print(paste('Computing Spatial Coverage of Date:', ym))
-  
-  # Get Bird Coordinates of year-month
-  bird_coords <- SpatialPoints(ebird[ebird$YEARMONTH == ym, 9:8], 
-                               proj4string=crs(grid))
-  
-  # Run My Coverage Function
-  count_df <- spatial_coverage(bird_coords, grid)
-  
-  # Aggregate to District
-  dist_ym_coverage <- count_df %>%
-    group_by(c_code_2011) %>%
-    summarize(coverage = mean(bird_obs, na.rm=T)*100)
-  
-  # Time
-  dist_ym_coverage$yearmonth <- ym
-  
-  # Append to Master
-  coverage_ym <- rbind(coverage_ym, dist_ym_coverage)
-}
-
-# Write
-write.csv(coverage_ym, 
-          paste(save_path_head, 'data/csv/coverage_ym_grid_', grid_res,'km.csv', sep=""),
-          row.names = F)
+write_csv(ebird_user, paste(SAVE, 'data/csv/ebird_udt.csv', sep=""))

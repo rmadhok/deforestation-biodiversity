@@ -53,7 +53,7 @@ program define reg_sat
 		length("`indepvar'") + 3, length("`varlist'"))
 
 	reghdfe `depvar' `indepvar' `ctrls', ///
-		a(user_id#year c_code_2011_num state_code_2011_num#month, savefe) ///
+		a(uid#year c_code_2011_num state_code_2011_num#month, savefe) ///
 		vce(cl biome) resid
 		estadd local user_y_fe "$\checkmark$"
 		estadd local dist_fe "$\checkmark$"
@@ -237,9 +237,8 @@ if `mechanism' == 1 {
 	end
 	
 	* Read
-	use "${DATA}/dta/fc_ebd_user_v02", clear
-	g ln_coverage = ln(coverage)
-	local ctrls ln_coverage temp rain tree_cover_km2 ln_duration ln_exp_idx ln_distance
+	use "${DATA}/dta/fc_ebd_udt_v02", clear
+	local ctrls temp rain tree_cover_km2 ln_duration ln_exp_idx ln_distance
 	
 	*drop_outliers
 
@@ -391,34 +390,33 @@ if `mechanism' == 1 {
 		wrap nocons nonotes booktabs nomtitles star(* .1 ** .05 *** .01) ///
 		label se b(%5.3f) width(\hsize)
 	eststo clear
-	*/
+	
 	**# 3. Fixing Location
 	*-------------------------------------------------------
 	*use "${DATA}/dta/fc_ebd_user_v02", clear
 	
-	/*
 	// good results if remove nf controls.
 	reg_sat sr dist_f_cen_cum_km2 dist_f_joi_cum_km2 ///
 			   dist_f_pri_cum_km2 dist_f_sta_cum_km2 ///
-			   dist_nf_cen_cum_km2 dist_nf_joi_cum_km2  ///
-			   dist_nf_pri_cum_km2 dist_nf_sta_cum_km2  ///
-			   `ctrls'
+			   `ctrls' coverage_dym
+	*/
 	
-	
+	* Good spec
+	g ln_coverage_udym = ln(coverage_udym)
 	reg_sat sr dist_f_ele_cum_km2 dist_f_irr_cum_km2 ///
 		dist_f_min_cum_km2 dist_f_oth_cum_km2 dist_f_res_cum_km2 ///
-		dist_f_tra_cum_km2 `ctrls'
-	
+		dist_f_tra_cum_km2 `ctrls' ln_coverage_udym traveling
+	* put with nf in appendix? 
 	
 	* Main (For Reference)
-	eststo: reghdfe sr dist_f_cum_km2 `ctrls', ///
+	eststo: reghdfe sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
 		a(c_code_2011_num state_code_2011_num#month year) vce(cl biome)
 	
 		estadd local agg "User-District-Month"
 		estadd local user_y_fe "$\checkmark$"
 		estadd local dist_fe "$\checkmark$"
 		estadd local st_m_fe "$\checkmark$"
-	*/
+	
 	* Users who stay in one district
 	eststo: reghdfe sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
 		a(user_id#c_code_2011_num#year state_code_2011_num#month) vce(cl biome)
@@ -943,7 +941,7 @@ if `robustness' == 1 {
 		local ctrls coverage tree_cover temp rain all_species duration
 		la var dist_f_cum_km2 "Infrastructure (\(km^{2}\))"
 		
-		* 1. Stage-I projects
+		* 1. Stage-I projects -- COMPUTE ADDED KM2 (lag)
 		la var dist_f_km2_s1 "Stage-I Approvals (\(km^{2}\))"
 		eststo: reg_sat sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls' *_km2_s1
 			estadd local u_trend "None"

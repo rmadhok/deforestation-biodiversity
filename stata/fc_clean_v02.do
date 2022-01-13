@@ -181,10 +181,10 @@ foreach var of varlist employment displacement cba ec_needed ///
 *------------------------------
 
 * Project Categorization
-gen proj_cat = "electricity" if inlist(proj_category, "hydel", "sub station", "thermal", "transmission line", "village electricity", "wind power", "solar power")
+gen proj_cat = "electricity" if inlist(proj_category, "sub station", "thermal", "transmission line", "village electricity", "wind power", "solar power")
 replace proj_cat = "transportation" if inlist(proj_category, "road", "railway") // approach road part of "other"
 *replace proj_cat = "transportation" if inlist(proj_category, "road", "approach access", "railway")
-replace proj_cat = "irrigation" if inlist(proj_category, "canal", "irrigation", "drinking water")
+replace proj_cat = "irrigation" if inlist(proj_category, "hydel", "canal", "irrigation", "drinking water")
 replace proj_cat = "resettlement" if inlist(proj_category, "forest village conversion", "rehabilitation")
 replace proj_cat = "mining" if inlist(proj_category, "mining", "quarrying")
 replace proj_cat = "industry" if inlist(proj_category, "industry")

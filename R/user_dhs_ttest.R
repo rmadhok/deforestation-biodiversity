@@ -109,7 +109,7 @@ t_test <- function(i, sample = 'All') {
   }
   
   # ttest
-  ttest <- wtd.t.test(x, y, weight = xwt, weighty = ywt, samedata = F, mean1 = F)
+  ttest <- wtd.t.test(x, y, weight = xwt, weighty = ywt, samedata = F, mean1 = F, bootse=T)
   
   # build output dataframe
   item <- data.frame(

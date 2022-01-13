@@ -462,8 +462,7 @@ if `valuation' == 1 {
 	use "${DATA}/dta/fc_dym_s2_v02", clear
 
 	* Reduce
-	keep c_code_2011 year_month year month state ///
-		 dist_f*cum_km2 tree_cover_km2 st_fam_disp_cum
+	keep c_code_2011 year_month year month state dist_f*cum_km2 tree_cover_km2
 	keep if year == 2020 & month == 12 // total forest occupied by infrastructure at end of study
 	tempfile temp
 	save "`temp'"
@@ -476,7 +475,7 @@ if `valuation' == 1 {
 	order c_code_2011 year_month, first
 
 	*----------------------
-	* Calculate Values
+	* Net Present Value
 	*----------------------
 
 	* Convert from ha to km2
@@ -486,42 +485,45 @@ if `valuation' == 1 {
 	
 	* NPV of each benefit flow
 	/*--------------------------------
-	Data = annual flow of NWFP benefits, 
-	carbon sequestration etc*. 
+	Data = year flow of benefits. 
 	Convert to NPV w/ annuity
 	formula w/ 4% discount rate and
 	60 year rotation period
-	
-	* carbon storage is a stock - add
-	to total ex-post
+	Note: carbon storage is a stock
 	---------------------------------*/
-	foreach v of varlist nwfp cseq seed tev { // Rs./km2
+	foreach v of varlist nwfp-cseq seed-tev { // Rs./km2
 	
 		g `v'_npv = (((1-(1/(1.04)^60))/0.04) * `v')
 	}
 	
 	* Project Eco-Valuation (NPV Rs.)
-	foreach v of varlist nwfp_npv cseq_npv csto seed_npv tev_npv {
+	foreach v of varlist *_npv csto npv {
 		g dist_f_`v'= dist_f_cum_km2 * `v'
 	}
-	
+
 	*----------------------
 	* Tabulate
 	*----------------------
 	replace state = subinstr(state, "&", "and", .)
+
 	eststo clear
 	eststo: estpost tabstat dist_f_nwfp_npv, by(state) c(s) s(sum)
+	eststo: estpost tabstat dist_f_fodder_npv, by(state) c(s) s(sum)
+	eststo: estpost tabstat dist_f_fuelwood_npv, by(state) c(s) s(sum)
 	eststo: estpost tabstat dist_f_cseq_npv, by(state) c(s) s(sum)
 	eststo: estpost tabstat dist_f_csto, by(state) c(s) s(sum)
+	eststo: estpost tabstat dist_f_soil_npv, by(state) c(s) s(sum)
+	eststo: estpost tabstat dist_f_water_npv, by(state) c(s) s(sum)
 	eststo: estpost tabstat dist_f_seed_npv, by(state) c(s) s(sum)
 	
 	esttab using "${TABLE}/tables/valuation_boe.tex", replace ///
-		cells("sum(fmt(0) label())") mgroups("NWFP" "Carbon Seq." ///
-		"Carbon Stock" "Seed Dispersal", pattern(1 1 1 1) ///
+		cells("sum(fmt(%12.0fc) label())") mgroups("Livelihoods" "Carbon" ///
+		"Watershed Services" "", pattern(1 0 0 1 0 1 0 1) ///
 		prefix(\multicolumn{@span}{c}{) suffix(}) span ///
-		erepeat(\cmidrule(lr){@span})) mlabel("NPV (Rs.)" "NPV (Rs.)" ///
-		"Rs." "NPV (Rs.)") collabel(none) booktabs noobs label unstack nonumber
-	
+		erepeat(\cmidrule(lr){@span})) mlabels("NWFP" "Fodder" "Wood" "Flow" ///
+		"Stock" "Soil" "Water" "Seed") collabel(none) booktabs noobs ///
+		label unstack
+
 	*----------------------
 	* Value of a bird
 	*----------------------

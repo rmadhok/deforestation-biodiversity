@@ -87,12 +87,16 @@ df <- read_csv(paste(SAVE, '/dist_forest_value_wt.csv', sep=''))
 # Value matrices
 # index =[ltf,of,mdf,vdf ]
 nwfp <- rev(c(10457,10058,5284,939))
+fodder <- rev(c(10669,10669,10669,10669))
+fuelwood <- rev(c(8379,8379,8379,8379))
 cseq <- rev(c(5051,3409,1525,349))
 csto <- rev(c(333227,231585,144019,144019))
 seed <- rev(c(9087, 9087, 9087, 9087))
+soil <- rev(c(19063,12334,5604,1125))
+water <- rev(c(2918, 1825,896,172))
 tev <- rev(c(149757,108419,60302,31528))
 npv <- rev(c(3198571,2368571,1455000, 957692))
-X <- cbind(nwfp,cseq,csto,seed,tev, npv)
+X <- cbind(nwfp,fodder,fuelwood,cseq,csto,seed,soil,water,tev,npv)
 row.names(X) <- c('ltf', 'of', 'mdf', 'vdf')
 
 # Weight Matrix
