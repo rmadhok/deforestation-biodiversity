@@ -24,19 +24,16 @@ gl DATA "/Users/rmadhok/Dropbox/def_biodiv/data/"
 
 // Module
 local fra			0
-local vil			0
+local vil			1
 local election		0
-local benefits		1
-
-
+local benefits		0
 *-------------------------------------------------------------------------------
 * COMMUNITY CFR POTENTIAL (Lele et al. 2020)
 *-------------------------------------------------------------------------------
 if `fra' == 1 {
 
-	*----------------
-	* ASSEMBLE PANEL
-	*----------------
+	**# Assemble Panel
+	*------------------------
 	
 	* Empty dataset
 	clear
@@ -90,31 +87,21 @@ if `fra' == 1 {
 	replace district = "Raigarh" if district == "Raigad"
 	replace district = "Sangli" if district == "Sangali"
 	
-	*----------------
-	* DISTRICT LEVEL
-	*----------------
+	**# District Level
+	*-------------------------
 	
-	* Census codes
+	* Aggregate (n=125 districts)
+	collapse (sum) cfr_buf cfr_tot, by(state district)
+	la var cfr_buf "Potential CFR Area (ha.)"
+	la var cfr_tot "Total CFR Area (ha.)"
 	tempfile temp
 	save "`temp'"
 	
+	* Census codes
 	import delimited "${DATA}/csv/2011_india_dist.csv", clear
 	keep c_code_11 name state_ut 
 	ren (name state_ut c_code_11) (district state c_code_2011)
-	merge 1:m state district using "`temp'", keep(3) nogen
-	
-	* Aggregate (n=125 districts)
-	collapse (sum) cfr_buf cfr_tot, by(c_code_2011)
-	*g sc_share = sc_pop / tot_pop
-	*g st_share = st_pop / tot_pop
-	*drop sc_pop st_pop tot_pop
-	
-	* Label
-	*la var f_rev "Revenue Forest Area (ha.)"
-	la var cfr_buf "Potential CFR Area (ha.)"
-	la var cfr_tot "Total CFR Area (ha.)"
-	*la var sc_share "SC population share"
-	*la var st_share "ST population share"
+	merge 1:1 state district using "`temp'", keep(3) nogen
 	
 	* Save
 	save "${DATA}/dta/iv_cfr", replace
@@ -181,17 +168,16 @@ if `vil' == 1 {
 	*/
 	}
 
-	* Read village panel (n=640,948 villages)
+	* Read villages (n=640,948 villages; no urban)
 	use "${READ}/def_biodiv/census/vil_forest_area.dta", clear
 	drop if village_code_2011 == ""
-	
+
 	* Construct
-	g scst_pop = sc_pop + st_pop
-	g f_rev_d = (f_rev > 10) // village has forest w/n revenue boundary
+	g scst_pop = sc_pop + st_pop // dalit population
+	g f_rev_d = (f_rev > 10) // habitable forest w/n vil revenue boundary
 	replace f_rev_d = . if f_rev == .
 	g f_rev_vil = f_rev * f_rev_d
 	foreach v of varlist *_pop {
-		g f_rev_`v' = (f_rev_d * `v')/100000 // population inside forest villages (in lakhs)
 		g `v'_ha = (`v' / f_rev_vil)/1000 // population per ha. (if revenue forest)
 	}
 
@@ -251,7 +237,7 @@ if `election' == 1 {
 	drop splits
 	merge 1:m c_code_2001 using "`temp'", keep(3) nogen // N=496 matching districts
 	drop c_code_2001
-	
+
 	* Balance
 	encode c_code_2011, gen(c_code_2011_num)
 	drop c_code_2011

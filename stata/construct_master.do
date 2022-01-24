@@ -25,8 +25,8 @@ gl DO		"${ROOT}/scripts/stata"
 
 // Module
 local ebird					0
-local district_forest		1
-local merge					0
+local district_forest		0
+local merge					1
 *===============================================================================
 * BIODIVERSITY
 *===============================================================================
@@ -84,18 +84,21 @@ if `ebird' == 1 {
 	**# Clean Variables
 	
 	g state_code_2011 = substr(c_code_2011, 1, 3)
-	bys user_id: egen n_st_user = nvals(state_code_2011)
-	bys user_id: egen n_dist_user = nvals(c_code_2011)
-	bys user_id: egen n_ym_user = nvals(year_month)
-	bys user_id: egen n_trips_user = total(n_trips)
+	bys user_id: egen n_st_user = nvals(state_code_2011) // states per user
+	bys user_id: egen n_dist_user = nvals(c_code_2011) // districts per user
+	bys user_id: egen n_ym_user = nvals(year_month) // time periods per user
+	bys user_id: egen n_trips_user = total(n_trips) // total trips per user
 	bys c_code_2011: egen n_users_dist = nvals(user_id)
 	bys c_code_2011: egen n_trips_dist = total(n_trips)
 	bys c_code_2011 year_month: egen n_users_dym = nvals(user_id)
 	
+	* Transform
 	g pop_density = tot_pop / tot_area
 	g ln_exp_idx = ln(exp_idx)
 	g ln_duration = ln(duration)
 	g ln_distance = asinh(distance)
+	g ln_traveling = asinh(traveling)
+	g ln_group_size = ln(group_size)
 	
 	* Coverage fraction
 	if "`level'" == "udt" {
@@ -103,10 +106,13 @@ if `ebird' == 1 {
 		foreach v of varlist coverage* {
 			replace `v' = (`v' / n_cells_dist)*100 // fraction of district covered
 			replace `v' = 100 if `v' > 100 // possible bc num cells/district weighted by overlap fraction
+			g ln_`v' = ln(`v')
 		}
 		la var coverage_d "Coverage (\%)"
 		la var coverage_dym "Coverage (\%)"
 		la var coverage_udym "Coverage (\%)"
+		la var ln_coverage_dym "Coverage (\%)"
+		la var ln_coverage_udym "Coverage (\%)"
 	}
 	
 	* Clean
@@ -146,7 +152,7 @@ if `ebird' == 1 {
 	la var traveling "\% Travelling Trips"
 	
 	* Save
-	drop sr_uyr sr_uym sr_yr n_cells_dist tot_area tot_pop
+	drop sr_uyr sr_hr sr_uym sr_yr n_cells_dist tot_area tot_pop
 	order user_id c_code_2011 year_month sr* *_index
 	sort user_id c_code_2011 year_month
 	save "${DATA}/dta/ebird_`level'", replace
@@ -174,14 +180,14 @@ if `ebird' == 1 {
 capture program drop construct_deforest
 program define construct_deforest
 
-	syntax, stage(integer) version(integer) [restrict(string)] [drop_projects(string)]
+	syntax, stage(integer) [restrict(string)] [drop_projects(string)]
 	
 	*------------------------
 	* SELECT APPROVAL STAGE
 	*------------------------
 	
 	* Read 
-	use "${DATA}/dta/fc_clean_v0`version'", clear
+	use "${DATA}/dta/fc_clean_v02", clear
 
 	* Select Stage
 	if `stage' == 2 {
@@ -219,6 +225,7 @@ program define construct_deforest
 	- UG projects (pipelines, OFC) have tiny def'n. 
 	- SE's huge in own category. add to "other"
 	---------------------------------------------------*/
+	replace proj_cat = "underground" if proj_cat == "mining" & mining_type == "underground"
 	replace proj_cat = "other" if inlist(proj_cat, "underground", "industry")
 
 	* Drop projects in provided list
@@ -264,7 +271,7 @@ program define construct_deforest
 		g n_`abbrev_`cat'' = (proj_cat == "`cat'") // number of projects of type
 		g dist_nf_`abbrev_`cat'' = dist_nf if proj_cat == "`cat'"
 	}	
-	
+
 	* Land diversion by project type 
 	levelsof proj_type, local(proj_type)
 	foreach type of local proj_type {
@@ -276,7 +283,7 @@ program define construct_deforest
 	}
 
 	* Aggregate
-	collapse (sum) dist_f* dist_nf* n_* st_fam* ///
+	collapse (sum) dist_f* dist_nf* n_* ///
 		     (count) n_proj = dist_id, ///
 			 by(c_code_2011 year_month)
 
@@ -380,20 +387,20 @@ end
 if `district_forest' == 1 {
 	
 	* Stage 2 (drop 3 mega projects)
-	construct_deforest, version(2) stage(2) restrict("drop")
+	construct_deforest, stage(2) restrict("drop")
 	save "${DATA}/dta/fc_dym_s2_v02", replace
 	export delimited "${DATA}/csv/fc_dym_s2_v02.csv", replace
-	
+	kk
 	* Stage 1 (drop 3 mega projects)
-	construct_deforest, version(2) stage(1) restrict("drop")
+	construct_deforest, stage(1) restrict("drop")
 	save "${DATA}/dta/fc_dym_s1_v02", replace
 
 	// Stage 2 - Truncate at 99th pctile
-	construct_deforest, version(2) stage(2) restrict("trunc")
-	save "${DATA}/dta/fc_dym_s2_trunc99_v02", replace
+	construct_deforest, stage(2) restrict("trunc")
+	save "${DATA}/dta/fc_dym_s2_trunc_v02", replace
 	
 	// Full
-	construct_deforest, version(2) stage(2)
+	construct_deforest, stage(2)
 	save "${DATA}/dta/fc_dym_s2_full_v02", replace
 }
 
@@ -401,22 +408,21 @@ if `district_forest' == 1 {
 * MERGE DATASETS
 *===============================================================================
 if `merge' == 1 {
-	
-	local fc_data "" // either "" (main dataset), "full", or "trunc99" 
-	local level "uct" // udt (user-dist-time) or uct (user-cell-time)
-	local version 2
+
+	local fc_data "" // either "" (main dataset), "full", or "trunc" 
+	local level "udt" // udt (user-dist-time) or uct (user-cell-time)
 	
 	if "`fc_data'" == "" {
 		
 		* Prepare Stage I Deforestation
-		use "${DATA}/dta/fc_dym_s1_v0`version'", clear
+		use "${DATA}/dta/fc_dym_s1_v02", clear
 		keep c_code_2011 year_month dist_f_cum_km2 dist_nf_cum_km2
 		ren (dist_f_cum_km2 dist_nf_cum_km2) (dist_f_cum_km2_s1 dist_nf_cum_km2_s1)
 		tempfile stage1
 		save "`stage1'"
 		
 		* Spatial Spillovers
-		import delimited "${DATA}/csv/slx_v0`version'.csv", clear
+		import delimited "${DATA}/csv/slx_v02.csv", clear
 		keep c_code_2011 year_month dist_f_cum_km2_slx_*
 	
 		ren year_month ym
@@ -427,40 +433,43 @@ if `merge' == 1 {
 		tempfile slx
 		save "`slx'"
 		
+		* Scheduled areas
+		import delimited "${DATA}/csv/india_scheduled_areas.csv", clear
+		ren c_code_11 c_code_2011
+		keep c_code_2011 fifth_schedule
+		tempfile scharea
+		save "`scharea'"
+
 		*----------------------------
 		* CONSTRUCT FINAL DATASET
 		*----------------------------
 		
-		* Read Stage II Deforestation (main)
-		use "${DATA}/dta/fc_dym_s2_v0`version'", clear
+		* Read Stage II Deforestation
+		use "${DATA}/dta/fc_dym_s2_v02", clear
 		merge 1:1 c_code_2011 year_month using "`slx'", nogen // merge slx
 		merge 1:1 c_code_2011 year_month using "`stage1'", nogen // merge stage 1
+		merge m:1 c_code_2011 using "`scharea'", nogen // scheduled districts
+		merge m:1 c_code_2011 year using "${DATA}/dta/iv_scst_seats", keep(1 3) nogen // pol. reservation
 		merge 1:m c_code_2011 year_month using "${DATA}/dta/ebird_`level'", keep(3) nogen // merge ebird
 		
 		* Save
 		sort user_id c_code_2011 year_month
 		order user_id *_code_2011 year_month state district sr *_index
-		save "${DATA}/dta/fc_ebd_`level'_v0`version'", replace
+		save "${DATA}/dta/fc_ebd_`level'_v02", replace
 	}
 	
 	else {
 	
 		* Read
-		use "${DATA}/dta/fc_dist_ym_stage2_`fc_data'", clear
+		use "${DATA}/dta/fc_dym_s2_`fc_data'_v02", clear
 		
 		* Merge to ebird
-		merge 1:m c_code_2011 year_month using "${DATA}/dta/ebird_user", keep(3) nogen
-		
-		* User Time Trend
-		bys user_id (year_month): g u_lin = sum(year_month != year_month[_n-1]) // Linear 
-		la var u_lin "Linear Trend"
-		g u_cubic = u_lin^3
-		la var u_cubic "Cubic Trend"
+		merge 1:m c_code_2011 year_month using "${DATA}/dta/ebird_`level'", keep(3) nogen
 		
 		* Save
 		sort user_id year_month
 		order user_id *_code_2011 year_month state district sr *_index
-		save "${DATA}/dta/fc_ebd_user_`fc_data'", replace
+		save "${DATA}/dta/fc_ebd_`level'_`fc_data'_v02", replace
 	}
 
 }

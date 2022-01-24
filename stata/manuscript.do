@@ -28,7 +28,7 @@ cd "${TABLE}"
 
 // Modules
 local main_analysis		0
-local mechanism			1
+local scratch			1
 local dynamics			0
 local simulation		0
 local robustness		0
@@ -78,11 +78,11 @@ end
 if `main_analysis' == 1 {
 	
 	* Read
-	use "${DATA}/dta/fc_ebd_user_v02", clear
+	use "${DATA}/dta/fc_ebd_udt_trunc_v02", clear
 	
 	* Prep
-	*g tree_cover_p = tree_cover_km2 / tot_area
-	local ctrls coverage temp rain tree_cover_km2 ln_duration ln_exp_idx
+	local ctrls temp rain tree_cover_km2 ln_duration ln_distance ///
+		        ln_exp_idx ln_coverage_udym
 	*drop_outliers
 	
 	la var dist_f_cum_km2 "Forest Infrastructure (\(km^{2}\))"
@@ -163,24 +163,26 @@ if `main_analysis' == 1 {
 	*--------------------------
 	* 3. FRAGMENTATION-WISE
 	*--------------------------
-	
-	**# Linear model
-	*g tree_cover_base_p = (tree_cover_base/tot_area)*100
+
+	**# Linear model (doesnt work)
+	g tree_cover_base_p = (tree_cover_base/tot_area)*100
 	g dist_f_tree_base = dist_f_cum_km2 * tree_cover_base_p
 	g dist_nf_tree_base = dist_nf_cum_km2 * tree_cover_base_p
 	
 	eststo clear
 	eststo: reghdfe sr dist_f_tree_base dist_nf_tree_base ///
 		dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
-		a(user_id#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
-	*/
+		a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
 	
+	*/
 	**# Quantiles
 	
 	// Quantiles of Forest Cover
 	g tree_cover_base_p = (tree_cover_base/tot_area)*100
-	xtile tcover_base_q = tree_cover_base_p, nquantiles(2)
-	tab tcover_base_q, gen(tcover_q_)
+	xtile tcover_base = tree_cover_base_p, nquantiles(2)
+	*xtile tcover_base = tree_cover_base, nquantiles(2) // works with 5
+	tab tcover_base, gen(tcover_q_)
+	
 	foreach v of varlist tcover_q_* { // interactions
 		g dist_f_`v' = dist_f_cum_km2 * `v'
 		g dist_nf_`v' = dist_nf_cum_km2 * `v'
@@ -195,8 +197,8 @@ if `main_analysis' == 1 {
 	eststo clear
 	eststo: reghdfe sr dist_f_tcover_q_1-dist_nf_tcover_q_1 ///
 		dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
-		a(user_id#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
-
+		a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
+kk
 	coefplot, keep(dist_f_tcover_*) xline(0, lcolor(maroon) lpattern(solid))  ///
 		msize(small) mfcolor(white) msymbol(D) mcolor(black) ///
 		ciopts(recast(rcap) lpattern(shortdash) lcolor(gs5)) ///
@@ -211,37 +213,76 @@ if `main_analysis' == 1 {
 	graph combine "${TABLE}/fig/main.gph" "${TABLE}/fig/projwise.gph" ///
 		"${TABLE}/fig/tcoverwise.gph", holes(4)
 	graph export "${TABLE}/fig/main_results.png", width(1000) replace
+	
+	
+	* Quantiles of Baseline Biodiversity
+	*g sr_bl_km2 = sr_bl/tree_cover_base
+	xtile sr_bl_q = sr_bl, nquantiles(2) // works with 2
+	tab sr_bl_q, gen(sr_bl_q_)
+	
+	foreach v of varlist sr_bl_q_* { // interactions
+		g dist_f_`v' = dist_f_cum_km2 * `v'
+		g dist_nf_`v' = dist_nf_cum_km2 * `v'
+	}
 
+	la var dist_f_sr_bl_q_1 "1st"
+	la var dist_f_sr_bl_q_2 "2nd" 
+	*la var dist_f_sr_bl_q_3 "3rd"
+	*la var dist_f_sr_bl_q_4 "4th"
+	*la var dist_f_sr_bl_q_5 "5th"
+
+	eststo clear
+	eststo: reghdfe sr dist_f_sr_bl_q_1-dist_nf_sr_bl_q_1 ///
+		dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
+		a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
+	
 }
 
 *===============================================================================
 * MECHANISM
 *===============================================================================
-if `mechanism' == 1 {
+if `scratch' == 1 {
 	
-	*---------------------
-	* SEARCH ENDOGENEITY
-	*---------------------
-	capture program drop
-	program define lab_vars
-		
-		la var dist_f_cum_km2 "Infrastructure (km2)"
-		la var dist_nf_cum_km2 "Non-Forest Diversion (km2)"
-		la var coverage "Access (\%)"
-		la var temp "Temperature ($\degree$ C)"
-		la var rain "Rain (mm)"
-		la var tree_cover_km2 "Forest Cover (km2)"
-		la var ln_duration "Duration"
-		*la var ln_exp_idx "Experience"
-	
-	end
-	
+	**# INVESTIGATE
+
 	* Read
 	use "${DATA}/dta/fc_ebd_udt_v02", clear
-	local ctrls temp rain tree_cover_km2 ln_duration ln_exp_idx ln_distance
+	local ctrls temp rain tree_cover_km2 ln_duration ln_distance ///
+		        ln_exp_idx ln_coverage_udym
+	drop_outliers
 	
-	*drop_outliers
-
+	** RESERVATIONS OFFSET MAIN EFFECT 
+	** SCHEDULED AREA HAS NO OFFSETTING EFFECT
+	replace st_seats = st_seats*10
+	replace fifth_schedule = 1 if inlist(state, "Assam", "Meghalaya", "Mizoram", "Tripura")
+	reghdfe sr c.dist_f_cum_km2##c.fifth_schedule dist_nf_cum_km2 `ctrls', ///
+		a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
+	kkkk
+	* Main (For Reference)
+	/*
+	eststo: reghdfe sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
+		a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
+	
+	* By project (forest only)
+	reg_sat sr dist_f_ele_cum_km2 dist_f_irr_cum_km2 ///
+		dist_f_min_cum_km2 dist_f_oth_cum_km2 dist_f_res_cum_km2 ///
+		dist_f_tra_cum_km2 `ctrls'
+	*/
+	* By project (non-forest)
+	reg_sat sr dist_f_ele_cum_km2 dist_f_irr_cum_km2 ///
+		dist_f_min_cum_km2 dist_f_oth_cum_km2 dist_f_res_cum_km2 ///
+		dist_f_tra_cum_km2 dist_nf_ele_cum_km2 dist_nf_irr_cum_km2 ///
+		dist_nf_min_cum_km2 dist_nf_oth_cum_km2 dist_nf_res_cum_km2 ///
+		dist_nf_tra_cum_km2 `ctrls'
+	
+	* Move underground mines to other? (no change)
+	reg_sat sr dist_f_ele_cum_km2 dist_f_irr_cum_km2 ///
+		dist_f_min_cum_km2 dist_f_oth_cum_km2 dist_f_res_cum_km2 ///
+		dist_f_tra_cum_km2  `ctrls'
+	
+	
+	
+	
 	**# 2. Endogeneity: Do users move to other districts?
 	*-------------------------------------------------------
 	/*
@@ -407,15 +448,7 @@ if `mechanism' == 1 {
 		dist_f_min_cum_km2 dist_f_oth_cum_km2 dist_f_res_cum_km2 ///
 		dist_f_tra_cum_km2 `ctrls' ln_coverage_udym traveling
 	* put with nf in appendix? 
-	
-	* Main (For Reference)
-	eststo: reghdfe sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
-		a(c_code_2011_num state_code_2011_num#month year) vce(cl biome)
-	
-		estadd local agg "User-District-Month"
-		estadd local user_y_fe "$\checkmark$"
-		estadd local dist_fe "$\checkmark$"
-		estadd local st_m_fe "$\checkmark$"
+
 	
 	* Users who stay in one district
 	eststo: reghdfe sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
@@ -963,7 +996,7 @@ if `robustness' == 1 {
 			estadd local u_trend "Cubic"
 			estadd local add_cont "No"
 		
-		* 4. Observer Effort
+		* 4. Observer Effort ---- ADD LOG GROUP SIZE AND % TRAVELLING
 		eststo: reg_sat sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls' ///
 			group_size distance
 			estadd local u_trend "None"

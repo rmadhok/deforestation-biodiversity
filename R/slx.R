@@ -5,9 +5,9 @@
 # ----------- SET-UP -----------------------------------------------------
 # Directories
 rm(list=ls())
-path_head <- '/Users/rmadhok/Dropbox/def_biodiv/data/csv/'
-dist_shp <- '/Users/rmadhok/Dropbox/IndiaPowerPlant/data/'
-setwd(path_head)
+READ <- '/Users/rmadhok/Dropbox/def_biodiv/data/csv/'
+SHP <- '/Users/rmadhok/Dropbox/IndiaPowerPlant/data/'
+setwd(READ)
 
 # Load Packages
 require(tidyverse)
@@ -16,15 +16,10 @@ require(spatialreg)
 require(spdep)
 require(units)
 require(data.table)
-
-# Module
-version <- 2 # set as 1 or 2 
-# version 1 = projects scraped up to 2018
-# version 2 = projects scraped up to 2020
 # ------------------------------------------------------------------------
 
 # Read District Map
-india_dist <- st_read(paste(dist_shp, "maps/india-district", sep=""),
+india_dist <- st_read(paste(SHP, "maps/india-district", sep=""),
                            'SDE_DATA_IN_F7DSTRBND_2011', stringsAsFactors = F) %>%
   select(c_code_11) %>%
   rename(c_code_2011=c_code_11) %>% 
@@ -32,7 +27,7 @@ india_dist <- st_read(paste(dist_shp, "maps/india-district", sep=""),
   arrange(c_code_2011)
 
 # Read deforestation
-data <- read_csv(paste('fc_dym_s2_v0', version,'.csv', sep='')) %>%
+data <- read_csv('fc_dym_s2_v02.csv') %>%
     select(matches('^dist_.*_cum_km2$'), c_code_2011, year_month) %>%
     arrange(year_month, c_code_2011) %>%
     mutate(year_month=as.factor(year_month))
@@ -119,7 +114,7 @@ slag_inv <- lapply(idx, inv_dist) %>%
 
 # Save
 slag <- merge(slag_bc, slag_inv, by=c('c_code_2011', 'year_month'))
-write_csv(slag, paste('slx_v0', version, '.csv', sep=''))
+write_csv(slag, 'slx_v02.csv')
 
 #------------------------------------------------------------------------
 # MODEL 3: Inverse Distance Squared
