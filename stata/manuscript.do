@@ -255,7 +255,7 @@ if `scratch' == 1 {
 	** SCHEDULED AREA HAS NO OFFSETTING EFFECT
 	replace st_seats = st_seats*10
 	replace fifth_schedule = 1 if inlist(state, "Assam", "Meghalaya", "Mizoram", "Tripura")
-	reghdfe sr c.dist_f_cum_km2##c.fifth_schedule dist_nf_cum_km2 `ctrls', ///
+	reghdfe sr c.dist_f_cum_km2##c.st_seats dist_nf_cum_km2 `ctrls', ///
 		a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
 	kkkk
 	* Main (For Reference)

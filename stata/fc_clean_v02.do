@@ -149,9 +149,9 @@ foreach v of varlist displacement proj_in_pa_esz proj_scheduledarea ///
 }
 
 * zero
-foreach var of varlist sc_fam_disp st_fam_disp other_fam_disp {
+foreach var of varlist *_fam_disp {
 
-	replace `var' = "0" if `var' == "nil"
+	replace `var' = "0" if `var' == "nil" | `var' == ""
 }
 
 * Destring

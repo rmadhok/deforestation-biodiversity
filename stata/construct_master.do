@@ -25,8 +25,8 @@ gl DO		"${ROOT}/scripts/stata"
 
 // Module
 local ebird					0
-local district_forest		0
-local merge					1
+local district_forest		1
+local merge					0
 *===============================================================================
 * BIODIVERSITY
 *===============================================================================
@@ -131,7 +131,6 @@ if `ebird' == 1 {
 	la var n_trips_user "Num. Trips"
 	la var n_users_dym "Num. Users per District-Yearmonth"
 	la var sr "Species Richness"
-	la var sr_hr "Species Richness/Hr."
 	la var sr_udym "Species richness across all trips in district-month"
 	la var sr_uym "Species richness across all trips in year-month"
 	la var sr_uyr "Species richness across all trips in year"
@@ -258,6 +257,11 @@ program define construct_deforest
 		v02: 199 w/ no FC; 8 w complex splits
 	---------------------------------------*/
 	
+	* Save project-level
+	if `stage' == 2 {
+		save "${DATA}/dta/fc_pdym_s2_v02", replace
+	}
+	kk
 	*------------------------------
 	* AGGREGATE TO DISTRICT-MONTH
 	*------------------------------
@@ -385,12 +389,12 @@ program define construct_deforest
 end
 
 if `district_forest' == 1 {
-	
+	/*
 	* Stage 2 (drop 3 mega projects)
 	construct_deforest, stage(2) restrict("drop")
 	save "${DATA}/dta/fc_dym_s2_v02", replace
 	export delimited "${DATA}/csv/fc_dym_s2_v02.csv", replace
-	kk
+	
 	* Stage 1 (drop 3 mega projects)
 	construct_deforest, stage(1) restrict("drop")
 	save "${DATA}/dta/fc_dym_s1_v02", replace
@@ -398,7 +402,7 @@ if `district_forest' == 1 {
 	// Stage 2 - Truncate at 99th pctile
 	construct_deforest, stage(2) restrict("trunc")
 	save "${DATA}/dta/fc_dym_s2_trunc_v02", replace
-	
+	*/
 	// Full
 	construct_deforest, stage(2)
 	save "${DATA}/dta/fc_dym_s2_full_v02", replace
@@ -432,13 +436,6 @@ if `merge' == 1 {
 		
 		tempfile slx
 		save "`slx'"
-		
-		* Scheduled areas
-		import delimited "${DATA}/csv/india_scheduled_areas.csv", clear
-		ren c_code_11 c_code_2011
-		keep c_code_2011 fifth_schedule
-		tempfile scharea
-		save "`scharea'"
 
 		*----------------------------
 		* CONSTRUCT FINAL DATASET
@@ -448,8 +445,6 @@ if `merge' == 1 {
 		use "${DATA}/dta/fc_dym_s2_v02", clear
 		merge 1:1 c_code_2011 year_month using "`slx'", nogen // merge slx
 		merge 1:1 c_code_2011 year_month using "`stage1'", nogen // merge stage 1
-		merge m:1 c_code_2011 using "`scharea'", nogen // scheduled districts
-		merge m:1 c_code_2011 year using "${DATA}/dta/iv_scst_seats", keep(1 3) nogen // pol. reservation
 		merge 1:m c_code_2011 year_month using "${DATA}/dta/ebird_`level'", keep(3) nogen // merge ebird
 		
 		* Save
