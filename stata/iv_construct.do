@@ -25,8 +25,8 @@ gl DATA "/Users/rmadhok/Dropbox/def_biodiv/data/"
 // Module
 local fra			0
 local vil			0
-local election		1
-local shiftshare	0
+local election		0
+local shiftshare	1
 
 *-------------------------------------------------------------------------------
 * COMMUNITY CFR POTENTIAL (Lele et al. 2020)
@@ -184,13 +184,22 @@ if `vil' == 1 {
 	}
 
 	* District level
-	*collapse (mean) *_ha (sum) *_pop f_rev=f_rev_vil, by(c_code_2011)
 	collapse (mean) *_ha (sum) sc st scst tot_pop f_rev=f_rev_vil, by(c_code_2011)
+	g state_code_2011 = substr(c_code_2011, 1, 3)
+	
+	foreach v of varlist sc st scst {
+		bys state_code_2011: egen `v'_state = total(`v'), m
+		g `v'_state_share = `v'/`v'_state
+	}
+	drop state_code_2011 *_state
+	
+	la var st_ha "ST/ha."
+	la var sc_ha "SC/ha."
+	la var scst_ha "Dalits/ha."
 	
 	* Save
 	save "${DATA}/dta/iv_fra", replace
 }
-
 
 *-------------------------------------------------------------------------------
 * ST LEADERS
@@ -203,26 +212,22 @@ if `election' == 1 {
 	* clean
 	keep if year >= 2008
 	drop if winner_type == ""
-	
-	* st winners
-	g st_winner = (winner_type == "ST")
-	replace st_winner = . if winner_type == ""
-	replace st_winner = 1 if constituency_type == "ST"
-	
-	* sc winners
-	g sc_winner = (winner_type == "SC")
-	replace sc_winner = . if winner_type == ""
-	replace sc_winner = 1 if constituency_type == "SC"
-	
-	* Reserved
-	g scst_seats = st_winner | sc_winner
-	replace scst_seats = . if st_winner == . | sc_winner == .
+
+	* reserved seats
+	g st_seats = (constituency_type == "ST") // ST reservations
+	replace st_seats = . if constituency_type == ""
+	g sc_seats = (constituency_type == "SC") // SC reservations
+	replace sc_seats = . if constituency_type == ""
+	g scst_seats = st_seats | sc_seats // dalit reservations
+	replace scst_seats = . if st_seats == . | sc_seats == .
 	
 	* District level
 	drop if pc01_district_id == "" // drops 15% of obs
 	g c_code_2001 = "c" + pc01_state_id + pc01_district_id
-	collapse (mean) st_seats=st_winner sc_seats=sc_winner scst_seats, ///
-		by(c_code_2001 year)
+	collapse (mean) st_seats sc_seats scst_seats, by(c_code_2001 year)
+	la var st_seats "ST seat share"
+	la var sc_seats "SC seat share"
+	la var scst_seats "Dalit seat share"
 	
 	* Identify unchanging district borders
 	tempfile temp
@@ -255,15 +260,14 @@ if `election' == 1 {
 *-------------------------------------------------------------------------------
 if `shiftshare' == 1 {
 
-	*----------------------------
-	* PREDICTED STATE INTRUSIONS
-	*----------------------------
+	**# Predicted State Intrusions
+	*-----------------------------------------------------
 	
 	* Read FC
 	use "${DATA}/dta/fc_dym_s2_v02", clear
 	
 	* Reduce
-	keep *_code_2011* year year_month month dist_f*cum_km2 dist_nf*cum_km2 tree_cover_base
+	keep *_code_2011* year year_month month dist_f_cum_km2 dist_nf_cum_km2 tree_cover_base
 	
 	* 2015 State Fractions
 	preserve
@@ -272,22 +276,18 @@ if `shiftshare' == 1 {
 		keep if year == 2015
 		keep c_code_2011 state_code_2011 year_month dist_f_cum_km2
 		
-		* State cumulatives
-		bys state_code_2011 year_month: egen st_f_cum_km2 = total(dist_f_cum_km2)
-		bys state_code_2011 year_month: keep if _n == 1
+		* Cumulatives
+		bys state_code_2011 year_month: egen st_f_cum_km2 = total(dist_f_cum_km2) 
+		bys state_code_2011 year_month: keep if _n == 1 // state-monthly cumulative
 		drop dist_f_cum_km2 c_code_2011
+		bys year_month: egen nat_f_cum_km2 = total(st_f_cum_km2) // national monthly cumulative
 		
-		* National deforestation
-		bys year_month: egen nat_f_cum_km2 = total(st_f_cum_km2)
-		
-		* Collapse
+		* Collapse to end-of-year
 		sort state_code_2011 year_month
 		collapse (lastnm) st_f* nat_f*, by(state_code_2011)
 		
 		* Share
 		g st_f_share = st_f_cum_km2 / nat_f_cum_km2
-		
-		* Save
 		keep state_code_2011 *_share
 		tempfile shares 
 		save "`shares'"
@@ -301,76 +301,32 @@ if `shiftshare' == 1 {
 	* Predicted state deforestation
 	bys year_month: egen nat_f_cum_km2 = total(dist_f_cum_km2)
 	g st_f_cum_km2_p = st_f_share * nat_f_cum_km2
+	la var st_f_cum_km2_p "State Approvals"
 	sort c_code_2011 year_month
 	
-	*-------------------------
-	* MERGE TO VILLAGE CENSUS
-	*-------------------------
+	**# Merge Political Economy
+	*-------------------------------------------------------
 	
-	* Merge
+	* FRA
 	merge m:1 c_code_2011 using "${DATA}/dta/iv_fra", nogen
 	sort c_code_2011 year_month
-
-	* state def'n X fra
-	foreach v of varlist *_ha {
 	
-		g ss_`v' = `v' * st_f_cum_km2_p 
-	}
+	* ATREE CFR
+	*merge m:1 c_code_2011 using "${DATA}/dta/iv_cfr", nogen
 	
-	*---------------------------
-	* MERGE TO ATREE CFR
-	*---------------------------
-	/*
-	* Merge
-	merge m:1 c_code_2011 using "${DATA}/dta/iv_cfr", nogen
-	
-	* state def'n X cfr
-	foreach v of varlist *_cfr_ha {
-		
-		g ss_`v' = `v' * st_f_cum_km2_p
-	}
-	*/
-	*---------------------------
-	* MERGE SCHEDULED AREAS
-	*---------------------------
+	* Scheduled Areas
 	tempfile temp
 	save "`temp'"
-	
-	* Read
 	import delimited "${DATA}/csv/india_scheduled_areas.csv", clear
-	ren c_code_11 c_code_2011
-	g sixth_schedule = fifth_schedule
-	replace sixth_schedule = 1 if inlist(state_ut, "Assam", "Meghalaya", "Mizoram", "Tripura")
-	keep c_code_2011 *_schedule
+	ren (c_code_11 fifth_schedule) (c_code_2011 schedule)
+	replace schedule = 1 if inlist(state_ut, "Assam", "Meghalaya", "Mizoram", "Tripura") // 6th schedule
+	keep c_code_2011 schedule
 	merge 1:m c_code_2011 using "`temp'", nogen
-	order *_schedule, last
+	order schedule, last
+	la var schedule "Scheduled Area"
 	
-	* state def'n X sheduled area
-	g ss_5th_sched = fifth_schedule * st_f_cum_km2_p
-	g ss_6th_sched = sixth_schedule * st_f_cum_km2_p
-	
-	*---------------------------
-	* MERGE TO ELECTION LEADERS ---- double check missing
-	*---------------------------
-	
-	* Merge
+	* Election leaders/reservations
 	merge m:1 c_code_2011 year using "${DATA}/dta/iv_scst_seats", keep(1 3) nogen
-	
-	* state def'n X seats
-	foreach v of varlist st_seats sc_seats scst_seats {
-		
-		g ss_`v' = `v' * st_f_cum_km2_p
-	}
-	
-	* Triple interactions
-	foreach i in st sc scst { // sc_cfr_ha-scst_cfr_ha 
-			
-		* FRA x SEATS
-		g `i'_ha_`i'_seats = `i'_ha * `i'_seats 
-			
-		* STATE DEF'N X FRA X SEATS
-		g ss_`i'_ha_`i'_seats = `i'_ha * `i'_seats * st_f_cum_km2_p
-	}
 	
 	*---------------------------
 	* NIGHTLIGHTS
@@ -391,17 +347,17 @@ if `shiftshare' == 1 {
 	merge 1:1 c_code_2011 year_month using "`temp2'", keep(3) nogen
 	*/
 	
-	*---------------------------
-	* FINAL
-	*---------------------------
-	
 	* Covariates
 	g p_scst = (scst/tot_pop) * st_f_cum_km2_p
 	g p_st = (st/tot_pop) * st_f_cum_km2_p
 	g p_sc = (sc/tot_pop) * st_f_cum_km2_p
-	g p_tcover = f_rev * st_f_cum_km2_p // could use VCF
+	g p_tcover = tree_cover_base * st_f_cum_km2_p // could use VCF
+	g p_st_share = st_state_share * st_f_cum_km2_p
+	g p_sc_share = sc_state_share * st_f_cum_km2_p
+	g p_scst_share = scst_state_share * st_f_cum_km2_p
 
 	* Save
+	sort c_code_2011 year_month
 	save "${DATA}/dta/polecon_v02", replace
 
 }

@@ -227,7 +227,7 @@ program define construct_deforest
 	replace proj_cat = "underground" if proj_cat == "mining" & mining_type == "underground"
 	replace proj_cat = "other" if inlist(proj_cat, "underground", "industry")
 
-	* Drop projects in provided list
+	* Drop projects in provided list (REMOVE?)
 	if "`drop_projects'" != "" {
 
 		foreach v of local drop_projects {
@@ -261,7 +261,6 @@ program define construct_deforest
 	if `stage' == 2 {
 		save "${DATA}/dta/fc_pdym_s2_v02", replace
 	}
-	kk
 	*------------------------------
 	* AGGREGATE TO DISTRICT-MONTH
 	*------------------------------
@@ -389,7 +388,7 @@ program define construct_deforest
 end
 
 if `district_forest' == 1 {
-	/*
+
 	* Stage 2 (drop 3 mega projects)
 	construct_deforest, stage(2) restrict("drop")
 	save "${DATA}/dta/fc_dym_s2_v02", replace
@@ -402,7 +401,7 @@ if `district_forest' == 1 {
 	// Stage 2 - Truncate at 99th pctile
 	construct_deforest, stage(2) restrict("trunc")
 	save "${DATA}/dta/fc_dym_s2_trunc_v02", replace
-	*/
+	
 	// Full
 	construct_deforest, stage(2)
 	save "${DATA}/dta/fc_dym_s2_full_v02", replace

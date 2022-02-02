@@ -28,7 +28,8 @@ cd "${TABLE}"
 // Modules
 local sumstats			0
 local learning			0
-local event_study		0
+local estudy_f			0
+local estudy			0
 local valuation			1
 
 set scheme modern
@@ -253,15 +254,14 @@ if `sumstats' == 1 {
 if `learning' == 1 {
 
 	* Read
-	use "${DATA}/dta/fc_ebd_user", clear
+	use "${DATA}/dta/fc_ebd_udt_v02", clear
 	drop_outliers
-
-	// 1. Seasonality
 	
-	* Total
+	**# 1. Seasonality
+
+	* Total species richness by ym across all users/trips
 	preserve
-		
-		* Total species richness by ym across all users/trips
+	
 		collapse (first) sr_ym (sum) n_trips, by(year_month)
 		replace n_trips = n_trips/1000
 		twoway bar n_trips year_month, yscale(alt) bcolor(gs10) ///
@@ -273,34 +273,34 @@ if `learning' == 1 {
 			mcolor(gs3) msize(small) lcolor(black) ||, ///
 			graphregion(color(white)) bgcolor(white) xtitle("") ///
 			xlabel(660 "Jan-15" 666 "Jul-15" 672 "Jan-16" 678 "Jul-16" ///
-			684 "Jan-17" 690 "Jul-17" 696 "Jan-18" 702 "Jul-18", ///
-			labsize(medium) angle(45)) legend(order(2 "Species" "Richness" ///
-			1 "Num." "Trips") size(medsmall)) fysize(37.5) ///
-			title("A", pos(1) size(large)) saving(season.gph, replace) 
+			684 "Jan-17" 690 "Jul-17" 696 "Jan-18" 702 "Jul-18" 708 "Jan-19" ///
+			714 "Jul-19" 720 "Jan-20" 726 "Jul-20", labsize(medium) angle(45)) ///
+			legend(order(2 "Species" "Richness" 1 "Num." "Trips") ///
+			size(medsmall) pos(6) rows(1)) fysize(37.5) title("A", pos(1) size(large)) ///
+			saving("./fig/season.gph", replace) 
 	restore
-	
-	// 3. Learning and No Learning Overlay
+
+	**# 2. Learning Bias
 	
 	* No learning
 	preserve	
 		
 		* Residualize on User FE
-		reghdfe sr, a(user_id c_code_2011 state_code_2011_num#month year) resid
-	
+		reghdfe sr, a(uid c_code_2011 state_code_2011_num#month year) resid
+
 		* Average residual per user-yearmonth
 		collapse (mean) resid = _reghdfe_resid, by(user_id year)
 		statsby, by(year) clear: ci means resid
-		
 		tempfile temp
 		save "`temp'"
-	
+
 	restore
 	
-	* Linear experience
+	* Partial out learning curve
 	preserve	
 		
 		* Residualize on User FE, linear trend
-		reghdfe sr u_lin, a(user_id c_code_2011 state_code_2011_num#month year) resid
+		reghdfe sr exp_idx, a(uid c_code_2011 state_code_2011_num#month year) resid
 	
 		* Average residual per user-yearmonth
 		collapse (mean) resid = _reghdfe_resid, by(user_id year)
@@ -311,39 +311,41 @@ if `learning' == 1 {
 		save "`temp2'"
 	
 	restore
-	
+
+	* Residualize on user-year FE
 	preserve
-		
-		* Residualize on User-Year FE
-		reghdfe sr u_lin, a(user_id#year c_code_2011 state_code_2011_num#month) resid
+	
+		* Residualize
+		reghdfe sr ln_exp_idx, a(uid#year c_code_2011 state_code_2011_num#month) resid
 		
 		* Average residual per user-yearmonth
 		collapse (mean) resid = _reghdfe_resid, by(user_id year)
 		statsby, by(year) clear: ci means resid
 		ren * *_nl
 		ren year_nl year
+		
 		merge 1:1 year using "`temp'", nogen
 		merge 1:1 year using "`temp2'", nogen
 		
+		* Scatter
 		twoway scatter mean year, mfcolor(white) mcolor(maroon) ///
-			msize(small) || lfit mean year, lcolor(maroon) || ///
+			msize(small) || lfit mean year, lcolor(maroon) lwidth(medthick) || ///
 			scatter mean_nex year, mfcolor(white) mcolor(navy) ///
 			msize(small) msymbol(triangle) || ///
-			lfit mean_nex year, lcolor(navy) || ///
+			lfit mean_nex year, lcolor(navy) lwidth(medthick) || ///
 			scatter mean_nl year, mfcolor(white) mcolor(black) ///
 			msize(small) msymbol(square) || ///
-			lfit mean_nl year, lcolor(black) ||, ///
-			graphregion(color(white)) bgcolor(white) ylabel(, angle(hor)) ///
-			ytitle("Mean User Residual", size(medium)) xtitle("") ///
-			yscale(titlegap(*-30)) ylabel(, labsize(medsmall)) ///
-			legend(order(1 "Full Learning Bias" 3 "Participation Covariate" ///
-			5 "No Learning Bias") size(medsmall) position(6)) ///
+			lfit mean_nl year, lcolor(black) lwidth(medthick) ||, ///
+			ylabel(, angle(hor)) ytitle("Mean User Residual", size(medium)) ///
+			xtitle("") yscale(titlegap(*-30)) ylabel(, labsize(medsmall)) ///
+			legend(order(1 "Learning Bias" 3 "Experience Index" ///
+			5 "No Learning Bias") size(medsmall) position(6) rows(2)) ///
 			xlabel(, labsize(medsmall)) title("C", size(medium) pos(1)) ///
-			fxsize(75) fysize(90) saving(learn_nl.gph, replace)
-
+			fxsize(75) fysize(90) saving("./fig/learn_nl.gph", replace)
+	
 	restore
 
-	// 4. BirdLife
+	**# Site Choice Bias
 	preserve
 	
 		* Quantiles of species richness
@@ -353,26 +355,128 @@ if `learning' == 1 {
 		twoway bar mean sr_bl_q3, barwidth(0.7) color(gs8) ///
 			|| rcap ub lb sr_bl_q3, lcolor(black) ||, ///
 			xlabel(1 "Low" 2 "Medium"  3 "High", labsize(medium)) ///
-			ylabel(3(0.5)5, angle(hor) labsize(medsmall)) ///
-			ytitle("Trips Per User-Month" "(eBird)", size(medium)) ///
-			xtitle("True District Species Diversity" "(BirdLife)", size(medium)) ///
+			ylabel(3(1)6, angle(hor) labsize(medsmall)) ///
+			ytitle("Monthly eBird Trips/User", size(medium)) ///
+			xtitle("True District Species Richness" "(BirdLife)", size(medium)) ///
 			yscale(titlegap(3)) xscale(titlegap(3)) ///
 			graphregion(color(white)) bgcolor(white) ///
 			legend(order(1 "Mean" 2 "95% CI") size(medium)) ///
-			title("B", pos(1) size(large)) fysize(37.5) saving(dist.gph, replace)
+			title("B", pos(1) size(large)) fysize(45) ///
+			saving("./fig/bl_dist.gph", replace)
 	restore
 	
 	* combine
-	graph combine season.gph dist.gph, rows(2) saving(comb.gph, replace)
-	graph combine comb.gph learn_nl.gph, imargin(0 0 1 0)
+	graph combine "./fig/season.gph" "./fig/bl_dist.gph", rows(2) saving("./fig/comb.gph", replace)
+	graph combine "./fig/comb.gph" "./fig/learn_nl.gph", imargin(0 0 1 0)
 	graph export "${TABLE}/fig/bias_plot.png", replace
 	
 }
+*===============================================================================
+* DID - DEFORESTATION
+*===============================================================================
+if `estudy_f' == 1 {
+	
+	* Read
+	use "${DATA}/dta/fc_dym_s2_v02", clear
+	keep *_code_2011_num year_month year month dist_f_cum_km2 tree* n_proj_cum
+	order *_code_2011_num, first
+	
+	/*
+	**# Event-Study -- New DID Lit
+	
+	* Event date
+	bys c_code_2011 (year_month): gen event = year_month if ///
+		dist_f_cum_km2[_n] != dist_f_cum_km2[_n-1]
+	bys c_code_2011 (year_month): replace event = . if _n == 1 
+	
+	* DID vars
+	bys c_code_2011_num: egen cohort = min(event) // first event (0 if never treated)
+	drop event
+	recode cohort (.=0)
+	g running = year_month - cohort // time to treatment
+	replace running = -99 if cohort == 0
+	g treated = (cohort != 0)
+	g treatment = (running > 0 & treated == 1)
+	
+	* Sample
+	preserve
+		bys c_code_2011: keep if _n == 1
+		keep c_code_2011
+		sample 20
+		tempfile samp
+		save "`samp'"
+	restore
+	merge m:1 c_code_2011 using "`samp'", keep(3) nogen
+	
+	csdid tree_cover_pct, ivar(c_code_2011_num) time(year_month) gvar(cohort) notyet
+
+	estat event, window(-20 20) estore(cs) 
+	event_plot cs, default_look graph_opt(xtitle("Periods since the event") ytitle("Average effect") ///
+	title("csdid") xlabel(-20(1)20)) stub_lag(Tp#) stub_lead(Tm#) together	 
+	*/
+	
+	**# TWFE
+	
+	* Transform (see https://www.statalist.org/forums/forum/general-stata-discussion/general/1522076-how-do-i-interpret-a-log-level-and-log-log-model-when-my-independent-variable-is-already-a-percentage)
+	g ln_dist_f_cum_km2 = asinh(dist_f_cum_km2)
+	g ln_tree_cover_pct = ln(tree_cover_pct)
+	g ln_n_proj_cum = asinh(n_proj_cum)
+	la var n_proj_cum "Num. Projects"
+	
+	foreach v of varlist dist_f_cum_km2 n_proj_cum {
+		
+		* lin-lin
+		eststo: reghdfe tree_cover_pct `v', ///
+			a(c_code_2011_num state_code_2011_num#year month) vce(cl c_code_2011_num)
+	
+			estadd local dist_fe "$\checkmark$"
+			estadd local st_y_fe "$\checkmark$"
+			estadd local month_fe "$\checkmark$"
+		
+		* log-lin
+		eststo: reghdfe ln_tree_cover_pct `v', ///
+			a(c_code_2011_num state_code_2011_num#year month) vce(cl c_code_2011_num)
+			
+			estadd local dist_fe "$\checkmark$"
+			estadd local st_y_fe "$\checkmark$"
+			estadd local month_fe "$\checkmark$"
+			
+		* lin-log
+		preserve
+		drop `v'
+		ren ln_`v' `v'
+		eststo: reghdfe tree_cover_pct `v', ///
+			a(c_code_2011_num state_code_2011_num#year month) vce(cl c_code_2011_num)
+			
+			estadd local dist_fe "$\checkmark$"
+			estadd local st_y_fe "$\checkmark$"
+			estadd local month_fe "$\checkmark$"
+		
+		* log-log
+		eststo: reghdfe ln_tree_cover_pct `v', ///
+			a(c_code_2011_num state_code_2011_num#year month) vce(cl c_code_2011_num)
+			
+			estadd local dist_fe "$\checkmark$"
+			estadd local st_y_fe "$\checkmark$"
+			estadd local month_fe "$\checkmark$"
+		restore
+	}
+	esttab using "${TABLE}/tables/f_verify.tex", replace ///
+		stats(dist_fe st_y_fe month_fe N r2, labels(`"District FEs"' ///
+		`"State x Year FEs"' `"Month FEs"' `"N"' `"\(R^{2}\)"') fmt(0 0 0 0 3)) ///
+		mlabels("lin-lin" "log-lin" "lin-log" "log-log" ///
+		"lin-lin" "log-lin" "lin-log" "log-log") wrap nocons nonotes ///
+		booktabs nomtitles star(* .1 ** .05 *** .01) label se b(%5.3f) ///
+		width(\hsize)
+	eststo clear
+	
+}
+
 
 *===============================================================================
-* EVENT STUDY
+* EVENT STUDY - SPECIES DIVERSION
 *===============================================================================
-if `event_study' == 1 {
+if `estudy' == 1 {
 	
 	* Read
 	use "${DATA}/dta/fc_ebd_user_update2020", clear
@@ -457,7 +561,7 @@ if `valuation' == 1 {
 	*----------------------
 	* Load Datasets
 	*----------------------
-	
+	/*
 	* Read deforestation
 	use "${DATA}/dta/fc_dym_s2_v02", clear
 
@@ -570,8 +674,10 @@ if `valuation' == 1 {
 	
 	* Merge ST from census
 	save "`temp'", replace
+	*/
 	import delimited "${DATA}/csv/2011_india_dist.csv", clear
 	keep c_code_11 tot_nm_hh tot_pop tot_st
+	kk
 	ren c_code_11 c_code_2011
 	merge 1:1 c_code_2011 using "`temp'", keep(3) nogen
 	

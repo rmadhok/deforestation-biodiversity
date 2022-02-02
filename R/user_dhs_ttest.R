@@ -31,7 +31,7 @@ dhs <- haven::read_stata('./IndiaPowerPlant/data/nfhs/household/IAHR74FL.DTA',
                           col_select = c('hhid', 'hv001', 'hv002', 'hv005', 'hv009', 
                                          'hv014', 'hv201', 'hv205', 'hv206','hv207', 
                                          'hv209', 'hv212', 'hv216', 'hv217', 'hv220', 
-                                         'hv221', 'hv242', 'hv270', 'sh37j', 'sh37n', 
+                                         'hv242', 'hv243a', 'hv270', 'sh37j', 'sh37n', 
                                          'sh37r', 'hv025'))
 
 # Clean DHS
@@ -51,8 +51,8 @@ dhs <- dhs %>%
          rooms_sleep = hv216,
          relation = hv217,
          hh_head_age = hv220,
-         landline = hv221,
          kitchen_separate = hv242,
+         cellphone = hv243a,
          wealth_idx = hv270,
          tv_colour = sh37j,
          internet = sh37n,
@@ -61,8 +61,8 @@ dhs <- dhs %>%
          rooms_per_adult = rooms_sleep / (hh_size - children),
          momdad = ifelse(relation == 2, 1, 0),
          flush_toilet = ifelse(toilet >= 10 & toilet <= 15, 1, 0),
-         wealth_idx_z = (wealth_idx - mean(wealth_idx))/sd(wealth_idx))
-
+         wealth_idx_z = (wealth_idx - mean(wealth_idx))/sd(wealth_idx),
+         wt = wt/1000000) # scaling factor to make bootstrap work.
 #-----------------------------------------------
 # Note: some clusters paired to multiple users 
 # i.e. many duplicates in matched sample
@@ -79,8 +79,8 @@ match <- merge(dhs, match, by='dhsclust')
 #-------------------------------------------------------------
 # T-TESTS
 #-------------------------------------------------------------
-varlist <- c('hh_size', 'wealth_idx', 'rooms_per_adult', 'fridge', 
-             'car', 'landline', 'kitchen_separate', 'tv_colour', 
+varlist <- c('hh_size', 'wealth_idx', 'rooms_per_adult', 'cellphone', 
+             'fridge', 'car', 'kitchen_separate', 'tv_colour',
              'internet', 'washer', 'water_piped', 'flush_toilet')
 
 # ttest function
@@ -109,7 +109,7 @@ t_test <- function(i, sample = 'All') {
   }
   
   # ttest
-  ttest <- wtd.t.test(x, y, weight = xwt, weighty = ywt, samedata = F, mean1 = F, bootse=T)
+  ttest <- wtd.t.test(x, y, weight = xwt, weighty = ywt, samedata = F, mean1 = F, bootse=T, bootn=1000)
   
   # build output dataframe
   item <- data.frame(
@@ -139,9 +139,10 @@ df_u <- as.data.frame(rbindlist(lapply(idx, t_test, sample = 'U')))
 clean <- function(df) {
   
   # variable labels
-  df$Variable <- c('HH Size', 'Wealth Index', 'Bedrooms per Person', 'Fridge (=1)', 
-                     'Car (=1)', 'Landline (=1)', 'Sep. Kitchen (=1)', 'Colour TV (=1)', 'Internet (=1)', 
-                     'Washing Machine (=1)', 'Piped Water (=1)', 'Flush Toilet (=1)')
+  df$Variable <- c('HH Size', 'Wealth Index', 'Bedrooms per Person', 'Cellphone (=1)',
+                   'Fridge (=1)', 'Car (=1)', 'Sep. Kitchen (=1)', 'Colour TV (=1)', 
+                   'Internet (=1)', 'Washing Machine (=1)', 'Piped Water (=1)', 
+                   'Flush Toilet (=1)')
 
   # Columns
   names(df) <- c('Variable', 'Matched DHS', 'DHS', 'Difference', 'p-value')
