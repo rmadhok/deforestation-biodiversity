@@ -35,7 +35,7 @@ if `bartik' == 1{
 	
 	* Read
 	use "${DATA}/dta/polecon_v02", clear
-	keep if year >= 2016 // bc 2015 is used for pre-period shares
+	keep if year >= 2015 // bc 2015 is used for pre-period shares
 	
 	* ST Presence/autonomy
 	foreach v in st scst {
@@ -95,7 +95,7 @@ if `bartik' == 1{
 if `hte' == 1 {
 	
 	* Read master
-	use "${DATA}/dta/fc_ebd_udt_v02"
+	use "${DATA}/dta/fc_ebd_udt_full_v02"
 	
 	* Merge political economy
 	merge m:1 c_code_2011 year_month using "${DATA}/dta/polecon_v02", keep(1 3) keepusing(*_seats schedule) nogen // mismatched are 2019-2020 (no election data)
@@ -108,7 +108,7 @@ if `hte' == 1 {
 	* HTE
 	foreach v of varlist st_seats sc_seats schedule {
 		
-		eststo: reghdfe sr c.dist_f_cum_km2##c.`v' dist_nf_cum_km2 `ctrls', ///
+		eststo: reghdfe sr c.dist_f_cum_km2##c.`v' `ctrls', ///
 			a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
 			
 			sum sr if e(sample)==1

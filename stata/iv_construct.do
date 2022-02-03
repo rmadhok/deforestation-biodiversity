@@ -273,7 +273,7 @@ if `shiftshare' == 1 {
 	preserve
 	
 		* Pre-period 
-		keep if year == 2015
+		keep if year == 2014
 		keep c_code_2011 state_code_2011 year_month dist_f_cum_km2
 		
 		* Cumulatives

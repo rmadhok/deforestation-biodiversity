@@ -31,13 +31,9 @@ drop cost_comment prop_status AM-AP date_s1
 
 * Rename
 replace prop_no = subinstr(prop_no, "view for rediversion", "", .)
-ren date_s2 date_rec
-ren st_displaced st_fam_disp
-ren sc_displaced sc_fam_disp
-ren total_displaced tot_fam_disp
+ren date_s2 date_recommended
 ren district_name_* district_*
 ren district_area_* dist_f_*
-
 *-------------------------------------------------------------------------------
 * CLEAN
 *-------------------------------------------------------------------------------
@@ -48,37 +44,37 @@ foreach v of varlist * {
 }
 
 * Remove
-drop if date_rec == "" // n=56 with stage-II date unknown
-drop if district_1 == "" // n=4 with missing district (not found in report)
-drop if regexm(district_1, "multi") | regexm(district_1, "mutli") // n=26 multidistrict w/ unknown pathway
-drop if regexm(district_1, "report") | regexm(district_1, "access") | regexm(district_1, "2") // n=23 w/ no report
-drop if regexm(district_1, "hindi") // n=14 reports in hindi
-drop if regexm(district_1, "repeat")
+drop if date_recommended == "" // n=56 with stage-II date unknown
+drop if district_0 == "" // n=4 with missing district (not found in report)
+drop if regexm(district_0, "multi") | regexm(district_0, "mutli") // n=26 multidistrict w/ unknown pathway
+drop if regexm(district_0, "report") | regexm(district_0, "access") | regexm(district_0, "2") // n=23 w/ no report
+drop if regexm(district_0, "hindi") // n=14 reports in hindi
+drop if regexm(district_0, "repeat")
 
 * Form A
 replace form_a = "yes" if regexm(form_a, "yes")
 
 * Cost (very messy)
-replace cost = "" if form_a == "no"
-replace cost = subinstr(cost, "lakhs", "lakh", .)
-replace cost = subinstr(cost, "crores", "crore", .)
-replace cost = subinstr(cost, "rs.", "rupees", .)
-replace cost = subinstr(cost, "rs", "rupees", .)
-replace cost = subinstr(cost, ",", "", .)
-replace cost = "NA" if !(regexm(cost, "rupees") | regexm(cost, "lakh") | regexm(cost, "crore"))  
-split cost, parse(" ")
-g temp = "rupees" if cost1 == "rupees"
-replace cost1 = cost2 if cost1 == "rupees"
-replace cost2 = "rupees" if temp == "rupees"
+replace proj_cost = "" if form_a == "no"
+replace proj_cost = subinstr(proj_cost, "lakhs", "lakh", .)
+replace proj_cost = subinstr(proj_cost, "crores", "crore", .)
+replace proj_cost = subinstr(proj_cost, "rs.", "rupees", .)
+replace proj_cost = subinstr(proj_cost, "rs", "rupees", .)
+replace proj_cost = subinstr(proj_cost, ",", "", .)
+replace proj_cost = "NA" if !(regexm(proj_cost, "rupees") | regexm(proj_cost, "lakh") | regexm(proj_cost, "crore"))  
+split proj_cost, parse(" ")
+g temp = "rupees" if proj_cost1 == "rupees"
+replace proj_cost1 = proj_cost2 if proj_cost1 == "rupees"
+replace proj_cost2 = "rupees" if temp == "rupees"
 drop temp
-replace cost1 = "NA" if cost3 !="" // n=12 complicated cost descriptions
+replace proj_cost1 = "NA" if proj_cost3 !="" // n=12 complicated cost descriptions
 
-destring cost1, force replace
-replace cost1 = cost1 * 100000 if cost2 == "lakh"
-replace cost1 = cost1 * 10000000 if cost2 == "crore"
-replace cost1 = cost1 / 100000 // everything in lakhs
-drop cost cost2-cost8
-ren cost1 cost
+destring proj_cost1, force replace
+replace proj_cost1 = proj_cost1 * 100000 if proj_cost2 == "lakh"
+replace proj_cost1 = proj_cost1 * 10000000 if proj_cost2 == "crore"
+replace proj_cost1 = proj_cost1 / 100000 // everything in lakhs
+drop proj_cost proj_cost2-proj_cost8
+ren proj_cost1 proj_cost // sync with post-2014 varname
 
 * Employment (skip for now)
 drop employment 
@@ -111,6 +107,7 @@ replace proj_cat = "transportation" if inlist(proj_category, "road", "railway") 
 replace proj_cat = "irrigation" if inlist(proj_category, "irrigation") 
 replace proj_cat = "resettlement" if inlist(proj_category, "forest village conversion", "rehabilitation")
 replace proj_cat = "mining" if inlist(proj_category, "mining", "quarrying", "borehole prospecting")
+replace proj_cat = "industry" if proj_category == "industry"
 replace proj_cat = "other" if proj_cat == ""
 
 * Recategorize "other"
@@ -126,31 +123,31 @@ replace proj_cat = "irrigation" if proj_cat == "other" & regexm(proj_cat2, "cana
 // Resettlement
 replace proj_cat = "resettlement" if proj_cat == "other" & proj_cat2 == "resettlement"
 
-// Mining (none)
+// Industry
+replace proj_cat = "industry" if proj_cat == "other" & inlist(proj_cat2, "industry (steel)", "other (cement plant)", "other (chemical factory)", "other (factory)", "other (industrial model)", "other (mill)", "other (steel plant)")
 
+// Mining (none)
+drop proj_cat2
 *-------------------------------------------------------------------------------
 * FINALIZE
 *-------------------------------------------------------------------------------
 
 * Dates
-foreach v in submit rec {
-	g d_`v' = date(date_`v', "DM20Y")
-	drop date_`v'
-	ren d_`v' date_`v'
-	format date_`v' %td
-}
-drop proj_cat2
+g date_submit = date(date_submitted, "DM20Y") 
+g date_rec = date(date_recommended, "DM20Y")
+format date_submit date_rec %td
+
+* Encode
+g displacement_num = (tot_fam_disp > 0)
+replace displacement_num = . if tot_fam_disp == .
+g ec_needed_num = (ec_needed == "yes")
+replace ec_needed_num = . if ec_needed == ""
 
 * Destring
-destring proj_area_forest dist_f_*, replace
+destring proj_area_forest2 dist_f_*, replace
 
 * Save (n=1732 projects)
-order state prop_no date_submit date_rec proj_area_forest proj* cost tot_fam_disp
+order state prop_no date_submit date_rec proj* tot_fam_disp
 sort state prop_no
+g pre2014 = 1
 save "${SAVE}/dta/fc_pre2014_clean_v02.dta", replace
-
-
-
-
-
-

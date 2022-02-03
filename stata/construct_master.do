@@ -25,8 +25,8 @@ gl DO		"${ROOT}/scripts/stata"
 
 // Module
 local ebird					0
-local district_forest		1
-local merge					0
+local district_forest		0
+local merge					1
 *===============================================================================
 * BIODIVERSITY
 *===============================================================================
@@ -163,7 +163,6 @@ if `ebird' == 1 {
 *===============================================================================
 *---------------------------------------------------
 * PROGRAM TO CONSTRUCT BALANCED DEFORESTATION PANEL
-
 * arguments: stage
 *	Approval stage at which to include projects
 * 	Select 1 or 2
@@ -171,10 +170,6 @@ if `ebird' == 1 {
 *	Sample restriction
 *	drop - drops megaprojects > 10km2
 *	trunc - truncates full sample at 99th percentile
-* agurment: drop_projects
-*	project type to exclude
-*	select from "electricity irrigation
-*   transportation mining resettlement other"
 *---------------------------------------------------
 capture program drop construct_deforest
 program define construct_deforest
@@ -185,12 +180,17 @@ program define construct_deforest
 	* SELECT APPROVAL STAGE
 	*------------------------
 	
-	* Read 
+	* Read post-2014 permits
 	use "${DATA}/dta/fc_clean_v02", clear
 
 	* Select Stage
 	if `stage' == 2 {
+	
 		keep if prop_status == "approved"
+		
+		* add pre-2014 submissions (approved post 2014)
+		append using "${DATA}/dta/fc_pre2014_clean_v02"
+		replace pre2014 = 0 if pre2014 == .
 	}
 	if `stage' == 1 {
 		keep if prop_status == "approved by rohq" | regexm(prop_status, "principle") == 1 | regexm(prop_status, "pending at ho") == 1 | prop_status == "pending at ro for stage-ii" // 3,858 (4068) projects
@@ -200,8 +200,8 @@ program define construct_deforest
 	g year_month = ym(year(date_rec), month(date_rec))
 	format year_month %tmCCYY-NN
 	drop if year_month == .
-
-	* Alternative Distribution
+	
+	* Alternative Distribution (UPDATE)
 	/*---------------------------------------
 	* 2 megaprojects in TG - laying of canals, 
 	  tunnels, power lines for lift irrigation
@@ -209,7 +209,7 @@ program define construct_deforest
 	-----------------------------------------*/
 	* Drop 3 megaprojects
 	if "`restrict'" == "drop" {
-		drop if proj_area_forest2 > 1000 // drops 3 megaprojects > 10 km2
+		drop if proj_area_forest2 > 2000 // drops 4 megaprojects > 20 km2
 	}
 	* Keep all projects - truncate size
 	if "`restrict'" == "trunc" {
@@ -220,13 +220,12 @@ program define construct_deforest
 	* RESHAPE TO PROJECT-DISTRICT LEVEL
 	*-----------------------------------
 	/*-------------------------------------------------
-	- 47 industry projects w/ tiny def'n. 
-	- UG projects (pipelines, OFC) have tiny def'n. 
+	- industry projects w/ tiny def'n. 
 	- SE's huge in own category. add to "other"
 	---------------------------------------------------*/
 	replace proj_cat = "underground" if proj_cat == "mining" & mining_type == "underground"
 	replace proj_cat = "other" if inlist(proj_cat, "underground", "industry")
-
+	
 	* Drop projects in provided list (REMOVE?)
 	if "`drop_projects'" != "" {
 
@@ -244,7 +243,7 @@ program define construct_deforest
 	do "${DO}/dist_name_sync"
 	tempfile fc_dist
 	save "`fc_dist'"
-
+	
 	* Merge Census Code
 	use "${DATA}/dta/2011_india_dist", clear
 	keep state district c_code_2011
@@ -254,17 +253,18 @@ program define construct_deforest
 	/*---------------------------------------
 	non-matched:
 		v01: 220 w/ no FC; 9 w complex splits
-		v02: 199 w/ no FC; 8 w complex splits
+		v02: 141 w/ no FC; 8 w complex splits
 	---------------------------------------*/
 	
 	* Save project-level
 	if `stage' == 2 {
 		save "${DATA}/dta/fc_pdym_s2_v02", replace
 	}
+	
 	*------------------------------
 	* AGGREGATE TO DISTRICT-MONTH
 	*------------------------------
-	
+
 	* Land Diversion by project category
 	levelsof proj_cat, local(proj_cat)
 	foreach cat of local proj_cat {
@@ -274,7 +274,7 @@ program define construct_deforest
 		g n_`abbrev_`cat'' = (proj_cat == "`cat'") // number of projects of type
 		g dist_nf_`abbrev_`cat'' = dist_nf if proj_cat == "`cat'"
 	}	
-
+	/*
 	* Land diversion by project type 
 	levelsof proj_type, local(proj_type)
 	foreach type of local proj_type {
@@ -284,7 +284,7 @@ program define construct_deforest
 		g n_`abbrev_`type'' = (proj_type == "`type'") // number of projects of type
 		g dist_nf_`abbrev_`type'' = dist_nf if proj_type == "`type'"
 	}
-
+	*/
 	* Aggregate
 	collapse (sum) dist_f* dist_nf* n_* ///
 		     (count) n_proj = dist_id, ///
@@ -300,6 +300,7 @@ program define construct_deforest
 		la var n_`abbrev_`cat'' "`lab'"
 		la var dist_nf_`abbrev_`cat'' "`lab'"
 	}
+	/*
 	foreach type of local proj_type {
 		
 		local lab = proper("`type'")
@@ -307,7 +308,7 @@ program define construct_deforest
 		la var n_`abbrev_`type'' "`lab'"
 		la var dist_nf_`abbrev_`type'' "`lab'"
 	}
-	
+	*/
 	* Add census codes for control group
 	merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist", keepus(c_code_2011)
 	
@@ -324,7 +325,7 @@ program define construct_deforest
 	* Dates
 	g year = year(dofm(year_month))
 	g month = month(dofm(year_month))
-	keep if inrange(year, 2015, 2020)
+	keep if inrange(year, 2014, 2020)
 
 	*------------------------------
 	* CONSTRUCT VARIABLES
@@ -341,7 +342,7 @@ program define construct_deforest
 	bys c_code_2011: carryforward tree_cover_base, replace
 
 	* Encroachment Area
-	foreach var of varlist dist_f-dist_nf_sta {
+	foreach var of varlist dist_f-dist_nf_tra {
 		
 		* No deforestation
 		replace `var' = 0 if `var' == .
@@ -367,7 +368,8 @@ program define construct_deforest
 	}
 	
 	* Share of total projects
-	foreach var of varlist n_ele_cum - n_sta_cum {
+	foreach var of varlist n_ele_cum - n_tra_cum {
+		
 		local vlab : var lab `var'
 		g `var'_s = 0 
 		la var `var'_s "`vlab' (Pct. of total)"
@@ -412,8 +414,8 @@ if `district_forest' == 1 {
 *===============================================================================
 if `merge' == 1 {
 
-	local fc_data "" // either "" (main dataset), "full", or "trunc" 
-	local level "udt" // udt (user-dist-time) or uct (user-cell-time)
+	local fc_data "trunc" // either "" (main dataset), "full", or "trunc" 
+	local level "uct" // udt (user-dist-time) or uct (user-cell-time)
 	
 	if "`fc_data'" == "" {
 		

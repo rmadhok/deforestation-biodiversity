@@ -27,10 +27,10 @@ cd "${TABLE}"
 
 // Modules
 local sumstats			0
-local learning			0
+local learning			1
 local estudy_f			0
 local estudy			0
-local valuation			1
+local valuation			0
 
 set scheme modern
 *===============================================================================
@@ -423,6 +423,7 @@ if `estudy_f' == 1 {
 	g ln_n_proj_cum = asinh(n_proj_cum)
 	la var n_proj_cum "Num. Projects"
 	
+	** -- TRY LIN LIN WITH TREE_COVER_KM2
 	foreach v of varlist dist_f_cum_km2 n_proj_cum {
 		
 		* lin-lin
@@ -561,7 +562,7 @@ if `valuation' == 1 {
 	*----------------------
 	* Load Datasets
 	*----------------------
-	/*
+	
 	* Read deforestation
 	use "${DATA}/dta/fc_dym_s2_v02", clear
 

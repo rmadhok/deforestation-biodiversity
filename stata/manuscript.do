@@ -78,7 +78,7 @@ end
 if `main_analysis' == 1 {
 	
 	* Read
-	use "${DATA}/dta/fc_ebd_udt_trunc_v02", clear
+	use "${DATA}/dta/fc_ebd_udt_v02", clear
 	
 	* Prep
 	local ctrls temp rain tree_cover_km2 ln_duration ln_distance ///
@@ -92,10 +92,9 @@ if `main_analysis' == 1 {
 	* 1. MAIN RESULTS
 	*--------------------
 	* NOTE: REMOVE TRIP WEIGHTS (SEE REFEREE COMMENT)
-	/*
 	eststo clear
 	eststo m1: reghdfe sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
-		a(user_id c_code_2011_num state_code_2011_num#month year) vce(cl biome)
+		a(uid c_code_2011_num state_code_2011_num#month year) vce(cl biome)
 	
 		sum sr if e(sample)==1
 		estadd scalar ymean = `r(mean)'
@@ -105,14 +104,14 @@ if `main_analysis' == 1 {
 		estadd local year_fe "$\checkmark$"
 
 	eststo m2: reghdfe sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
-		a(user_id#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
+		a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
 
 		sum sr if e(sample)==1
 		estadd scalar ymean = `r(mean)'
 		estadd local user_y_fe "$\checkmark$"
 		estadd local dist_fe "$\checkmark$"
 		estadd local st_m_fe "$\checkmark$"
-
+kk
 	* Coefficient Plot
 	coefplot (m1, rename(dist_f_cum_km2 = `" "(1) Learning" "Bias" "') \ m2, ///
 		rename(dist_f_cum_km2 = `" "(2) No Learning" "Bias" "')), ///
@@ -246,22 +245,23 @@ if `scratch' == 1 {
 	**# INVESTIGATE
 
 	* Read
-	use "${DATA}/dta/fc_ebd_udt_v02", clear
+	use "${DATA}/dta/fc_ebd_udt_full_v02", clear
 	local ctrls temp rain tree_cover_km2 ln_duration ln_distance ///
 		        ln_exp_idx ln_coverage_udym
 	drop_outliers
 	
+	/*
 	** RESERVATIONS OFFSET MAIN EFFECT 
 	** SCHEDULED AREA HAS NO OFFSETTING EFFECT
 	replace st_seats = st_seats*10
 	replace fifth_schedule = 1 if inlist(state, "Assam", "Meghalaya", "Mizoram", "Tripura")
 	reghdfe sr c.dist_f_cum_km2##c.st_seats dist_nf_cum_km2 `ctrls', ///
 		a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
-	kkkk
+	
+	
 	* Main (For Reference)
-	/*
-	eststo: reghdfe sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
-		a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
+	eststo: reghdfe sr dist_f_cum_km2 `ctrls', ///
+		a(uid#year c_code_2011 state_code_2011_num#month) vce(cl biome)
 	
 	* By project (forest only)
 	reg_sat sr dist_f_ele_cum_km2 dist_f_irr_cum_km2 ///
@@ -274,7 +274,7 @@ if `scratch' == 1 {
 		dist_f_tra_cum_km2 dist_nf_ele_cum_km2 dist_nf_irr_cum_km2 ///
 		dist_nf_min_cum_km2 dist_nf_oth_cum_km2 dist_nf_res_cum_km2 ///
 		dist_nf_tra_cum_km2 `ctrls'
-	
+	kk
 	* Move underground mines to other? (no change)
 	reg_sat sr dist_f_ele_cum_km2 dist_f_irr_cum_km2 ///
 		dist_f_min_cum_km2 dist_f_oth_cum_km2 dist_f_res_cum_km2 ///
