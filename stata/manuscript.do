@@ -27,8 +27,8 @@ gl TABLE	"${ROOT}/docs/jmp/tex_doc/v3"
 cd "${TABLE}"
 
 // Modules
-local main_analysis		0
-local scratch			1
+local main_analysis		1
+local scratch			0
 local dynamics			0
 local simulation		0
 local robustness		0
@@ -78,22 +78,21 @@ end
 if `main_analysis' == 1 {
 	
 	* Read
-	use "${DATA}/dta/fc_ebd_udt_v02", clear
+	use "${DATA}/dta/fc_ebd_udt_full_v02", clear
 	
 	* Prep
+	drop if year == 2014
+	drop_outliers
 	local ctrls temp rain tree_cover_km2 ln_duration ln_distance ///
 		        ln_exp_idx ln_coverage_udym
-	*drop_outliers
 	
 	la var dist_f_cum_km2 "Forest Infrastructure (\(km^{2}\))"
-	la var dist_nf_cum_km2 "Non-Forest Diversion (\(km^{2}\))"
 	
 	*--------------------
 	* 1. MAIN RESULTS
 	*--------------------
-	* NOTE: REMOVE TRIP WEIGHTS (SEE REFEREE COMMENT)
 	eststo clear
-	eststo m1: reghdfe sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
+	eststo m1: reghdfe sr dist_f_cum_km2 `ctrls', ///
 		a(uid c_code_2011_num state_code_2011_num#month year) vce(cl biome)
 	
 		sum sr if e(sample)==1
@@ -103,7 +102,7 @@ if `main_analysis' == 1 {
 		estadd local st_m_fe "$\checkmark$"
 		estadd local year_fe "$\checkmark$"
 
-	eststo m2: reghdfe sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
+	eststo m2: reghdfe sr dist_f_cum_km2 `ctrls', ///
 		a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
 
 		sum sr if e(sample)==1
@@ -111,21 +110,22 @@ if `main_analysis' == 1 {
 		estadd local user_y_fe "$\checkmark$"
 		estadd local dist_fe "$\checkmark$"
 		estadd local st_m_fe "$\checkmark$"
-kk
+
 	* Coefficient Plot
 	coefplot (m1, rename(dist_f_cum_km2 = `" "(1) Learning" "Bias" "') \ m2, ///
 		rename(dist_f_cum_km2 = `" "(2) No Learning" "Bias" "')), ///
 		keep(dist_f*) xline(0, lcolor(maroon) lpattern(solid)) ///
 		coeflabels(, labsize(medium)) mlabsize(medium) mlabcolor(black) ///
-		ciopts(recast(rcap) lpattern(shortdash) lcolor(gs5)) msize(medium) ///
-		mfcolor(white) msymbol(D) mlcolor(black) mlabel format(%9.2g) ///
-		mlabposition(1) mlabgap(*2) xlabel(-0.5(.5)0.5, labsize(medium)) ///
-		ylabel(, labsize(medium)) title("A", size(large)) ///
+		levels(99 95 90) ciopts(lwidth(*1 *3 *4) color(black black black) ///
+		lcolor(*.3 *.4 *.6)) legend(order(1 "99" 2 "95" 3 "90") rows(1) pos(6)) ///
+		msize(medium) mfcolor(white) msymbol(D) mlcolor(black) mlabel ///
+		format(%9.2g) mlabposition(1) mlabgap(*2) xlabel(-0.3(.1)0.1, ///
+		labsize(medium)) ylabel(, labsize(medium)) title("A", size(large)) ///
 		saving("${TABLE}/fig/main.gph", replace)
 	graph export "${TABLE}/fig/main.png", replace
 	
 	* Table
-	esttab using "${TABLE}/tables/main_results.tex", keep(dist_*_cum_km2) replace ///
+	esttab using "${TABLE}/tables/main_results.tex", keep(dist_f_cum_km2) replace ///
 		stats(ymean user_fe user_y_fe dist_fe st_m_fe ///
 		st_y_fe year_fe N r2, labels(`"Outcome Mean"' ///
 		`"User FEs"' `"User x Year FEs"' `"District FEs"' ///
@@ -133,7 +133,7 @@ kk
 		`"N"' `"\(R^{2}\)"') fmt(3 0 0 0 0 0 0 0 3)) ///
 		mgroups("With Learning Bias" "Without Learning Bias", ///
 		pattern(1 1) prefix(\multicolumn{@span}{c}{) suffix(}) span ///
-		erepeat(\cmidrule(lr){@span})) indicate("Experience Index=exp_idx") ///
+		erepeat(\cmidrule(lr){@span})) indicate("Experience Index=ln_exp_idx") ///
 		wrap nocons nonotes booktabs nomtitles star(* .1 ** .05 *** .01) ///
 		label se b(%5.3f) width(\hsize)
 	eststo clear
@@ -144,15 +144,12 @@ kk
 
 	* Fig 2 - category-Wise Impacts
 	eststo clear
-	eststo: reg_sat sr dist_f_ele_cum_km2 dist_f_irr_cum_km2 ///
-		dist_f_min_cum_km2 dist_f_oth_cum_km2 dist_f_res_cum_km2 ///
-		dist_f_tra_cum_km2 dist_nf_ele_cum_km2 dist_nf_irr_cum_km2 ///
-		dist_nf_min_cum_km2 dist_nf_oth_cum_km2 dist_nf_res_cum_km2 ///
-		dist_nf_tra_cum_km2 `ctrls'
+	eststo: reg_sat sr dist_f_*_cum_km2 `ctrls'
 
 	coefplot, keep(dist_f*) sort xline(0, lcolor(maroon) lpattern(solid)) ///
-		msize(small) mfcolor(white) msymbol(D) ///
-		ciopts(recast(rcap) lpattern(shortdash) lcolor(gs5)) ///
+		msize(small) mfcolor(white) msymbol(D) levels(99 95 90) ///
+		ciopts(lwidth(*1 *3 *4) color(black black black) lcolor(*.2 *.3 *.6)) ///
+		legend(order(1 "99" 2 "95" 3 "90") rows(1) pos(6)) ///
 		mlabel format(%9.2g) mlabposition(1) mlabcolor(black) /// 
 		coeflabels(, labsize(medium)) mlabsize(medium) mcolor(black) ///
 		xlabel(, labsize(medium)) ylabel(, labsize(medium)) mlabgap(*2) ///
@@ -162,50 +159,32 @@ kk
 	*--------------------------
 	* 3. FRAGMENTATION-WISE
 	*--------------------------
-
-	**# Linear model (doesnt work)
-	g tree_cover_base_p = (tree_cover_base/tot_area)*100
-	g dist_f_tree_base = dist_f_cum_km2 * tree_cover_base_p
-	g dist_nf_tree_base = dist_nf_cum_km2 * tree_cover_base_p
-	
-	eststo clear
-	eststo: reghdfe sr dist_f_tree_base dist_nf_tree_base ///
-		dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
-		a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
-	
-	*/
-	**# Quantiles
 	
 	// Quantiles of Forest Cover
-	g tree_cover_base_p = (tree_cover_base/tot_area)*100
-	xtile tcover_base = tree_cover_base_p, nquantiles(2)
-	*xtile tcover_base = tree_cover_base, nquantiles(2) // works with 5
-	tab tcover_base, gen(tcover_q_)
-	
-	foreach v of varlist tcover_q_* { // interactions
-		g dist_f_`v' = dist_f_cum_km2 * `v'
-		g dist_nf_`v' = dist_nf_cum_km2 * `v'
-	}
-
-	la var dist_f_tcover_q_1 "1st"
-	la var dist_f_tcover_q_2 "2nd" 
-	*la var dist_f_tcover_q_3 "3rd"
-	*la var dist_f_tcover_q_4 "4th"
-	*la var dist_f_tcover_q_5 "5th"
+	* Note : monotonic decline until q5. This is mainly remote NE where there is little eBird activity and estimates are noisy/selected on those who go there
+	*g tree_cover_base_p = (tree_cover_base/tot_area)*100
+	*xtile tcover_base = tree_cover_base_p, nquantiles(3)
+	xtile tcover_base = tree_cover_base, nquantiles(5)
+	tab tcover_base, gen(tcover_q)
 
 	eststo clear
-	eststo: reghdfe sr dist_f_tcover_q_1-dist_nf_tcover_q_1 ///
-		dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
+	eststo: reghdfe sr c.dist_f_cum_km##c.(tcover_q2-tcover_q5) n_*_cum_s `ctrls', ///
 		a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
-kk
-	coefplot, keep(dist_f_tcover_*) xline(0, lcolor(maroon) lpattern(solid))  ///
+		
+	coefplot, keep(c.dist_f_cum_km2#c.*) xline(0, lcolor(maroon) lpattern(solid)) ///
+		coeflabels(c.dist_f_cum_km2#c.tcover_q2 = "2nd" ///
+		c.dist_f_cum_km2#c.tcover_q3 = "3rd" ///
+		c.dist_f_cum_km2#c.tcover_q4 = "4th" ///
+		c.dist_f_cum_km2#c.tcover_q5 = "5th", labsize(medium)) ///
 		msize(small) mfcolor(white) msymbol(D) mcolor(black) ///
-		ciopts(recast(rcap) lpattern(shortdash) lcolor(gs5)) ///
+		levels(99 95 90) ciopts(lwidth(*1 *3 *4) color(black black black) ///
+		lcolor(*.2 *.3 *.6)) legend(order(1 "99" 2 "95" 3 "90") rows(1) pos(6)) ///
 		mlabel ytitle("Forest Cover (Quintiles)", size(large)) format(%9.2g) ///
-		mlabposition(1) coeflabels(, labsize(medium)) mlabsize(medium) ///
-		mlabcolor(black) xlabel(-2(2)2, labsize(medium)) ylabel(, labsize(medium)) ///
+		mlabposition(1) mlabsize(medium) mlabcolor(black) ///
+		xlabel(-2(0.5)0.5, labsize(medium)) ylabel(, labsize(medium)) ///
 		mlabgap(*2) title("C", size(large)) ///
 		saving("${TABLE}/fig/tcoverwise.gph", replace)
+	
 	graph export "${TABLE}/fig/tcoverwise.png", replace
 	
 	* MAIN RESULTS
@@ -213,27 +192,6 @@ kk
 		"${TABLE}/fig/tcoverwise.gph", holes(4)
 	graph export "${TABLE}/fig/main_results.png", width(1000) replace
 	
-	
-	* Quantiles of Baseline Biodiversity
-	*g sr_bl_km2 = sr_bl/tree_cover_base
-	xtile sr_bl_q = sr_bl, nquantiles(2) // works with 2
-	tab sr_bl_q, gen(sr_bl_q_)
-	
-	foreach v of varlist sr_bl_q_* { // interactions
-		g dist_f_`v' = dist_f_cum_km2 * `v'
-		g dist_nf_`v' = dist_nf_cum_km2 * `v'
-	}
-
-	la var dist_f_sr_bl_q_1 "1st"
-	la var dist_f_sr_bl_q_2 "2nd" 
-	*la var dist_f_sr_bl_q_3 "3rd"
-	*la var dist_f_sr_bl_q_4 "4th"
-	*la var dist_f_sr_bl_q_5 "5th"
-
-	eststo clear
-	eststo: reghdfe sr dist_f_sr_bl_q_1-dist_nf_sr_bl_q_1 ///
-		dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
-		a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
 	
 }
 
@@ -245,41 +203,20 @@ if `scratch' == 1 {
 	**# INVESTIGATE
 
 	* Read
-	use "${DATA}/dta/fc_ebd_udt_full_v02", clear
+	use "${DATA}/dta/fc_ebd_udt_v02", clear
 	local ctrls temp rain tree_cover_km2 ln_duration ln_distance ///
 		        ln_exp_idx ln_coverage_udym
 	drop_outliers
-	
-	/*
-	** RESERVATIONS OFFSET MAIN EFFECT 
-	** SCHEDULED AREA HAS NO OFFSETTING EFFECT
-	replace st_seats = st_seats*10
-	replace fifth_schedule = 1 if inlist(state, "Assam", "Meghalaya", "Mizoram", "Tripura")
-	reghdfe sr c.dist_f_cum_km2##c.st_seats dist_nf_cum_km2 `ctrls', ///
-		a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
-	
+	drop if year == 2014
 	
 	* Main (For Reference)
-	eststo: reghdfe sr dist_f_cum_km2 `ctrls', ///
+	reghdfe sr dist_f_cum_km2 `ctrls', ///
 		a(uid#year c_code_2011 state_code_2011_num#month) vce(cl biome)
 	
 	* By project (forest only)
-	reg_sat sr dist_f_ele_cum_km2 dist_f_irr_cum_km2 ///
-		dist_f_min_cum_km2 dist_f_oth_cum_km2 dist_f_res_cum_km2 ///
-		dist_f_tra_cum_km2 `ctrls'
-	*/
-	* By project (non-forest)
-	reg_sat sr dist_f_ele_cum_km2 dist_f_irr_cum_km2 ///
-		dist_f_min_cum_km2 dist_f_oth_cum_km2 dist_f_res_cum_km2 ///
-		dist_f_tra_cum_km2 dist_nf_ele_cum_km2 dist_nf_irr_cum_km2 ///
-		dist_nf_min_cum_km2 dist_nf_oth_cum_km2 dist_nf_res_cum_km2 ///
-		dist_nf_tra_cum_km2 `ctrls'
-	kk
-	* Move underground mines to other? (no change)
-	reg_sat sr dist_f_ele_cum_km2 dist_f_irr_cum_km2 ///
-		dist_f_min_cum_km2 dist_f_oth_cum_km2 dist_f_res_cum_km2 ///
-		dist_f_tra_cum_km2  `ctrls'
-	
+	reghdfe sr dist_f_*_cum_km2 `ctrls', ///
+		a(uid#year c_code_2011 state_code_2011_num#month) vce(cl biome)
+	ll
 	
 	
 	

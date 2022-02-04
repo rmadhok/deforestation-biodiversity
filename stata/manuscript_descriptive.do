@@ -2,8 +2,7 @@
 *																			
 * PROJECT: 	Deforestation and Biodiversity										
 *																			
-* PURPOSE: 	MANUSCRIPT - DESCRIPTIVE WORK (TEX)   
-*																			 				 							
+* PURPOSE: 	MANUSCRIPT - DESCRIPTIVE WORK (TEX)   																 				 							
 *																			
 * AUTHOR:  Raahil Madhok, madhokr@mail.ubc.ca											
 *																				
@@ -27,8 +26,8 @@ cd "${TABLE}"
 
 // Modules
 local sumstats			0
-local learning			1
-local estudy_f			0
+local learning			0
+local estudy_f			1
 local estudy			0
 local valuation			0
 
@@ -49,9 +48,10 @@ program define reg_sat
 	local ctrls = substr("`varlist'", length("`depvar'") + ///
 		length("`indepvar'") + 3, length("`varlist'"))
 
-	reghdfe `depvar' `indepvar' `ctrls' [aweight=n_trips], ///
-		a(user_id#year c_code_2011_num state_code_2011_num#month, savefe) ///
+	reghdfe `depvar' `indepvar' `ctrls', ///
+		a(uid#year c_code_2011_num state_code_2011_num#month, savefe) ///
 		vce(cl biome) resid
+		
 		estadd local user_y_fe "$\checkmark$"
 		estadd local dist_fe "$\checkmark$"
 		estadd local st_m_fe "$\checkmark$"
@@ -75,73 +75,75 @@ end
 if `sumstats' == 1 {
 	
 	* Read
-	use "${DATA}/dta/fc_ebd_user", clear
+	use "${DATA}/dta/fc_ebd_udt_full_v02", clear
+	drop if year == 2014
 	drop_outliers
-
+	
 	* Tag district
-	bys c_code_2011: egen any_def = max(dist_f > 0 & dist_f!=.)
+	bys c_code_2011: egen treat = max(dist_f_cum_km2 > 0 & dist_f_cum_km2!=.)
 	egen tag_d = tag(c_code_2011) //district-level
+	egen tag_dym = tag(c_code_2011 year_month)
 	
 	* Indent for pretty latex formatting
-	foreach v of varlist dist_f_cum dist_f_*_cum* tree* pop* ///
-		sr coverage n_* duration distance temp rain all* { 
+	foreach v of varlist dist_f*_cum_km2 tree* pop* ///
+		sr coverage* n_* duration distance temp rain exp_idx { 
 	
 			label variable `v' `"\hspace{0.2cm} `: variable label `v''"'	
-		}
+	}
 
-	** Collect
+	* Collect
 	local dist_vars n_users_dist n_trips_dist pop_density
-	local trip sr
-	local covariates tree_cover_pct coverage rain temp duration all_species
+	local trip sr coverage_udym duration distance
+	local covariates tree_cover_km2 rain temp
 	
 	*---------------------------------------
 	* 1. TABLE: OUTCOMES AND COVARIATES
 	*---------------------------------------
 
-	** District Variables
+	* District Variables
 	eststo clear
-	eststo A: estpost tabstat `dist_vars' if tag_d & any_def, s(n mean sd) c(s)
-	eststo B: estpost tabstat `dist_vars' if tag_d & !any_def, s(n mean sd) c(s)
+	eststo A: estpost tabstat `dist_vars' if tag_d & treat, s(n mean sd) c(s)
+	eststo B: estpost tabstat `dist_vars' if tag_d & !treat, s(n mean sd) c(s)
 
 	esttab A B using "${TABLE}/tables/sumstats_ebd.tex", replace f main(mean) aux(sd) ///
 		cells("mean(fmt(2)) sd(fmt(2)) count(fmt(0))") ///
 		mgroups("Deforestation Districts" "Non-deforestation Districts", pattern(1 1) ///
 		prefix(\multicolumn{@span}{c}{) suffix(}) span erepeat(\cmidrule(lr){@span})) ///
 		collabel("Mean" "Std. Dev." "N", prefix({) suffix(})) ///
-		refcat(n_users_dist "\underline{\emph{District Variables}}", nolabel) ///
+		refcat(n_users_dist "\underline{\emph{District}}", nolabel) ///
 		nomtitle booktabs noobs label unstack nonumber
 
-	** Birdwatching Details
+	* Birdwatching Details
 	eststo clear
-	eststo A: estpost tabstat `trip' if any_def, s(n mean med sd) c(s)
-	eststo B: estpost tabstat `trip' if !any_def, s(n mean med sd) c(s)
+	eststo A: estpost tabstat `trip' if treat, s(n mean med sd) c(s)
+	eststo B: estpost tabstat `trip' if !treat, s(n mean med sd) c(s)
 
 	esttab A B using "${TABLE}/tables/sumstats_ebd.tex", append f main(mean) aux(sd) ///
 		cells("mean(fmt(2)) sd(fmt(2)) count(fmt(0))") ///
-		refcat(sr "\underline{\emph{Outcome}}" , nolabel) nomtitle collabel(none) ///
+		refcat(sr "\underline{\emph{User-District-Time}}", nolabel) nomtitle collabel(none) ///
 		width(\hsize) nomtitle booktabs noobs label unstack nonumber plain
 	
-	** Covariates
+	* Covariates
 	eststo clear
-	eststo A: estpost tabstat `covariates' if any_def, s(n mean med sd) c(s)
-	eststo B: estpost tabstat `covariates' if !any_def, s(n mean med sd) c(s)
+	eststo A: estpost tabstat `covariates' if tag_dym & treat, s(n mean med sd) c(s)
+	eststo B: estpost tabstat `covariates' if tag_dym & !treat, s(n mean med sd) c(s)
 	
 	esttab A B using "${TABLE}/tables/sumstats_ebd.tex", append f main(mean) aux(sd) ///
-		cells("mean(fmt(2)) sd(fmt(2)) count(fmt(0))") ///
-		width(\hsize) refcat(tree_cover "\underline{\emph{Covariates}}" , nolabel) ///
-		nomtitle collabel(none) booktabs noobs label unstack nonumber plain
+		cells("mean(fmt(2)) sd(fmt(2)) count(fmt(0))") refcat(tree_cover_km2 ///
+		"\underline{\emph{District-Time}}" , nolabel) nomtitle collabel(none) ///
+		booktabs noobs label unstack nonumber plain
 	
 	*-----------------------------------
-	* 3. Table: CDF OF N_TRIPS
+	* 2. Table: CDF OF N_TRIPS
 	*-----------------------------------
 	cumul n_trips, gen(cum)
 	sort cum
 	la var n_trips "Num. Trips"
-	line cum n_trips, ytitle("Cumulative Density (%)") xlabel(0(5)50)
+	line cum n_trips, ytitle("Cumulative Density (%)") xlabel(0(5)60)
 	graph export "${TABLE}/fig/cdf_ntrips.png", replace
 	
 	*-------------------------------------
-	* 4. VARIATION in USER CHARACTERISTICS
+	* 3. VARIATION in USER CHARACTERISTICS
 	*-------------------------------------
 	preserve
 		
@@ -166,86 +168,33 @@ if `sumstats' == 1 {
 	* 4. Table: Forest Clearance
 	*-----------------------------------
 
-	* Per-District Month
-	preserve
-		collapse (first) dist_f_ele-dist_f_tra any_def, by(c_code_2011 year_month)
-		eststo clear
-		eststo B: estpost tabstat dist_f_ele-dist_f_tra if any_def, s(n mean p50 sd) c(s)
-	restore
-	
-	* Project-wise area totals and shares
-	use "${DATA}/dta/fc_clean", clear
+	* Project-level
+	use "${DATA}/dta/fc_clean_v02", clear // post-2014 approvals
 	keep if prop_status == "approved"
-	replace proj_cat = "other" if proj_cat == "industry" | proj_cat == "underground"
-
-	preserve
+	append using "${DATA}/dta/fc_pre2014_clean_v02" // pre-2014 approvals
+	replace proj_cat = "other" if proj_cat == "underground"
 	
-		drop if proj_area_forest2 > 1000 // drop 3 megaprojects
-		levelsof proj_cat, local(category)
-		
-		foreach cat of local category {
-			
-			gen `cat' = proj_area_forest2 if proj_cat == "`cat'"
-			egen `cat'_sum = total(`cat')
-			drop `cat'
-			ren `cat'_sum `cat'
-			replace `cat' = . if proj_cat != "`cat'"
-		}
-		
-		* Label
-		foreach v of varlist electricity-transportation {
-			la var `v' "`v'"
-			local x : variable label `v'
-			local x = proper("`x'")
-			la var `v' "`x'"
-		}
-		ren (electricity irrigation mining other resettlement transportation) ///
-			(dist_f_ele dist_f_irr dist_f_min dist_f_oth dist_f_res dist_f_tra)
-		
-		* Totals
-		eststo clear
-		eststo A: estpost tabstat dist_f_ele-dist_f_tra, s(n mean sd) c(s)
-		
-		/*
-		esttab A B using "${TABLE}/tables/sumstats_deforest2.rtf", replace ///
-			label cells("count(fmt(0)) mean(fmt(2)) sd(fmt(2))") ///
-			mgroups("Totals" "Per District-Yearmonth", pattern(1 1)) ///
-			collabel("N" "Mean" "Std. Dev.") ///
-			refcat(dist_f_elec "Project Type" dist_f_hyb "Project Group", nolabel) ///
-			nomtitle unstack nonumber
-		*/
-		* Project Size
-		eststo clear
-		eststo: estpost tabstat proj_area_forest2, s(n mean p50 sd min max) by(proj_cat)
-		/*
-		esttab using "${TABLE}/tables/sumstats_projsize.rtf", replace ///
-			label cells("count(fmt(0) label(N)) mean(fmt(2) label(Mean)) p50(fmt(2) label(Median)) sd(fmt(2) label(Std. Dev.)) min(fmt(3) label(Min.)) max(fmt(3) label(Max))") ///
-			nomtitle unstack nonumber noobs
-		eststo clear
-		*/
-		*-----------------------------------
-		* 3. Table: SPATIAL SPAN OF PROJECT
-		*-----------------------------------
-		egen num_districts = rownonmiss(district_0-district_9), s
-		la var num_districts "Districts"
-		drop if num_districts == 0
-		
-		eststo clear
-		eststo: estpost tabulate num_districts, nototal
-		esttab using "${TABLE}/tables/spatial_dep.tex", replace ///	
-			cells("count(fmt(0)) pct(fmt(2)) cumpct(fmt(2))") ///
-			nonumbers nomtitle collabels("" "Pct." "Cum.") ///
-			noobs gap label 
-	
-	restore
-	
-	* Project Size in Full Sample
-	eststo: estpost tabstat proj_area_forest2, s(n mean sd min max) by(proj_cat)
-	esttab using "${TABLE}/tables/sumstats_projsize_full.tex", replace ///
-		label cells("count(fmt(0) label(N)) mean(fmt(2) label(Mean (ha.))) sd(fmt(2) label(Std. Dev.)) min(fmt(3) label(Min.)) max(fmt(3) label(Max))") ///
-		nomtitle unstack nonumber noobs
+	* Tabulate
+	*drop if proj_area_forest2 > 2000 // drop 3 megaprojects
+	replace proj_cat = proper(proj_cat)
 	eststo clear
+	eststo: estpost tabstat proj_area_forest2, by(proj_cat) s(n mean sd sum) c(s)
+	esttab using "${TABLE}/tables/sumstats_fc.tex", replace ///
+		label cells("count(fmt(%12.0fc) label(Num. Projects)) mean(fmt(%12.2fc) label(Mean Size (ha.))) sd(fmt(%12.2fc) label(SD (ha.))) sum(fmt(%12.2fc) label(Total Area (ha.)))") ///
+		nomtitle unstack nonumber noobs booktabs
 	
+	*-----------------------------------
+	* 5. Table: SPATIAL SPAN OF PROJECT
+	*-----------------------------------
+	egen num_districts = rownonmiss(district_*), s
+	la var num_districts "Districts"
+	
+	eststo clear
+	eststo: estpost tabulate num_districts, nototal
+	esttab using "${TABLE}/tables/spatial_dep.tex", replace ///	
+		cells("count(fmt(0)) pct(fmt(2)) cumpct(fmt(2))") ///
+		nonumbers nomtitle collabels("" "Pct." "Cum.") ///
+		noobs label booktabs
 }
 
 *===============================================================================
@@ -254,7 +203,8 @@ if `sumstats' == 1 {
 if `learning' == 1 {
 
 	* Read
-	use "${DATA}/dta/fc_ebd_udt_v02", clear
+	use "${DATA}/dta/fc_ebd_udt_full_v02", clear
+	drop if year == 2014
 	drop_outliers
 	
 	**# 1. Seasonality
@@ -356,8 +306,8 @@ if `learning' == 1 {
 			|| rcap ub lb sr_bl_q3, lcolor(black) ||, ///
 			xlabel(1 "Low" 2 "Medium"  3 "High", labsize(medium)) ///
 			ylabel(3(1)6, angle(hor) labsize(medsmall)) ///
-			ytitle("Monthly eBird Trips/User", size(medium)) ///
-			xtitle("True District Species Richness" "(BirdLife)", size(medium)) ///
+			ytitle("Monthly Trips/User (eBird)", size(medium)) ///
+			xtitle("True District Species Richness (BirdLife)", size(medium)) ///
 			yscale(titlegap(3)) xscale(titlegap(3)) ///
 			graphregion(color(white)) bgcolor(white) ///
 			legend(order(1 "Mean" 2 "95% CI") size(medium)) ///
@@ -377,9 +327,24 @@ if `learning' == 1 {
 if `estudy_f' == 1 {
 	
 	* Read
-	use "${DATA}/dta/fc_dym_s2_v02", clear
-	keep *_code_2011_num year_month year month dist_f_cum_km2 tree* n_proj_cum
-	order *_code_2011_num, first
+	use "${DATA}/dta/fc_dym_s2_full_v02", clear
+	keep *_code_2011 year_month year month dist_f_cum_km2 tree* n_proj_cum
+	order *_code_2011, first
+	*drop if year == 2014
+	
+	* Add Weather
+	tempfile temp
+	save "`temp'"
+	foreach file in "india_rainfall_gpm" "india_temperature_era" {
+		import delimited "${DATA}/csv/`file'", varn(1) clear
+		g year_month = ym(year(date(yearmonth, "20YM")), month(date(yearmonth, "20YM")))
+		format year_month %tmCCYY-NN
+		drop yearmonth
+		merge 1:1 c_code_2011 year_month using "`temp'", keep(2 3) nogen
+		save "`temp'", replace
+	}
+	encode c_code_2011, gen(c_code_2011_num)
+	encode state_code_2011, gen(state_code_2011_num)
 	
 	/*
 	**# Event-Study -- New DID Lit
@@ -421,9 +386,9 @@ if `estudy_f' == 1 {
 	g ln_dist_f_cum_km2 = asinh(dist_f_cum_km2)
 	g ln_tree_cover_pct = ln(tree_cover_pct)
 	g ln_n_proj_cum = asinh(n_proj_cum)
+	g ln_tree_cover_km2 = ln(tree_cover_km2)
 	la var n_proj_cum "Num. Projects"
-	
-	** -- TRY LIN LIN WITH TREE_COVER_KM2
+	kk
 	foreach v of varlist dist_f_cum_km2 n_proj_cum {
 		
 		* lin-lin
@@ -472,7 +437,6 @@ if `estudy_f' == 1 {
 	eststo clear
 	
 }
-
 
 *===============================================================================
 * EVENT STUDY - SPECIES DIVERSION
@@ -564,7 +528,7 @@ if `valuation' == 1 {
 	*----------------------
 	
 	* Read deforestation
-	use "${DATA}/dta/fc_dym_s2_v02", clear
+	use "${DATA}/dta/fc_dym_s2_full_v02", clear
 
 	* Reduce
 	keep c_code_2011 year_month year month state dist_f*cum_km2 tree_cover_km2
@@ -640,8 +604,8 @@ if `valuation' == 1 {
 	
 	* species/district (from BirdLife)
 	save "`temp'", replace
-	import delimited "${DATA}/csv/bl_district.csv", clear
-	keep if presenc == 1 & seasona == 1 // currently extant and resident
+	import excel "${DATA}/csv/bl_district.xlsx", first clear
+	keep if PRESENC == 1 & SEASONA == 1 // currently extant and resident
 	ren c_code_11 c_code_2011
 	g n_species = 1
 	collapse (sum) n_species, by(c_code_2011) // num species/district
@@ -650,7 +614,7 @@ if `valuation' == 1 {
 	* species per forest km2
 	g species_km2 = n_species/tree_cover_km2
 	
-	* Species value (mean = Rs. 3220 per species) 
+	* Species value (mean = Rs. 3182 per species) 
 	g species_value = bird_npv / species_km2 // (=Rs./species)
 	
 	* Histogram -- variation comes from species spatial distribution
@@ -663,7 +627,7 @@ if `valuation' == 1 {
 		xline(`mean', lcolor(red)) ///
 		text(0.2 4000 "Mean = `mean' Rs.", place(e) color(red))
 	graph export "${TABLE}/fig/hist_species_value.png", replace
-	
+	dd
 	*----------------------
 	* Livelihood Loss
 	*----------------------

@@ -25,15 +25,15 @@ gl DO		"${ROOT}/scripts/stata"
 
 // Module
 local ebird					0
-local district_forest		0
-local merge					1
+local district_forest		1
+local merge					0
 *===============================================================================
 * BIODIVERSITY
 *===============================================================================
 
 if `ebird' == 1 {
 	
-	local level "udt" // udt = user-district-yearmonth, uct = user-cell-yearmonth
+	local level "uct" // udt = user-district-yearmonth, uct = user-cell-yearmonth
 	
 	**# Read
 	import delimited using "${DATA}/csv/ebird_`level'.csv", clear
@@ -82,7 +82,6 @@ if `ebird' == 1 {
 	replace biome = 888 if biome == . // note: only 1 district w missing biome (Diu)
 	
 	**# Clean Variables
-	
 	g state_code_2011 = substr(c_code_2011, 1, 3)
 	bys user_id: egen n_st_user = nvals(state_code_2011) // states per user
 	bys user_id: egen n_dist_user = nvals(c_code_2011) // districts per user
@@ -91,6 +90,7 @@ if `ebird' == 1 {
 	bys c_code_2011: egen n_users_dist = nvals(user_id)
 	bys c_code_2011: egen n_trips_dist = total(n_trips)
 	bys c_code_2011 year_month: egen n_users_dym = nvals(user_id)
+	bys c_code_2011 year_month: egen n_trips_dym = total(n_trips)
 	
 	* Transform
 	g pop_density = tot_pop / tot_area
@@ -132,10 +132,8 @@ if `ebird' == 1 {
 	la var n_users_dym "Num. Users per District-Yearmonth"
 	la var sr "Species Richness"
 	la var sr_udym "Species richness across all trips in district-month"
-	la var sr_uym "Species richness across all trips in year-month"
 	la var sr_uyr "Species richness across all trips in year"
 	la var sr_ym "Species richness across all users in year-month"
-	la var sr_yr "Species richness across all users in year"
 	la var group_size "Group Size"
 	la var sh_index "Shannon Index"
 	la var si_index "Simpson Index"
@@ -151,7 +149,7 @@ if `ebird' == 1 {
 	la var traveling "\% Travelling Trips"
 	
 	* Save
-	drop sr_uyr sr_hr sr_uym sr_yr n_cells_dist tot_area tot_pop
+	drop sr_uyr n_cells_dist
 	order user_id c_code_2011 year_month sr* *_index
 	sort user_id c_code_2011 year_month
 	save "${DATA}/dta/ebird_`level'", replace
@@ -161,20 +159,21 @@ if `ebird' == 1 {
 *===============================================================================
 * FOREST CLEARANCE
 *===============================================================================
-*---------------------------------------------------
-* PROGRAM TO CONSTRUCT BALANCED DEFORESTATION PANEL
-* arguments: stage
-*	Approval stage at which to include projects
-* 	Select 1 or 2
-* arguement: restrict
-*	Sample restriction
-*	drop - drops megaprojects > 10km2
-*	trunc - truncates full sample at 99th percentile
-*---------------------------------------------------
+/*---------------------------------------------------
+PROGRAM TO CONSTRUCT BALANCED DEFORESTATION PANEL
+arguments: stage
+	1 - stage 1
+	2 - stage 2
+arguement: period
+	pre - include pre-2014 submissions
+	post - only post-2014 submission
+arguement: restrict (optional)
+	drop - drops megaprojects
+*--------------------------------------------------*/
 capture program drop construct_deforest
 program define construct_deforest
 
-	syntax, stage(integer) [restrict(string)] [drop_projects(string)]
+	syntax, stage(integer) period(string) [restrict(string)] 
 	
 	*------------------------
 	* SELECT APPROVAL STAGE
@@ -183,14 +182,16 @@ program define construct_deforest
 	* Read post-2014 permits
 	use "${DATA}/dta/fc_clean_v02", clear
 
-	* Select Stage
+	* Stage
 	if `stage' == 2 {
 	
-		keep if prop_status == "approved"
+		keep if prop_status == "approved" // post-2014 projects
 		
-		* add pre-2014 submissions (approved post 2014)
-		append using "${DATA}/dta/fc_pre2014_clean_v02"
-		replace pre2014 = 0 if pre2014 == .
+		* add pre-2014 submissions
+		if "`period'" == "pre" {
+			append using "${DATA}/dta/fc_pre2014_clean_v02"
+			replace pre2014 = 0 if pre2014 == .
+		}
 	}
 	if `stage' == 1 {
 		keep if prop_status == "approved by rohq" | regexm(prop_status, "principle") == 1 | regexm(prop_status, "pending at ho") == 1 | prop_status == "pending at ro for stage-ii" // 3,858 (4068) projects
@@ -201,19 +202,9 @@ program define construct_deforest
 	format year_month %tmCCYY-NN
 	drop if year_month == .
 	
-	* Alternative Distribution (UPDATE)
-	/*---------------------------------------
-	* 2 megaprojects in TG - laying of canals, 
-	  tunnels, power lines for lift irrigation
-	* 1 coal PP - 4400MW and 2400MW stations
-	-----------------------------------------*/
-	* Drop 3 megaprojects
+	* Drop megaprojects
 	if "`restrict'" == "drop" {
-		drop if proj_area_forest2 > 2000 // drops 4 megaprojects > 20 km2
-	}
-	* Keep all projects - truncate size
-	if "`restrict'" == "trunc" {
-		winsor2 proj_area_forest2, cut(0 99) replace
+		bys proj_area_forest2: drop if _n > _N - 3 // drops 3 megaprojects > 30 km2
 	}
 	
 	*-----------------------------------
@@ -224,15 +215,7 @@ program define construct_deforest
 	- SE's huge in own category. add to "other"
 	---------------------------------------------------*/
 	replace proj_cat = "underground" if proj_cat == "mining" & mining_type == "underground"
-	replace proj_cat = "other" if inlist(proj_cat, "underground", "industry")
-	
-	* Drop projects in provided list (REMOVE?)
-	if "`drop_projects'" != "" {
-
-		foreach v of local drop_projects {
-			drop if proj_cat == "`v'"
-		}
-	}
+	replace proj_cat = "other" if inlist(proj_cat, "underground")
 	
 	* Reshape project-district level
 	reshape long district_ dist_f_ dist_nf_, i(prop_no) j(dist_id)
@@ -257,7 +240,7 @@ program define construct_deforest
 	---------------------------------------*/
 	
 	* Save project-level
-	if `stage' == 2 {
+	if `stage' == 2 & "`restrict'" == "" {
 		save "${DATA}/dta/fc_pdym_s2_v02", replace
 	}
 	
@@ -336,6 +319,8 @@ program define construct_deforest
 	save "`temp'"
 	import delimited "${DATA}/csv/forest_cover.csv", clear
 	merge 1:m c_code_2011 year using "`temp'", keep(2 3) nogen
+	la var tree_cover_km2 "Tree Cover (\(km^{2}\))"
+	la var tree_cover_pct "Tree Cover (\%)"
 	
 	* Baseline tree cover
 	bys c_code_2011 (year_month): g tree_cover_base = tree_cover_km2 if _n == 1
@@ -396,15 +381,12 @@ if `district_forest' == 1 {
 	save "${DATA}/dta/fc_dym_s2_v02", replace
 	export delimited "${DATA}/csv/fc_dym_s2_v02.csv", replace
 	
-	* Stage 1 (drop 3 mega projects)
+	/*
+	* Stage 1 (drop 3 mega projects) -- CHANGE THRESHHOLD
 	construct_deforest, stage(1) restrict("drop")
 	save "${DATA}/dta/fc_dym_s1_v02", replace
-
-	// Stage 2 - Truncate at 99th pctile
-	construct_deforest, stage(2) restrict("trunc")
-	save "${DATA}/dta/fc_dym_s2_trunc_v02", replace
-	
-	// Full
+	*/
+	* Full
 	construct_deforest, stage(2)
 	save "${DATA}/dta/fc_dym_s2_full_v02", replace
 }
@@ -414,8 +396,8 @@ if `district_forest' == 1 {
 *===============================================================================
 if `merge' == 1 {
 
-	local fc_data "trunc" // either "" (main dataset), "full", or "trunc" 
-	local level "uct" // udt (user-dist-time) or uct (user-cell-time)
+	local fc_data "" // either "" (main dataset), "full", or "trunc" 
+	local level "udt" // udt (user-dist-time) or uct (user-cell-time)
 	
 	if "`fc_data'" == "" {
 		
@@ -437,10 +419,6 @@ if `merge' == 1 {
 		
 		tempfile slx
 		save "`slx'"
-
-		*----------------------------
-		* CONSTRUCT FINAL DATASET
-		*----------------------------
 		
 		* Read Stage II Deforestation
 		use "${DATA}/dta/fc_dym_s2_v02", clear

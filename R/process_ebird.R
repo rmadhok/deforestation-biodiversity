@@ -71,10 +71,10 @@ ebird <- ebird %>%
 ## 2. FILTERING 
 #----------------------------------------------------------------
 
-# Filters from eBird manual (n=18,096,733)
+# Filters from eBird manual (n=18,614,262)
+# Add year > 2014?
 ebird <- ebird %>%
   filter(
-    year > 2014,
     complete == 1,
     duration <= 5*60,
     group_size <= 10
@@ -94,7 +94,7 @@ stargazer(protocol,
           rownames=F, 
           out=paste(SAVE,'docs/jmp/tex_doc/v3/tables/protocol.tex', sep=''))
 
-# Filter Protocol (stationary, travelling) (n=17,953,834)
+# Filter Protocol (stationary, travelling) (n=18,458,042)
 ebird <- filter(ebird, protocol_code %in% c('P21', 'P22'))
 #----------------------------------------------------------------
 ## 3. IDENTIFY DISTRICTS AND COASTAL TRIPS
@@ -111,8 +111,8 @@ india_dist <- st_read(paste(SHP, "maps/india-district", sep=""),
 ebird$c_code_2011 <- st_join(st_as_sf(ebird, coords = c('lon', 'lat'), crs = 4326), 
                              india_dist, join = st_intersects)$c_code_2011
 
-# Remove out-of-bounds birds (n = 17,888,672)
-ebird_oob <- ebird %>% filter(is.na(c_code_2011)) # (n=4964 trips, 68 districts)
+# Remove out-of-bounds birds (n = 18,390,933)
+ebird_oob <- ebird %>% filter(is.na(c_code_2011)) # (n=5101 trips, 68 districts)
 ebird <- ebird %>% filter(!is.na(c_code_2011))
 rm(list='ebird_oob')
 
@@ -121,16 +121,13 @@ rm(list='ebird_oob')
 #---------------------------------------------------------------- 
 
 # Higher Level Species Richness (~10 mins)
+# add sr/year, sr/user-ym 
 ebird <- ebird %>%
   group_by(yearmonth) %>%
   mutate(sr_ym = n_distinct(species_id)) %>% # species richness per year-month (all users)
-  group_by(year) %>%
-  mutate(sr_yr = n_distinct(species_id)) %>% # species richness per year
   group_by(user_id, year) %>%
   mutate(n_mon_yr = n_distinct(yearmonth), # Months per year of birding - 'high ability' users
-         sr_uyr = n_distinct(species_id)) %>% # species richnes per user-year
-  group_by(user_id, yearmonth) %>%
-  mutate(sr_uym = n_distinct(species_id)) %>% # species richness per user-year-month
+         sr_uyr = n_distinct(species_id)) %>% # species richness per user-year
   group_by(user_id, c_code_2011, yearmonth) %>%
   mutate(sr_udym = n_distinct(species_id))
 
@@ -151,7 +148,7 @@ ebird <- ebird %>%
 ## 5. ALLOCATE TRIPS TO GRID CELLS
 #---------------------------------------------------------------- 
 
-# Trip level (n=1,023,573, 16,908 users)
+# Trip level (n=1,04,930, 17,634 users)
 ebird_trip <- ebird %>% 
   ungroup() %>%
   distinct(trip_id, .keep_all = T) %>%
@@ -192,10 +189,8 @@ ebird_user_cell <- ebird_trip %>%
             sr=mean(sr, na.rm=T),
             sr_hr=mean(sr_hr, na.rm=T),
             sr_udym=first(sr_udym),
-            sr_uym=first(sr_uym),
             sr_uyr=first(sr_uyr),
             sr_ym=first(sr_ym),
-            sr_yr=first(sr_yr),
             sh_index=mean(sh_index, na.rm=T),
             si_index=mean(si_index, na.rm=T),
             duration=mean(duration, na.rm=T),
@@ -221,10 +216,8 @@ ebird_user <- ebird_trip %>%
             sr=mean(sr, na.rm=T),
             sr_hr=mean(sr_hr, na.rm=T),
             sr_udym=first(sr_udym),
-            sr_uym=first(sr_uym),
             sr_uyr=first(sr_uyr),
             sr_ym=first(sr_ym),
-            sr_yr=first(sr_yr),
             sh_index=mean(sh_index, na.rm=T),
             si_index=mean(si_index, na.rm=T),
             duration=mean(duration, na.rm=T),

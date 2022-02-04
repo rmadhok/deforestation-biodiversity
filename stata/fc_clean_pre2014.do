@@ -112,13 +112,13 @@ replace proj_cat = "other" if proj_cat == ""
 
 * Recategorize "other"
 // Electricity
-replace proj_cat = "electricity" if proj_cat == "other" & (regexm(proj_cat2, "elec") | inlist(proj_cat2, "hydel", "other (atomic power project)", "other (dam)", "other (transmission line)"))
+replace proj_cat = "electricity" if proj_cat == "other" & (regexm(proj_cat2, "elec") | inlist(proj_cat2, "hydel", "other (atomic power project)", "other (transmission line)"))
 
 // Transport
 replace proj_cat = "transportation" if proj_cat == "other" & (regexm(proj_cat2, "passage") | inlist(proj_cat2, "other (road?)", "other (service road)", "other (up gradation of road)", "other (widening road)", "road", "road (bridge)") | regexm(proj_cat2, "transport")) 
 
 // Irrigation
-replace proj_cat = "irrigation" if proj_cat == "other" & regexm(proj_cat2, "canal")
+replace proj_cat = "irrigation" if proj_cat == "other" & (regexm(proj_cat2, "canal") | proj_cat2 == "other (dam)")
 
 // Resettlement
 replace proj_cat = "resettlement" if proj_cat == "other" & proj_cat2 == "resettlement"
@@ -126,8 +126,12 @@ replace proj_cat = "resettlement" if proj_cat == "other" & proj_cat2 == "resettl
 // Industry
 replace proj_cat = "industry" if proj_cat == "other" & inlist(proj_cat2, "industry (steel)", "other (cement plant)", "other (chemical factory)", "other (factory)", "other (industrial model)", "other (mill)", "other (steel plant)")
 
+// Underground (pipelines)
+replace proj_cat = "underground" if proj_cat == "other" & regexm(proj_cat2, "pipeline") | regexm(proj_cat2, "underground")
+ 
 // Mining (none)
 drop proj_cat2
+
 *-------------------------------------------------------------------------------
 * FINALIZE
 *-------------------------------------------------------------------------------
@@ -150,4 +154,4 @@ destring proj_area_forest2 dist_f_*, replace
 order state prop_no date_submit date_rec proj* tot_fam_disp
 sort state prop_no
 g pre2014 = 1
-save "${SAVE}/dta/fc_pre2014_clean_v02.dta", replace
+save "./dta/fc_pre2014_clean_v02.dta", replace
