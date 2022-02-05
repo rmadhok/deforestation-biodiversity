@@ -15,14 +15,14 @@ set maxvar 10000
 
 //Set Directory Paths
 *gl READ 	"/Volumes/Backup Plus/research/data/def_biodiv/parivesh"
-gl SAVE		"/Users/rmadhok/Dropbox/def_biodiv/data"
-
+gl READ		"/Users/rmadhok/Dropbox/def_biodiv/data"
+cd "${READ}"
 *===============================================================================
 * CLEAN VARIABLE NAMES
 *===============================================================================
 
 * Read raw data
-import excel using "${SAVE}/raw/fc_raw_v02_use.xlsx", first clear
+import excel using "./raw/fc_raw_v02_use.xlsx", first clear
 ren *, lower
 drop *copy* *reason*
 
@@ -180,12 +180,12 @@ foreach var of varlist employment displacement cba ec_needed ///
 replace mining_type = "opencast" if mining_type == "opencast+underground" // only two approved hybrid mines. Makes for fewer categories
 gen proj_cat = "electricity" if inlist(proj_category, "hydel", "sub station", "thermal", "transmission line", "village electricity", "wind power", "solar power")
 replace proj_cat = "transportation" if inlist(proj_category, "road", "railway") // approach road part of "other"
-*replace proj_cat = "transportation" if inlist(proj_category, "road", "approach access", "railway")
 replace proj_cat = "irrigation" if inlist(proj_category, "canal", "irrigation", "drinking water")
 replace proj_cat = "resettlement" if inlist(proj_category, "forest village conversion", "rehabilitation")
 replace proj_cat = "mining" if inlist(proj_category, "mining", "quarrying")
 replace proj_cat = "industry" if inlist(proj_category, "industry")
 replace proj_cat = "underground" if inlist(proj_category, "optical fibre cable", "pipeline")
+*replace proj_cat = "underground" if proj_cat == "mining" & mining_type == "underground"
 replace proj_cat = "other" if proj_cat == ""
 replace proj_shape = "nonlinear" if proj_shape == "non linear"
 
@@ -239,7 +239,7 @@ tempfile temp
 save "`temp'"
 
 // Read
-import delimited "${SAVE}/raw/fc_records_v3.csv", clear
+import delimited "./raw/fc_records_v3.csv", clear
 
 // Sync to FC data
 keep proposal_no area_applied proposal_status date_of_recomm date_from_ua_to_nodal
@@ -262,4 +262,4 @@ format date_submit date_rec %td
 drop proj_name proj_narr
 order state prop_no prop_status date_submit date_rec proj_area_forest* proj*
 sort state prop_no
-save "${SAVE}/dta/fc_clean_v02.dta", replace
+save "./dta/fc_clean_v02.dta", replace

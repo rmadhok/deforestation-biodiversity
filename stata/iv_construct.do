@@ -265,11 +265,12 @@ if `shiftshare' == 1 {
 	
 	* Read FC
 	use "${DATA}/dta/fc_dym_s2_v02", clear
+	*drop if year == 2014
 	
 	* Reduce
-	keep *_code_2011* year year_month month dist_f_cum_km2 dist_nf_cum_km2 tree_cover_base
+	keep *_code_2011* year year_month month dist_f_cum_km2 tree_cover_base
 	
-	* 2015 State Fractions
+	* 2014 State Fractions
 	preserve
 	
 		* Pre-period 
@@ -327,7 +328,7 @@ if `shiftshare' == 1 {
 	
 	* Election leaders/reservations
 	merge m:1 c_code_2011 year using "${DATA}/dta/iv_scst_seats", keep(1 3) nogen
-	
+
 	*---------------------------
 	* NIGHTLIGHTS
 	*---------------------------

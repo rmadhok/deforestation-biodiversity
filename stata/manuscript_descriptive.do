@@ -26,8 +26,8 @@ cd "${TABLE}"
 
 // Modules
 local sumstats			0
-local learning			0
-local estudy_f			1
+local learning			1
+local estudy_f			0
 local estudy			0
 local valuation			0
 
@@ -75,7 +75,7 @@ end
 if `sumstats' == 1 {
 	
 	* Read
-	use "${DATA}/dta/fc_ebd_udt_full_v02", clear
+	use "${DATA}/dta/fc_ebd_udt_v02", clear
 	drop if year == 2014
 	drop_outliers
 	
@@ -86,15 +86,15 @@ if `sumstats' == 1 {
 	
 	* Indent for pretty latex formatting
 	foreach v of varlist dist_f*_cum_km2 tree* pop* ///
-		sr coverage* n_* duration distance temp rain exp_idx { 
+		sr coverage* n_* duration distance temp rain exp_idx group_size { 
 	
 			label variable `v' `"\hspace{0.2cm} `: variable label `v''"'	
 	}
 
 	* Collect
 	local dist_vars n_users_dist n_trips_dist pop_density
-	local trip sr coverage_udym duration distance
-	local covariates tree_cover_km2 rain temp
+	local trip sr coverage_udym duration distance group_size
+	local covariates tree_cover_s rain temp
 	
 	*---------------------------------------
 	* 1. TABLE: OUTCOMES AND COVARIATES
@@ -129,7 +129,7 @@ if `sumstats' == 1 {
 	eststo B: estpost tabstat `covariates' if tag_dym & !treat, s(n mean med sd) c(s)
 	
 	esttab A B using "${TABLE}/tables/sumstats_ebd.tex", append f main(mean) aux(sd) ///
-		cells("mean(fmt(2)) sd(fmt(2)) count(fmt(0))") refcat(tree_cover_km2 ///
+		cells("mean(fmt(2)) sd(fmt(2)) count(fmt(0))") refcat(tree_cover_s ///
 		"\underline{\emph{District-Time}}" , nolabel) nomtitle collabel(none) ///
 		booktabs noobs label unstack nonumber plain
 	
@@ -172,7 +172,7 @@ if `sumstats' == 1 {
 	use "${DATA}/dta/fc_clean_v02", clear // post-2014 approvals
 	keep if prop_status == "approved"
 	append using "${DATA}/dta/fc_pre2014_clean_v02" // pre-2014 approvals
-	replace proj_cat = "other" if proj_cat == "underground"
+	replace proj_cat = "other" if inlist(proj_cat, "underground", "industry")
 	
 	* Tabulate
 	*drop if proj_area_forest2 > 2000 // drop 3 megaprojects
@@ -203,10 +203,10 @@ if `sumstats' == 1 {
 if `learning' == 1 {
 
 	* Read
-	use "${DATA}/dta/fc_ebd_udt_full_v02", clear
+	use "${DATA}/dta/fc_ebd_udt_v02", clear
 	drop if year == 2014
 	drop_outliers
-	
+	kk
 	**# 1. Seasonality
 
 	* Total species richness by ym across all users/trips
@@ -327,7 +327,7 @@ if `learning' == 1 {
 if `estudy_f' == 1 {
 	
 	* Read
-	use "${DATA}/dta/fc_dym_s2_full_v02", clear
+	use "${DATA}/dta/fc_dym_s2_v02", clear
 	keep *_code_2011 year_month year month dist_f_cum_km2 tree* n_proj_cum
 	order *_code_2011, first
 	*drop if year == 2014
@@ -343,52 +343,23 @@ if `estudy_f' == 1 {
 		merge 1:1 c_code_2011 year_month using "`temp'", keep(2 3) nogen
 		save "`temp'", replace
 	}
+	
+	* Add area
+	merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist", keepusing(tot_area) nogen
 	encode c_code_2011, gen(c_code_2011_num)
 	encode state_code_2011, gen(state_code_2011_num)
-	
-	/*
-	**# Event-Study -- New DID Lit
-	
-	* Event date
-	bys c_code_2011 (year_month): gen event = year_month if ///
-		dist_f_cum_km2[_n] != dist_f_cum_km2[_n-1]
-	bys c_code_2011 (year_month): replace event = . if _n == 1 
-	
-	* DID vars
-	bys c_code_2011_num: egen cohort = min(event) // first event (0 if never treated)
-	drop event
-	recode cohort (.=0)
-	g running = year_month - cohort // time to treatment
-	replace running = -99 if cohort == 0
-	g treated = (cohort != 0)
-	g treatment = (running > 0 & treated == 1)
-	
-	* Sample
-	preserve
-		bys c_code_2011: keep if _n == 1
-		keep c_code_2011
-		sample 20
-		tempfile samp
-		save "`samp'"
-	restore
-	merge m:1 c_code_2011 using "`samp'", keep(3) nogen
-	
-	csdid tree_cover_pct, ivar(c_code_2011_num) time(year_month) gvar(cohort) notyet
-
-	estat event, window(-20 20) estore(cs) 
-	event_plot cs, default_look graph_opt(xtitle("Periods since the event") ytitle("Average effect") ///
-	title("csdid") xlabel(-20(1)20)) stub_lag(Tp#) stub_lead(Tm#) together	 
-	*/
+	g tree_cover_s = (tree_cover_km2 / tot_area)*100
 	
 	**# TWFE
-	
 	* Transform (see https://www.statalist.org/forums/forum/general-stata-discussion/general/1522076-how-do-i-interpret-a-log-level-and-log-log-model-when-my-independent-variable-is-already-a-percentage)
 	g ln_dist_f_cum_km2 = asinh(dist_f_cum_km2)
+	la var ln_dist_f_cum_km2 "log(Infrastructure)"
 	g ln_tree_cover_pct = ln(tree_cover_pct)
-	g ln_n_proj_cum = asinh(n_proj_cum)
 	g ln_tree_cover_km2 = ln(tree_cover_km2)
+	g ln_n_proj_cum = asinh(n_proj_cum)
+	g ln_tree_cover_s = ln(tree_cover_s)
 	la var n_proj_cum "Num. Projects"
-	kk
+	
 	foreach v of varlist dist_f_cum_km2 n_proj_cum {
 		
 		* lin-lin
@@ -408,10 +379,7 @@ if `estudy_f' == 1 {
 			estadd local month_fe "$\checkmark$"
 			
 		* lin-log
-		preserve
-		drop `v'
-		ren ln_`v' `v'
-		eststo: reghdfe tree_cover_pct `v', ///
+		eststo: reghdfe tree_cover_pct ln_`v', ///
 			a(c_code_2011_num state_code_2011_num#year month) vce(cl c_code_2011_num)
 			
 			estadd local dist_fe "$\checkmark$"
@@ -419,22 +387,63 @@ if `estudy_f' == 1 {
 			estadd local month_fe "$\checkmark$"
 		
 		* log-log
-		eststo: reghdfe ln_tree_cover_pct `v', ///
+		eststo: reghdfe ln_tree_cover_pct ln_`v', ///
 			a(c_code_2011_num state_code_2011_num#year month) vce(cl c_code_2011_num)
 			
 			estadd local dist_fe "$\checkmark$"
 			estadd local st_y_fe "$\checkmark$"
 			estadd local month_fe "$\checkmark$"
-		restore
+	
+		esttab using "${TABLE}/tables/f_verify_`v'.tex", replace ///
+			stats(dist_fe st_y_fe month_fe N r2, labels(`"District FEs"' ///
+			`"State x Year FEs"' `"Month FEs"' `"N"' `"\(R^{2}\)"') fmt(0 0 0 0 3)) ///
+			mlabels("Tree Cover" "log(Tree Cover)" "Tree Cover" "log(Tree Cover)") ///
+			wrap nocons nonotes booktabs nomtitles star(* .1 ** .05 *** .01) ///
+			label se b(%5.3f) width(0.8\hsize)
+		eststo clear
 	}
-	esttab using "${TABLE}/tables/f_verify.tex", replace ///
-		stats(dist_fe st_y_fe month_fe N r2, labels(`"District FEs"' ///
-		`"State x Year FEs"' `"Month FEs"' `"N"' `"\(R^{2}\)"') fmt(0 0 0 0 3)) ///
-		mlabels("lin-lin" "log-lin" "lin-log" "log-log" ///
-		"lin-lin" "log-lin" "lin-log" "log-log") wrap nocons nonotes ///
-		booktabs nomtitles star(* .1 ** .05 *** .01) label se b(%5.3f) ///
-		width(\hsize)
-	eststo clear
+	
+	/*
+	**# Event-Study -- New DID Lit
+	
+	* Event date
+	bys c_code_2011 (year_month): gen event = year_month if ///
+		dist_f_cum_km2[_n] != dist_f_cum_km2[_n-1]
+	bys c_code_2011 (year_month): replace event = . if _n == 1 
+	
+	* DID vars
+	bys c_code_2011: egen cohort = min(event) // first event (0 if never treated)
+	drop event
+	recode cohort (.=0)
+	g running = year_month - cohort // time to treatment
+	replace running = -99 if cohort == 0
+	g treated = (cohort != 0)
+	g treatment = (running > 0 & treated == 1)
+	
+	* Naive TWFE
+	*keep if inrange(running, -36, 36)
+	*tab running, gen(t_)
+	*reghdfe tree_cover_pct t_1-t_35 t_37-t_73 rain_gpm temp_era, a(c_code_2011_num state_code_2011_num#year month) vce(cl c_code_2011_num)
+	*drop t_*
+	
+	* New DID
+	
+	* Sample
+	preserve
+		bys c_code_2011: keep if _n == 1
+		keep c_code_2011
+		sample 5
+		tempfile samp
+		save "`samp'"
+	restore
+	merge m:1 c_code_2011 using "`samp'", keep(3) nogen
+	
+	csdid tree_cover_pct, ivar(c_code_2011_num) time(year_month) gvar(cohort) notyet
+
+	estat event, window(-24 24) estore(cs) 
+	event_plot cs, default_look graph_opt(xtitle("Periods since the event") ytitle("Average effect") ///
+	title("csdid") xlabel(-24(6)24)) stub_lag(Tp#) stub_lead(Tm#) together	 
+	*/
 	
 }
 
@@ -528,7 +537,7 @@ if `valuation' == 1 {
 	*----------------------
 	
 	* Read deforestation
-	use "${DATA}/dta/fc_dym_s2_full_v02", clear
+	use "${DATA}/dta/fc_dym_s2_v02", clear
 
 	* Reduce
 	keep c_code_2011 year_month year month state dist_f*cum_km2 tree_cover_km2
@@ -627,7 +636,7 @@ if `valuation' == 1 {
 		xline(`mean', lcolor(red)) ///
 		text(0.2 4000 "Mean = `mean' Rs.", place(e) color(red))
 	graph export "${TABLE}/fig/hist_species_value.png", replace
-	dd
+	
 	*----------------------
 	* Livelihood Loss
 	*----------------------
@@ -639,10 +648,8 @@ if `valuation' == 1 {
 	
 	* Merge ST from census
 	save "`temp'", replace
-	*/
 	import delimited "${DATA}/csv/2011_india_dist.csv", clear
 	keep c_code_11 tot_nm_hh tot_pop tot_st
-	kk
 	ren c_code_11 c_code_2011
 	merge 1:1 c_code_2011 using "`temp'", keep(3) nogen
 	

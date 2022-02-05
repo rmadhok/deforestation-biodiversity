@@ -27,9 +27,9 @@ gl TABLE	"${ROOT}/docs/jmp/tex_doc/v3"
 cd "${TABLE}"
 
 // Modules
-local main_analysis		1
+local main_analysis		0
 local scratch			0
-local dynamics			0
+local dynamics			1
 local simulation		0
 local robustness		0
 	local patch			0
@@ -43,7 +43,7 @@ set scheme modern
 capture program drop reg_sat
 program define reg_sat
 	
-	syntax varlist
+	syntax varlist(fv)
 	set more off
 	
 	* Parse 
@@ -78,14 +78,13 @@ end
 if `main_analysis' == 1 {
 	
 	* Read
-	use "${DATA}/dta/fc_ebd_udt_full_v02", clear
+	use "${DATA}/dta/fc_ebd_udt_v02", clear
 	
 	* Prep
 	drop if year == 2014
 	drop_outliers
-	local ctrls temp rain tree_cover_km2 ln_duration ln_distance ///
-		        ln_exp_idx ln_coverage_udym
-	
+	local ctrls temp rain tree_cover_s ln_duration ln_distance ///
+		        ln_exp_idx ln_coverage_udym ln_group_size traveling
 	la var dist_f_cum_km2 "Forest Infrastructure (\(km^{2}\))"
 	
 	*--------------------
@@ -112,8 +111,8 @@ if `main_analysis' == 1 {
 		estadd local st_m_fe "$\checkmark$"
 
 	* Coefficient Plot
-	coefplot (m1, rename(dist_f_cum_km2 = `" "(1) Learning" "Bias" "') \ m2, ///
-		rename(dist_f_cum_km2 = `" "(2) No Learning" "Bias" "')), ///
+	coefplot (m1, rename(dist_f_cum_km2 = `" "(1) Learning""') \ m2, ///
+		rename(dist_f_cum_km2 = `" "(2) No Learning" "')), ///
 		keep(dist_f*) xline(0, lcolor(maroon) lpattern(solid)) ///
 		coeflabels(, labsize(medium)) mlabsize(medium) mlabcolor(black) ///
 		levels(99 95 90) ciopts(lwidth(*1 *3 *4) color(black black black) ///
@@ -155,7 +154,7 @@ if `main_analysis' == 1 {
 		xlabel(, labsize(medium)) ylabel(, labsize(medium)) mlabgap(*2) ///
 		title("B", size(large)) saving("${TABLE}/fig/projwise.gph", replace)
 	graph export "${TABLE}/fig/projwise.png", replace
-	
+
 	*--------------------------
 	* 3. FRAGMENTATION-WISE
 	*--------------------------
@@ -163,14 +162,13 @@ if `main_analysis' == 1 {
 	// Quantiles of Forest Cover
 	* Note : monotonic decline until q5. This is mainly remote NE where there is little eBird activity and estimates are noisy/selected on those who go there
 	*g tree_cover_base_p = (tree_cover_base/tot_area)*100
-	*xtile tcover_base = tree_cover_base_p, nquantiles(3)
+	*xtile tcover_base = tree_cover_base_p, nquantiles(5)
 	xtile tcover_base = tree_cover_base, nquantiles(5)
 	tab tcover_base, gen(tcover_q)
 
 	eststo clear
-	eststo: reghdfe sr c.dist_f_cum_km##c.(tcover_q2-tcover_q5) n_*_cum_s `ctrls', ///
-		a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
-		
+	eststo: reg_sat sr c.dist_f_cum_km2##c.(tcover_q2-tcover_q5) n_*_cum_s `ctrls'
+
 	coefplot, keep(c.dist_f_cum_km2#c.*) xline(0, lcolor(maroon) lpattern(solid)) ///
 		coeflabels(c.dist_f_cum_km2#c.tcover_q2 = "2nd" ///
 		c.dist_f_cum_km2#c.tcover_q3 = "3rd" ///
@@ -179,20 +177,19 @@ if `main_analysis' == 1 {
 		msize(small) mfcolor(white) msymbol(D) mcolor(black) ///
 		levels(99 95 90) ciopts(lwidth(*1 *3 *4) color(black black black) ///
 		lcolor(*.2 *.3 *.6)) legend(order(1 "99" 2 "95" 3 "90") rows(1) pos(6)) ///
-		mlabel ytitle("Forest Cover (Quintiles)", size(large)) format(%9.2g) ///
-		mlabposition(1) mlabsize(medium) mlabcolor(black) ///
-		xlabel(-2(0.5)0.5, labsize(medium)) ylabel(, labsize(medium)) ///
-		mlabgap(*2) title("C", size(large)) ///
+		mlabel ytitle("Forest Cover" "(Quintiles)", size(large) margin(l=8)) ///
+		format(%9.2g) mlabposition(1) mlabsize(medium) mlabcolor(black) ///
+		xlabel(-2(1)1, labsize(medium)) ylabel(, labsize(medium)) ///
+		mlabgap(*2) title("C", size(large)) yscale(titlegap(3)) ///
 		saving("${TABLE}/fig/tcoverwise.gph", replace)
-	
+
 	graph export "${TABLE}/fig/tcoverwise.png", replace
 	
 	* MAIN RESULTS
 	graph combine "${TABLE}/fig/main.gph" "${TABLE}/fig/projwise.gph" ///
-		"${TABLE}/fig/tcoverwise.gph", holes(4)
+		"${TABLE}/fig/tcoverwise.gph", holes(4) 
 	graph export "${TABLE}/fig/main_results.png", width(1000) replace
-	
-	
+		
 }
 
 *===============================================================================
@@ -209,6 +206,8 @@ if `scratch' == 1 {
 	drop_outliers
 	drop if year == 2014
 	
+	g dist_f_cum_ihs = asinh(dist_f_cum_km2)
+	kk
 	* Main (For Reference)
 	reghdfe sr dist_f_cum_km2 `ctrls', ///
 		a(uid#year c_code_2011 state_code_2011_num#month) vce(cl biome)
@@ -216,7 +215,6 @@ if `scratch' == 1 {
 	* By project (forest only)
 	reghdfe sr dist_f_*_cum_km2 `ctrls', ///
 		a(uid#year c_code_2011 state_code_2011_num#month) vce(cl biome)
-	ll
 	
 	
 	
@@ -698,31 +696,32 @@ if `scratch' == 1 {
 if `dynamics' == 1 {
 	
 	* Read
-	use "${DATA}/dta/fc_ebd_user_update2020", clear
+	use "${DATA}/dta/fc_ebd_udt_v02", clear
+	
+	* Prep
+	drop if year == 2014
 	drop_outliers
-
-	* Controls
-	local ctrls coverage tree_cover temp rain all_species duration
+	local ctrls temp rain tree_cover_s ln_duration ln_distance ///
+		ln_exp_idx ln_coverage_udym ln_group_size traveling
 	
 	* Lags/Leads
-	foreach var of varlist dist_f_cum_km2 dist_nf_cum_km2 {
+	foreach var of varlist dist_f_cum_km2 {
 		foreach i of numlist 1/6 {
 		
 			bys c_code_2011 (year_month): gen `var'_lag`i' = `var'[_n - `i']
 			la var `var'_lag`i' "Lag `i'"
 			
 			bys c_code_2011 (year_month): gen `var'_lead`i' = `var'[_n + `i']
-			la var `var'_lag`i' "Lead `i'"
+			la var `var'_lead`i' "Lead `i'"
 			
 		}
 	}
-	/
-	bys c_code_2011: egen any_def = max(dist_f > 0 & dist_f!=.)
 	
-	* Show Serial Correlation
+	
+	* Show Serial Correlation -- see olken paper
 	/* ----------------------------------------
-	Since deforestation is seriall correlation
-	individual lags are no well identified.
+	Since deforestation is serially correlated
+	individual lags are not well identified.
 	Sum of immediate + first K lags is better
 	identified so I use a cumulative lag model
 	------------------------------------------*/
@@ -738,10 +737,8 @@ if `dynamics' == 1 {
 	*--------------------
 	* 1. Lagged Analysis - ONLY CUMULATIVE LAG?
 	*--------------------
-	eststo clear
-	eststo: reghdfe sr dist_f_cum_km2 dist_f_cum_km2_lag* dist_f_cum_km2_lead* dist_nf_cum_km2  `ctrls' [aweight=n_trips], ///
-		a(user_id#year c_code_2011_num state_code_2011_num#month) ///
-		vce(cl biome)
+	*eststo clear
+	*eststo: reg_sat sr dist_f_cum_km2 dist_f_cum_km2_l*  `ctrls'
 	
 	*----------------------------
 	* 2. Cumulative Dynamic Lag
@@ -749,32 +746,31 @@ if `dynamics' == 1 {
 	
 	// No Lag
 	la var dist_f_cum_km2 "No Lag"
-	reg_sat sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls' 
+	reg_sat sr dist_f_cum_km2 `ctrls' 
 	eststo nolag: lincomest dist_f_cum_km2
 	
 	// 1 month
-	reg_sat sr dist_f_cum_km2 dist_nf_cum_km2 ///
-		dist_f_cum_km2_lag1 dist_nf_cum_km2_lag1 `ctrls'
+	reg_sat sr dist_f_cum_km2 dist_f_cum_km2_lag1 `ctrls'
 	eststo lag_1: lincomest dist_f_cum_km2_lag1 + dist_f_cum_km2 
 	
 	// 3 month
-	reg_sat sr dist_f_cum_km2 dist_nf_cum_km2 *_lag1 *_lag2 *_lag3 `ctrls'
+	reg_sat sr dist_f_cum_km2 *_lag1 *_lag2 *_lag3 `ctrls'
 	eststo lag_3: lincomest dist_f_cum_km2_lag3 + dist_f_cum_km2_lag2 + dist_f_cum_km2_lag1 + dist_f_cum_km2 
 	
 	// 5 month
-	reg_sat sr dist_f_cum_km2 dist_nf_cum_km2 *_lag1 *_lag2 *_lag3 *_lag4 *_lag5 `ctrls'
+	reg_sat sr dist_f_cum_km2 *_lag1 *_lag2 *_lag3 *_lag4 *_lag5 `ctrls'
 	eststo lag_5: lincomest dist_f_cum_km2_lag5 + dist_f_cum_km2_lag4 + dist_f_cum_km2_lag3 + dist_f_cum_km2_lag2 + dist_f_cum_km2_lag1 + dist_f_cum_km2
 	
 	coefplot (nolag, rename((1) = "Baseline") \ lag_1, rename((1) = "Sum L0-L1") \ ///
 		lag_3, rename((1) = "Sum L0-L3") \ lag_5, rename((1) = "Sum L0-L5")), ///
-		yline(0, lcolor(maroon) lpattern(solid)) msymbol(D) msize(small) ///
-		mfcolor(white) ciopts(recast(rcap) lcolor(gs5) lpattern(shortdash)) ///
-		coeflabels(, labsize(large)) mlabel format(%9.2g) mlcolor(black) ///
-		mlabposition(3) mlabgap(*2) mlabsize(medium) mlabcolor(black) ///
-		xlabel(, labsize(medium)) vertical
-	graph export "${TABLE}/fig/temp_spillovers.png", width(1000) replace
-	eststo clear
-		
+		xline(0, lcolor(maroon) lpattern(solid)) msymbol(D) msize(small) ///
+		mfcolor(white) levels(99 95 90) ciopts(lwidth(*1 *3 *4) /// 
+		color(black black black) lcolor(*.2 *.3 *.6)) ///
+		legend(order(1 "99" 2 "95" 3 "90")) coeflabels(, labsize(large)) ///
+		mlabel format(%9.2g) mlcolor(black) mlabposition(1) mlabgap(*2) ///
+		mlabsize(medium) mlabcolor(black) xlabel(, labsize(medium))
+	graph export "${TABLE}/fig/cumulative_lag.png", width(1000) replace
+	
 }
 	
 

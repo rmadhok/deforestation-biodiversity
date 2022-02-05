@@ -164,20 +164,18 @@ PROGRAM TO CONSTRUCT BALANCED DEFORESTATION PANEL
 arguments: stage
 	1 - stage 1
 	2 - stage 2
-arguement: period
+arguement: include
 	pre - include pre-2014 submissions
-	post - only post-2014 submission
 arguement: restrict (optional)
 	drop - drops megaprojects
 *--------------------------------------------------*/
 capture program drop construct_deforest
 program define construct_deforest
-
-	syntax, stage(integer) period(string) [restrict(string)] 
 	
-	*------------------------
-	* SELECT APPROVAL STAGE
-	*------------------------
+	* program syntax
+	syntax, stage(integer) [include(string)] [restrict(string)] 
+	
+	**# APPROVAL STAGE
 	
 	* Read post-2014 permits
 	use "${DATA}/dta/fc_clean_v02", clear
@@ -188,7 +186,7 @@ program define construct_deforest
 		keep if prop_status == "approved" // post-2014 projects
 		
 		* add pre-2014 submissions
-		if "`period'" == "pre" {
+		if "`include'" == "pre" {
 			append using "${DATA}/dta/fc_pre2014_clean_v02"
 			replace pre2014 = 0 if pre2014 == .
 		}
@@ -204,18 +202,14 @@ program define construct_deforest
 	
 	* Drop megaprojects
 	if "`restrict'" == "drop" {
-		bys proj_area_forest2: drop if _n > _N - 3 // drops 3 megaprojects > 30 km2
+		sort proj_area_forest2
+		drop if _n > _N - 3 // drops 3 largest megaprojects
 	}
 	
-	*-----------------------------------
-	* RESHAPE TO PROJECT-DISTRICT LEVEL
-	*-----------------------------------
-	/*-------------------------------------------------
-	- industry projects w/ tiny def'n. 
-	- SE's huge in own category. add to "other"
-	---------------------------------------------------*/
-	replace proj_cat = "underground" if proj_cat == "mining" & mining_type == "underground"
-	replace proj_cat = "other" if inlist(proj_cat, "underground")
+	**# RESHAPE TO PROJECT-DISTRICT
+	
+	* Condense categories
+	replace proj_cat = "other" if inlist(proj_cat, "underground", "industry") // n=1468 pipelines, 89 industry (small)
 	
 	* Reshape project-district level
 	reshape long district_ dist_f_ dist_nf_, i(prop_no) j(dist_id)
@@ -240,13 +234,11 @@ program define construct_deforest
 	---------------------------------------*/
 	
 	* Save project-level
-	if `stage' == 2 & "`restrict'" == "" {
+	if `stage' == 2 & "`include'" == "" & "`restrict'" == "" {
 		save "${DATA}/dta/fc_pdym_s2_v02", replace
 	}
 	
-	*------------------------------
-	* AGGREGATE TO DISTRICT-MONTH
-	*------------------------------
+	**# AGGREGATE TO DISTRICT-TIME
 
 	* Land Diversion by project category
 	levelsof proj_cat, local(proj_cat)
@@ -257,24 +249,14 @@ program define construct_deforest
 		g n_`abbrev_`cat'' = (proj_cat == "`cat'") // number of projects of type
 		g dist_nf_`abbrev_`cat'' = dist_nf if proj_cat == "`cat'"
 	}	
-	/*
-	* Land diversion by project type 
-	levelsof proj_type, local(proj_type)
-	foreach type of local proj_type {
-		
-		local abbrev_`type' = substr("`type'", 1, 3) // project abbrevation
-		g dist_f_`abbrev_`type'' = dist_f if proj_type == "`type'"
-		g n_`abbrev_`type'' = (proj_type == "`type'") // number of projects of type
-		g dist_nf_`abbrev_`type'' = dist_nf if proj_type == "`type'"
-	}
-	*/
+
 	* Aggregate
 	collapse (sum) dist_f* dist_nf* n_* ///
 		     (count) n_proj = dist_id, ///
 			 by(c_code_2011 year_month)
 
 	* Label
-	la var dist_f "Deforestation"
+	la var dist_f "Infrastructure"
 	la var dist_nf "Non-forest Diversion"
 	foreach cat of local proj_cat {
 		
@@ -283,15 +265,7 @@ program define construct_deforest
 		la var n_`abbrev_`cat'' "`lab'"
 		la var dist_nf_`abbrev_`cat'' "`lab'"
 	}
-	/*
-	foreach type of local proj_type {
-		
-		local lab = proper("`type'")
-		la var dist_f_`abbrev_`type'' "`lab'"
-		la var n_`abbrev_`type'' "`lab'"
-		la var dist_nf_`abbrev_`type'' "`lab'"
-	}
-	*/
+
 	* Add census codes for control group
 	merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist", keepus(c_code_2011)
 	
@@ -310,9 +284,7 @@ program define construct_deforest
 	g month = month(dofm(year_month))
 	keep if inrange(year, 2014, 2020)
 
-	*------------------------------
-	* CONSTRUCT VARIABLES
-	*------------------------------
+	**# CONSTRUCT VARIABLES
 	
 	* Add Forest Area
 	tempfile temp
@@ -375,20 +347,27 @@ program define construct_deforest
 end
 
 if `district_forest' == 1 {
-
-	* Stage 2 (drop 3 mega projects)
-	construct_deforest, stage(2) restrict("drop")
+	/*
+	* Full
+	construct_deforest, stage(2) include("pre")
+	drop dist_nf* // non-forest for post-2014 submissions only
 	save "${DATA}/dta/fc_dym_s2_v02", replace
 	export delimited "${DATA}/csv/fc_dym_s2_v02.csv", replace
 	
-	/*
-	* Stage 1 (drop 3 mega projects) -- CHANGE THRESHHOLD
-	construct_deforest, stage(1) restrict("drop")
-	save "${DATA}/dta/fc_dym_s1_v02", replace
+	* Truncate
+	construct_deforest, stage(2) include("pre") restrict("drop")
+	drop dist_nf*
+	save "${DATA}/dta/fc_dym_s2_trunc_v02", replace
 	*/
-	* Full
+	* Post-2014 only (add restrict?)
 	construct_deforest, stage(2)
-	save "${DATA}/dta/fc_dym_s2_full_v02", replace
+	save "${DATA}/dta/fc_dym_s2_post_v02", replace
+	kk
+	* Stage 1 (add restrict?)
+	construct_deforest, stage(1)
+	keep c_code_2011 year_month dist_f_cum_km2 dist_nf_cum_km2
+	ren (dist_f_cum_km2 dist_nf_cum_km2) (dist_f_cum_km2_s1 dist_nf_cum_km2_s1)
+	save "${DATA}/dta/fc_dym_s1_post_v02", replace
 }
 
 *===============================================================================
@@ -396,52 +375,46 @@ if `district_forest' == 1 {
 *===============================================================================
 if `merge' == 1 {
 
-	local fc_data "" // either "" (main dataset), "full", or "trunc" 
+	local fc_data "post" // either "" (main dataset), "trunc_", "post"
 	local level "udt" // udt (user-dist-time) or uct (user-cell-time)
 	
-	if "`fc_data'" == "" {
-		
-		* Prepare Stage I Deforestation
-		use "${DATA}/dta/fc_dym_s1_v02", clear
-		keep c_code_2011 year_month dist_f_cum_km2 dist_nf_cum_km2
-		ren (dist_f_cum_km2 dist_nf_cum_km2) (dist_f_cum_km2_s1 dist_nf_cum_km2_s1)
-		tempfile stage1
-		save "`stage1'"
-		
+	if "`fc_data'" == "" | "`fc_data'" == "trunc_" {
+	
 		* Spatial Spillovers
 		import delimited "${DATA}/csv/slx_v02.csv", clear
 		keep c_code_2011 year_month dist_f_cum_km2_slx_*
-	
 		ren year_month ym
 		g year_month = ym(year(date(ym, "20YM")), month(date(ym, "20YM")))
 		format year_month %tmCCYY-NN
 		drop ym
-		
 		tempfile slx
 		save "`slx'"
-		
-		* Read Stage II Deforestation
-		use "${DATA}/dta/fc_dym_s2_v02", clear
-		merge 1:1 c_code_2011 year_month using "`slx'", nogen // merge slx
-		merge 1:1 c_code_2011 year_month using "`stage1'", nogen // merge stage 1
+	
+		* Read approvals (pre + post)
+		use "${DATA}/dta/fc_dym_s2_`fc_data'v02", clear
+		merge 1:1 c_code_2011 year_month using "`slx'" // merge slx
 		merge 1:m c_code_2011 year_month using "${DATA}/dta/ebird_`level'", keep(3) nogen // merge ebird
 		
 		* Save
-		sort user_id c_code_2011 year_month
+		g tree_cover_s = (tree_cover_km2 / tot_area)*100
+		la var tree_cover_s "Forest Coverage (\%)"
+		sort user_id year_month
 		order user_id *_code_2011 year_month state district sr *_index
-		save "${DATA}/dta/fc_ebd_`level'_v02", replace
+		save "${DATA}/dta/fc_ebd_`level'_`fc_data'v02", replace
 	}
 	
-	else {
-	
-		* Read
-		use "${DATA}/dta/fc_dym_s2_`fc_data'_v02", clear
+	* NOTE: construct this on-the-fly?
+	if "`fc_data'" == "post" {
 		
-		* Merge to ebird
-		merge 1:m c_code_2011 year_month using "${DATA}/dta/ebird_`level'", keep(3) nogen
+		* Read Stage II (post 2014)
+		use "${DATA}/dta/fc_dym_s2_`fc_data'_v02", clear
+		merge 1:1 c_code_2011 year_month using "${DATA}/dta/fc_dym_s1_`fc_data'_v02", keep(3) nogen // merge stage 1
+		merge 1:m c_code_2011 year_month using "${DATA}/dta/ebird_`level'", keep(3) nogen // merge ebird
 		
 		* Save
-		sort user_id year_month
+		g tree_cover_s = (tree_cover_km2 / tot_area)*100
+		la var tree_cover_s "Forest Coverage (\%)"
+		sort user_id c_code_2011 year_month
 		order user_id *_code_2011 year_month state district sr *_index
 		save "${DATA}/dta/fc_ebd_`level'_`fc_data'_v02", replace
 	}
