@@ -29,7 +29,7 @@ cd "${TABLE}"
 // Modules
 local main_analysis		0
 local scratch			0
-local dynamics			1
+local dynamics			0
 local simulation		0
 local robustness		0
 	local patch			0
@@ -196,224 +196,75 @@ if `main_analysis' == 1 {
 * MECHANISM
 *===============================================================================
 if `scratch' == 1 {
-	
-	**# INVESTIGATE
 
 	* Read
 	use "${DATA}/dta/fc_ebd_udt_v02", clear
-	local ctrls temp rain tree_cover_km2 ln_duration ln_distance ///
-		        ln_exp_idx ln_coverage_udym
-	drop_outliers
 	drop if year == 2014
+	drop_outliers
 	
-	g dist_f_cum_ihs = asinh(dist_f_cum_km2)
-	kk
-	* Main (For Reference)
-	reghdfe sr dist_f_cum_km2 `ctrls', ///
-		a(uid#year c_code_2011 state_code_2011_num#month) vce(cl biome)
+	**# Extensive margin: Does fragmentation displace users to other districts
 	
-	* By project (forest only)
-	reghdfe sr dist_f_*_cum_km2 `ctrls', ///
-		a(uid#year c_code_2011 state_code_2011_num#month) vce(cl biome)
+	* District level
+	preserve
 	
+	collapse (mean) exp_idx duration distance group_size traveling ///
+			 (firstnm) dist_f_cum_* coverage_dym tree_cover_s temp rain biome ///
+					   n_trips_dym n_users_dym month year *_code_2011_num, ///
+					   by(c_code_2011 year_month)
 	
-	
-	**# 2. Endogeneity: Do users move to other districts?
-	*-------------------------------------------------------
-	/*
-	// USER LEVEL -- USE SLX or n_trips_sj???
-	eststo: reghdfe n_trips dist_f_cum_km2 dist_nf_cum_km2 ///
-		dist_f_cum_km2_slx_i_500 temp rain tree_cover_km2 ln_duration ln_exp_idx, ///
-		a(c_code_2011_num state_code_2011_num#month year) vce(cl biome)
-	
-	* User-Level: Does a project displace users to other districts in same month 
-	rangestat (sum) n_trips, interval(year_month 0 0) by(observerid state_code_2011) excludeself
-	ren n_trips_sum n_trips_sj
-	rangestat (sum) n_trips, interval(year_month 0 0) by(observerid) excludeself
-	ren n_trips_sum n_trips_nj
-
-	eststo: reghdfe n_trips_sj dist_f_cum_km2 dist_nf_cum_km2 ///
-		temp rain tree_cover_km2 ln_duration ln_exp_idx, ///
-		a(c_code_2011_num state_code_2011_num#month year) vce(cl biome)
-
-		estadd local agg "User-District-Time" 
-		estadd local dist_fe "$\checkmark$"
-		estadd local st_m_fe "$\checkmark$"
-		estadd local year_fe "$\checkmark$"
+	foreach v of varlist duration distance exp_idx group_size ///
+		n_*_dym coverage_dym {
 		
-	eststo: reghdfe n_trips_nj dist_f_cum_km2 dist_nf_cum_km2 ///
-		temp rain tree_cover_km2 ln_duration ln_exp_idx, ///
-		a(c_code_2011_num state_code_2011_num#month year) vce(cl biome)
-		
-		estadd local agg "User-District-Time" 
-		estadd local dist_fe "$\checkmark$"
-		estadd local st_m_fe "$\checkmark$"
-		estadd local year_fe "$\checkmark$"	
-	// Note: No. But, there is little variation across districts w/n same month
-
-	// DISTRICT LEVEL
-	
-	* Aggregate To District
-	collapse (sum) n_trips (mean) exp_idx duration distance ///
-			 (firstnm) dist_*_cum_km2_slx* dist_*_cum_km2 coverage ///
-					   tree_cover_* temp tot_area rain biome ///
-					   sr_bl *_code_2011_num month year, ///
-		     by(c_code_2011 year_month)
-	
-	* District: Does a project cause users to increase trips to other districts?
-	g ln_duration = log(duration)
-	g ln_exp_idx = log(exp_idx)
-	lab_vars
-	
-	
-	*eststo: reghdfe n_trips dist_f_cum_km2 dist_f_cum_km2_slx_i_100 dist_nf_cum_km2 ///
-	*	coverage temp rain tree_cover_km2 ln_duration ln_exp_idx, ///
-	*	a(c_code_2011_num state_code_2011_num#month year) vce(cl biome)
-	
-	rangestat (sum) n_trips, interval(year_month 0 0) by(state_code_2011) excludeself
-	ren n_trips_sum n_trips_sj
-	rangestat (sum) n_trips, interval(year_month 0 0) excludeself
-	ren n_trips_sum n_trips_nj
-	
-	eststo: reghdfe duration dist_f_cum_km2 dist_nf_cum_km2 ///
-		temp rain tree_cover_km2 ln_exp_idx, ///
-		a(c_code_2011_num state_code_2011_num#month year) vce(cl biome)
-	
-		estadd local agg "District-Time" 
-		estadd local dist_fe "$\checkmark$"
-		estadd local st_m_fe "$\checkmark$"
-		estadd local year_fe "$\checkmark$"
-		
-	eststo: reghdfe n_trips_nj dist_f_cum_km2 dist_nf_cum_km2 ///
-		temp rain tree_cover_km2 ln_duration ln_exp_idx, ///
-		a(c_code_2011_num state_code_2011_num#month year) vce(cl biome)
-		
-		estadd local agg "District-Time" 
-		estadd local dist_fe "$\checkmark$"
-		estadd local st_m_fe "$\checkmark$"
-		estadd local year_fe "$\checkmark$"
-	// Note: project DECREASES trips in other districts... interpret
-	
-	* District: Does project displace users to prettier districts?
-	xtile pretty = sr_bl, nquantiles(3)
-	
-	// Ugly districts w/n state
-	clonevar n_trips_1 = n_trips
-	replace n_trips_1 = 0 if pretty == 2 | pretty == 3
-	rangestat (sum) n_trips_1, interval(year_month 0 0) by(state_code_2011_num) excludeself
-	ren n_trips_1_sum n_trips_sj_1
-	
-	// Medium pretty districts w/n state
-	clonevar n_trips_2 = n_trips
-	replace n_trips_2 = 0 if pretty == 1 | pretty == 3
-	rangestat (sum) n_trips_2, interval(year_month 0 0) by(state_code_2011_num) excludeself
-	ren n_trips_2_sum n_trips_sj_2
-	
-	clonevar n_trips_3 = n_trips
-	replace n_trips_3 = 0 if pretty == 1 | pretty == 2
-	rangestat (sum) n_trips_3, interval(year_month 0 0) by(state_code_2011_num) excludeself
-	ren n_trips_3_sum n_trips_sj_3
-	
-	foreach v of varlist n_trips_sj_1 n_trips_sj_2 n_trips_sj_3 {
-		
-		eststo: reghdfe `v' dist_f_cum_km2 dist_nf_cum_km2 ///
-			temp rain tree_cover_km2 ln_duration ln_exp_idx, ///
-			a(c_code_2011_num state_code_2011_num#month year) vce(cl biome)
-		
-			estadd local agg "District-Time" 
-			estadd local dist_fe "$\checkmark$"
-			estadd local st_m_fe "$\checkmark$"
-			estadd local year_fe "$\checkmark$"	
+		g ln_`v' = ln(`v')
 	}
-	// Note: fragmentation increases number of trips in medium biodiverse districts j in the state
 	
-	// CELL LEVEL: Do users find other locations w/n the district?
+	replace dist_f_cum_km2_slx_i_200 = dist_f_cum_km2_slx_i_200/10000
+	local ctrls temp rain tree_cover_s ln_duration ln_distance ///
+		        ln_exp_idx ln_group_size traveling
 	
-	* User-cell-month
-	use "${DATA}/dta/fc_ebd_user_cell_v01", clear
+	* Does deforestation increase activity in *other* districts (w/n 200 km)?
+	foreach v of varlist n_users_dym n_trips_dym {
 	
-	* Aggregate to user-district-month
-	bys c_code_2011_num: egen n_cell_dist = nvals(cell)
-	collapse (count) n_cells = cell (mean) exp_idx duration distance ///
-			 (firstnm) dist_*_cum_km2 coverage tree_cover_* temp n_cell_dist ///
-					   tot_area rain biome sr_bl *_code_2011_num month year, ///
-		     by(user_id c_code_2011 year_month)
-			 
-	g cell_area = (n_cells / n_cell_dist)*100
-	g ln_duration = log(duration)
-	g ln_exp_idx = log(exp_idx)
-	lab_vars
-	
-	eststo: reghdfe cell_area dist_f_cum_km2 dist_nf_cum_km2 ///
-		temp rain tree_cover_km2 ln_duration ln_exp_idx, ///
-		a(c_code_2011_num state_code_2011_num#month year) vce(cl biome)
+		eststo: reghdfe ln_`v' dist_f_cum_km2 *_slx_i_200 `ctrls', ///
+			a(c_code_2011_num state_code_2011_num#month year) vce(cl c_code_2011_num)
 		
-			estadd local agg "User-District-Time" 
+			estadd local agg "District"
 			estadd local dist_fe "$\checkmark$"
 			estadd local st_m_fe "$\checkmark$"
-			estadd local year_fe "$\checkmark$"	
-	// note: fragmentation increases the number of within-district locations covered
+			estadd local year_fe "$\checkmark$"
+	}
+	restore
+	
+	**# Intensive margin: Does fragmentation displace users within district?
+	g ln_n_trips = ln(n_trips)
+	la var dist_f_cum_km2 "Infrastructure (district $\emph{i}$)"
+	la var dist_f_cum_km2_slx_i_200 "Infrastructure (district j $\neq$ i)"
+	local ctrls temp rain tree_cover_s ln_duration ln_distance ///
+		        ln_exp_idx ln_group_size traveling 
+	
+	foreach v of varlist n_trips coverage_udym {
+		
+		eststo: reghdfe ln_`v' dist_f_cum_km2 `ctrls', ///
+			a(c_code_2011_num state_code_2011_num#month year) vce(cl c_code_2011_num)
+			
+			estadd local agg "User"
+			estadd local dist_fe "$\checkmark$"
+			estadd local st_m_fe "$\checkmark$"
+			estadd local year_fe "$\checkmark$"
+	}
 	
 	* Tabulate
-	esttab using "${TABLE}/tables/mech_search.tex", replace ///
+	esttab using "${TABLE}/tables/displacement.tex", replace ///
 		stats(agg dist_fe st_m_fe year_fe N r2, labels(`"Data Aggregation"' ///
 		`"District FEs"' `"State x Month FEs"' `"Year FEs"' `"N"' `"\(R^{2}\)"') ///
-		fmt(0 0 0 0 0 3)) mgroups("Cross-District" "Cross-District (By Prettiness)" ///
-		"Within-District", pattern(1 0 0 0 1 0 0 1) ///
-		prefix(\multicolumn{@span}{c}{) suffix(}) span ///
-		erepeat(\cmidrule(lr){@span})) mlabels("In State" "National" ///
-		"In State" "National" "Low" "Medium" "High" "Coverage (\%)") ///
-		wrap nocons nonotes booktabs nomtitles star(* .1 ** .05 *** .01) ///
-		label se b(%5.3f) width(\hsize)
+		fmt(0 0 0 0 0 3)) mgroups("Cross-District" "Within-District", ///
+		pattern(1 0 1 0) prefix(\multicolumn{@span}{c}{) suffix(}) span ///
+		erepeat(\cmidrule(lr){@span})) mlabels("Num. Users" "Num. Trips" ///
+		"Num. Trips" "Coverage") indicate("Controls = `ctrls'") wrap nocons ///
+		nonotes booktabs nomtitles star(* .1 ** .05 *** .01) label se ///
+		b(%5.3f) width(\hsize)
 	eststo clear
 	
-	**# 3. Fixing Location
-	*-------------------------------------------------------
-	*use "${DATA}/dta/fc_ebd_user_v02", clear
-	
-	// good results if remove nf controls.
-	reg_sat sr dist_f_cen_cum_km2 dist_f_joi_cum_km2 ///
-			   dist_f_pri_cum_km2 dist_f_sta_cum_km2 ///
-			   `ctrls' coverage_dym
-	*/
-	
-	* Good spec
-	g ln_coverage_udym = ln(coverage_udym)
-	reg_sat sr dist_f_ele_cum_km2 dist_f_irr_cum_km2 ///
-		dist_f_min_cum_km2 dist_f_oth_cum_km2 dist_f_res_cum_km2 ///
-		dist_f_tra_cum_km2 `ctrls' ln_coverage_udym traveling
-	* put with nf in appendix? 
-
-	
-	* Users who stay in one district
-	eststo: reghdfe sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
-		a(user_id#c_code_2011_num#year state_code_2011_num#month) vce(cl biome)
-	kk
-	
-	// Note: Negative effect. But, may be driven by users being driven to new 
-	// locations following construction. 
-	
-	* District FE
-	eststo: reghdfe sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
-		a(c_code_2011_num state_code_2011_num#month year) vce(cl biome)
-	kk
-		estadd local agg "User-District-Month"
-		estadd local year_fe "$\checkmark$"
-		estadd local dist_fe "$\checkmark$"
-		estadd local st_m_fe "$\checkmark$"
-	//Note: partly removes search effect, but pools together heterogeneous users
-	// and increases sd. Effect may be driven by new locations w/n district
-	
-	* Cell Fixed Effect
-	use "${DATA}/dta/fc_ebd_user_cell_v01", clear
-	eststo: reghdfe sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
-		a(cell state_code_2011_num#month year) vce(cl biome)
-		
-		estadd local agg "User-Cell-Month"
-		estadd local cell_fe "$\checkmark$"
-		estadd local year_fe "$\checkmark$"
-		estadd local st_m_fe "$\checkmark$"
-	//Note: Nearly the same as the district FE. Pools user
 	
 	* Is location-FE result driven by increasing variance of user types?
 	use "${DATA}/dta/fc_ebd_user_v01", clear
@@ -490,203 +341,14 @@ if `scratch' == 1 {
 		erepeat(\cmidrule(lr){@span})) wrap nocons nonotes booktabs nomtitles ///
 		star(* .1 ** .05 *** .01) label se b(%5.3f) width(\hsize)
 	eststo clear
-	*/
-	*---------------------
-	* BEHAVIOUR
-	*---------------------
-	
-	**# 1. Do Users spend more/less time birding after project?
-	use "${DATA}/dta/fc_ebd_user_v01", clear
-	
-	// User FE
-	eststo: reghdfe duration dist_f_cum_km2 dist_nf_cum_km2 ///
-		temp rain tree_cover_km2 ln_exp_idx, ///
-		a(user_id#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
-		
-		estadd local agg "User-Dist-Month"
-		estadd local user_y_fe "$\checkmark$"
-		estadd local dist_fe "$\checkmark$"
-		estadd local st_m_fe "$\checkmark$"
-		
-	eststo: reghdfe duration dist_f_cum_km2 dist_nf_cum_km2 ///
-		coverage temp rain tree_cover_km2 ln_exp_idx, ///
-		a(user_id#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
-		
-		estadd local agg "User-Dist-Month"
-		estadd local user_y_fe "$\checkmark$"
-		estadd local dist_fe "$\checkmark$"
-		estadd local st_m_fe "$\checkmark$"
-	// note: no change in duration across differentially fragmented districts
-	
-	* District FE (do with and without access to test for access effect)
-	eststo: reghdfe duration dist_f_cum_km2 dist_nf_cum_km2 ///
-		temp rain tree_cover_km2 ln_exp_idx, ///
-		a(c_code_2011_num state_code_2011_num#month year) vce(cl biome)
-		
-		estadd local agg "User-Dist-Month"
-		estadd local dist_fe "$\checkmark$"
-		estadd local st_m_fe "$\checkmark$"
-		estadd local year_fe "$\checkmark$"
-		
-	eststo: reghdfe duration dist_f_cum_km2 dist_nf_cum_km2 ///
-		coverage temp rain tree_cover_km2 ln_exp_idx, ///
-		a(c_code_2011_num state_code_2011_num#month year) vce(cl biome)
-	
-		estadd local agg "User-District-Month"
-		estadd local dist_fe "$\checkmark$"
-		estadd local st_m_fe "$\checkmark$"
-		estadd local year_fe "$\checkmark$"
-	// note: duration decreases in fragmented districts
-	
-	// District Level
-	
-	* Aggregate To District
-	collapse (mean) exp_idx duration distance ///
-			 (firstnm) dist_*_cum_km2 coverage tree_cover_* temp ///
-					   tot_area rain biome sr_bl *_code_2011_num month year, ///
-		     by(c_code_2011 year_month)
-	g ln_duration = log(duration)
-	g ln_exp_idx = log(exp_idx)
-	lab_vars
-	
-	* Does fragmentation increase mean duration in district?
-	eststo: reghdfe duration dist_f_cum_km2 dist_nf_cum_km2 ///
-		temp rain tree_cover_km2 ln_exp_idx, ///
-		a(c_code_2011_num state_code_2011_num#month year) vce(cl biome)
-		
-		estadd local agg "Dist-Month"
-		estadd local dist_fe "$\checkmark$"
-		estadd local st_m_fe "$\checkmark$"
-		estadd local year_fe "$\checkmark$"
-	
-	eststo: reghdfe duration dist_f_cum_km2 dist_nf_cum_km2 ///
-		coverage temp rain tree_cover_km2 ln_exp_idx, ///
-		a(c_code_2011_num state_code_2011_num#month year) vce(cl biome)
-		
-		estadd local agg "Dist-Month"
-		estadd local dist_fe "$\checkmark$"
-		estadd local st_m_fe "$\checkmark$"
-		estadd local year_fe "$\checkmark$"
-	// note: within-district fragmentation decreases trip duration
-	// effect remains after controlling for access -- then plausibly driven by species decline
-	
-	// Cell-level
-	* Perhaps district result is bc users relocate to prettier areas and spend less time
-	use "${DATA}/dta/fc_ebd_user_cell_v01", clear
-	*drop_outliers
-	
-	eststo: reghdfe duration dist_f_cum_km2 dist_nf_cum_km2 ///
-		temp rain tree_cover_km2 ln_exp_idx, ///
-		a(cell state_code_2011_num#month year) vce(cl biome)
-		
-		estadd local agg "User-Cell-Month"
-		estadd local cell_fe "$\checkmark$"
-		estadd local st_m_fe "$\checkmark$"
-		estadd local year_fe "$\checkmark$"
-		
-	eststo: reghdfe duration dist_f_cum_km2 dist_nf_cum_km2 ///
-		coverage temp rain tree_cover_km2 ln_exp_idx, ///
-		a(cell state_code_2011_num#month year) vce(cl biome)
-		
-		estadd local agg "User-Cell-Month"
-		estadd local cell_fe "$\checkmark$"
-		estadd local st_m_fe "$\checkmark$"
-		estadd local year_fe "$\checkmark$"
-	// note: controlling for search issue, duration (weakly?) declines even controlling for access
-	// possibly driven by decline in species diversity
-	
-	esttab using "${TABLE}/tables/mech_behaviour.tex", replace ///
-		stats(agg user_y_fe cell_fe dist_fe st_m_fe year_fe N r2, ///
-		labels(`"Data Aggregation"' `"User x Year FEs"' `"Cell FEs"' ///
-		`"District FEs"' `"State x Month FEs"' `"Year FEs"' `"N"' ///
-		`"\(R^{2}\)"') fmt(0 0 0 0 0 0 0 3)) wrap nocons nonotes ///
-		booktabs nomtitles star(* .1 ** .05 *** .01) label se b(%5.3f)
 	
 	
-	iiiii
-	
-
-	* Prep
-	local ctrls temp rain tree_cover_km2 duration exp_idx
-	drop_outliers
-	
-	**# 1. Projects per 10km2 forest area
-	
-	* Main
-	*reg_sat sr n_patches_cum `ctrls'
-	// positive effect
-	
-	* Main (shannon)
-	*reg_sat sh_index n_patches_cum `ctrls' 
-	// negative, null
-	*reg_sat sh_index n_patches_cum_s `ctrls'
-	// positive, significant
-
-	* Category-wise
-	*reg_sat sr n_ele_cum n_irr_cum n_min_cum n_oth_cum n_res_cum n_tra_cum `ctrls'
-	// valid results -- driven by resettlement 
-	
-	* Category-wise (Shannon)
-	*reg_sat sh_index n_ele_cum n_irr_cum n_min_cum n_oth_cum n_res_cum n_tra_cum `ctrls'
-	// doesn't work
-
-	**# 2. Drop never treated
-	*bys c_code_2011: egen any_def = max(dist_f > 0 & dist_f!=.)
-	*drop if any_def == 0
-	
-	* Main
-	*reg_sat sr dist_f_cum_km2 dist_nf_cum_km2 `ctrls'
-	
-	// same effect
-	*reg_sat sr dist_f_*_cum_km2 dist_nf_*_cum_km2 `ctrls'
-	// driven by resettlement + other. irrigation positive
-
-	// positive...
-	* Category-wise, controlling for forest area
-	*reg_sat sr n_ele_cum n_irr_cum n_min_cum n_oth_cum n_res_cum n_tra_cum `ctrls'
-	// driven by irrigation + resettlement (***). transport positive
-	
-	**# 3. Shannon Index
-	
-	* Main
-	*reg_sat sh_index dist_f_cum_km2 dist_nf_cum_km2 `ctrls'
-	// null
-	*reg_sat sh_index dist_f_*_cum_km2 dist_nf_*_cum_km2 `ctrls'
-	// too many positive (drop)
-	*reg_sat sh_index dist_f_*_cum_km2_s dist_nf_*_cum_km2_s `ctrls'
-	// too many positive (drop)
-	
-	* District-level
-	collapse (sum) n_trips (mean) exp_idx ///
-			 (firstnm) dist_*_cum_km2 coverage tree_cover_km2 ///
-					   temp rain duration distance biome ///
-					   state_code_2011* c_code_2011_num month year, ///
-		     by(c_code_2011 year_month)
-	
-	* TWFE
-	// number of trips (positive)
-	reghdfe coverage dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
-		a(c_code_2011_num state_code_2011_num#month year) vce(cl biome) 
-	jj
-	// experience (null)	
-	*reghdfe exp_idx dist_f_cum_km2 dist_nf_cum_km2 `ctrls', ///
-	*	a(c_code_2011_num state_code_2011_num#month year) vce(cl biome) 
-	// duration (negative)
-	reghdfe duration dist_f_cum_km2 dist_nf_cum_km2 ///
-		coverage temp rain all_species tree_cover_km2 exp_idx, ///
-		a(c_code_2011_num state_code_2011_num#month year) vce(cl biome) 	
-	
-	* by projects
-	reghdfe duration dist_f_*_cum_km2 dist_nf_*_cum_km2 ///
-		coverage temp rain all_species tree_cover_km2 , ///
-		a(c_code_2011_num state_code_2011_num#month year) vce(cl biome) 
 	
 	* TO DO
 	* 1. twfe with n_trips or other measure of activity
 	* 2. twfe by project, add average experience. std dev?
 	* 3. remove duration from main spec- bad control?
 	* 4. use distance as outcome, by project
-	* 5. drop mine and other from forest data. see effect of remaining
 	
 }
 
@@ -716,7 +378,6 @@ if `dynamics' == 1 {
 			
 		}
 	}
-	
 	
 	* Show Serial Correlation -- see olken paper
 	/* ----------------------------------------
@@ -852,7 +513,8 @@ if `simulation' == 1 {
 * ROBUSTNESS CHECKS
 *===============================================================================
 if `robustness' == 1 {
-		
+	
+	* ADD: district FE, cell FE, users who stay in one district?, shannon/simpson, weighted, drop outliers
 	if `patch' == 1 {
 		
 		* Read

@@ -206,7 +206,12 @@ if `learning' == 1 {
 	use "${DATA}/dta/fc_ebd_udt_v02", clear
 	drop if year == 2014
 	drop_outliers
-	kk
+	
+	/*
+	*---------------------
+	* BIAS PLOTS
+	*---------------------
+	
 	**# 1. Seasonality
 
 	* Total species richness by ym across all users/trips
@@ -319,6 +324,54 @@ if `learning' == 1 {
 	graph combine "./fig/season.gph" "./fig/bl_dist.gph", rows(2) saving("./fig/comb.gph", replace)
 	graph combine "./fig/comb.gph" "./fig/learn_nl.gph", imargin(0 0 1 0)
 	graph export "${TABLE}/fig/bias_plot.png", replace
+	*/
+	
+	*-----------------------------------------
+	* IDENTIFYING VARIATION ACROSS FE SPECS
+	*-----------------------------------------
+	* Hacky table but it works
+	
+	* District
+	reghdfe sr, a(c_code_2011_num) resid(r_dfe)
+	g r2_dfe = e(r2)
+	egen r_dfe_sd = sd(r_dfe)
+	la var r2_dfe "District FE"
+	la var r_dfe_sd "District FE"
+
+	* District + State-Month
+	reghdfe sr, a(c_code_2011_num state_code_2011_num#month year) resid(r_dsmfe)
+	g r2_dsmfe = e(r2)
+	egen r_dsmfe_sd = sd(r_dsmfe)
+	la var r2_dsmfe "District + State-Month + Year FE"
+	la var r_dsmfe_sd "District + State-Month + Year FE"
+	
+	* User + district + State-Month
+	reghdfe sr, a(uid c_code_2011_num state_code_2011_num#month year) resid(r_udsmfe)
+	g r2_udsmfe = e(r2)
+	egen r_udsmfe_sd = sd(r_udsmfe)
+	la var r2_udsmfe "User + District + State-Month + Year FE"
+	la var r_udsmfe_sd "User + District + State-Month + Year FE"
+	
+	* User-year + district + State-Month
+	reghdfe sr, a(uid#year c_code_2011_num state_code_2011_num#month) resid(r_uydsmfe)
+	g r2_uydsmfe = e(r2)
+	egen r_uydsmfe_sd = sd(r_uydsmfe)
+	la var r2_uydsmfe "\textbf{User-Year + District + State-Month FE}"
+	la var r_uydsmfe_sd "\textbf{User-Year + District + State-Month FE}"
+
+	* Tabulate
+	eststo A: estpost tabstat r2*, s(mean) c(s) // R2 
+	
+	drop r2_* r_*fe
+	ren r_*_sd r2_*
+	
+	eststo B: estpost tabstat r2*, s(mean) c(s) // SD of residual
+	
+	esttab using "${TABLE}/tables/id_variation.tex", replace ///
+		mgroups(`"\$R^{2}\$"' `"\$\sigma_{\epsilon}\$"', pattern(1 1) ///
+		prefix(\multicolumn{@span}{c}{) suffix(}) span erepeat(\cmidrule(lr){@span})) ///
+		cells("mean(fmt(3))") nomtitles collabel(none) label noobs ///
+		booktabs sub(\_ _)
 	
 }
 *===============================================================================
