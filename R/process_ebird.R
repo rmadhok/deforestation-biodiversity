@@ -11,6 +11,8 @@ SHP <- '/Users/rmadhok/Dropbox/IndiaPowerPlant/data/'
 setwd(READ)
 
 # Load Packages
+options(collapse_mask = "manip") 
+require(collapse)
 require(data.table)
 require(tidyverse)
 require(sf)
@@ -72,12 +74,11 @@ ebird <- ebird %>%
 #----------------------------------------------------------------
 
 # Filters from eBird manual (n=18,614,262)
-# Add year > 2014?
 ebird <- ebird %>%
   filter(
     complete == 1,
     duration <= 5*60,
-    group_size <= 10
+    group_size <= 10 
   ) %>%
   dplyr::select(-complete)
 

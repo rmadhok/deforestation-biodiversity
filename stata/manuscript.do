@@ -28,7 +28,7 @@ cd "${TABLE}"
 
 // Modules
 local main_analysis		0
-local scratch			0
+local scratch			1
 local dynamics			0
 local simulation		0
 local robustness		0
@@ -86,7 +86,7 @@ if `main_analysis' == 1 {
 	local ctrls temp rain tree_cover_s ln_duration ln_distance ///
 		        ln_exp_idx ln_coverage_udym ln_group_size traveling
 	la var dist_f_cum_km2 "Forest Infrastructure (\(km^{2}\))"
-	
+
 	*--------------------
 	* 1. MAIN RESULTS
 	*--------------------
@@ -113,14 +113,15 @@ if `main_analysis' == 1 {
 	* Coefficient Plot
 	coefplot (m1, rename(dist_f_cum_km2 = `" "(1) Learning""') \ m2, ///
 		rename(dist_f_cum_km2 = `" "(2) No Learning" "')), ///
-		keep(dist_f*) xline(0, lcolor(maroon) lpattern(solid)) ///
+		keep(dist_f*) xline(0, lcolor(black*0.8) lpattern(dash)) ///
 		coeflabels(, labsize(medium)) mlabsize(medium) mlabcolor(black) ///
-		levels(99 95 90) ciopts(lwidth(*1 *3 *4) color(black black black) ///
-		lcolor(*.3 *.4 *.6)) legend(order(1 "99" 2 "95" 3 "90") rows(1) pos(6)) ///
+		levels(99 95 90) ciopts(recast(rcap) lwidth(*1 *3 *4) ///
+		color(dkgreen dkgreen dkgreen) lcolor(*.3 *.5 *.8)) ///
+		legend(order(1 "99" 2 "95" 3 "90")) ///
 		msize(medium) mfcolor(white) msymbol(D) mlcolor(black) mlabel ///
 		format(%9.2g) mlabposition(1) mlabgap(*2) xlabel(-0.3(.1)0.1, ///
 		labsize(medium)) ylabel(, labsize(medium)) title("A", size(large)) ///
-		saving("${TABLE}/fig/main.gph", replace)
+		saving("${TABLE}/fig/main.gph", replace) xsize(4.6)
 	graph export "${TABLE}/fig/main.png", replace
 	
 	* Table
@@ -136,7 +137,7 @@ if `main_analysis' == 1 {
 		wrap nocons nonotes booktabs nomtitles star(* .1 ** .05 *** .01) ///
 		label se b(%5.3f) width(\hsize)
 	eststo clear
-	
+
 	*--------------------------
 	* 2. DECOMPOSED ESTIMATES
 	*--------------------------
@@ -145,21 +146,22 @@ if `main_analysis' == 1 {
 	eststo clear
 	eststo: reg_sat sr dist_f_*_cum_km2 `ctrls'
 
-	coefplot, keep(dist_f*) sort xline(0, lcolor(maroon) lpattern(solid)) ///
+	coefplot, keep(dist_f*) sort xline(0, lcolor(black*0.8) lpattern(dash)) ///
 		msize(small) mfcolor(white) msymbol(D) levels(99 95 90) ///
-		ciopts(lwidth(*1 *3 *4) color(black black black) lcolor(*.2 *.3 *.6)) ///
-		legend(order(1 "99" 2 "95" 3 "90") rows(1) pos(6)) ///
+		ciopts(recast(rcap) lwidth(*1 *3 *4) color(dkgreen dkgreen dkgreen) ///
+		lcolor(*.3 *.5 *.8)) legend(order(1 "99" 2 "95" 3 "90")) ///
 		mlabel format(%9.2g) mlabposition(1) mlabcolor(black) /// 
 		coeflabels(, labsize(medium)) mlabsize(medium) mcolor(black) ///
 		xlabel(, labsize(medium)) ylabel(, labsize(medium)) mlabgap(*2) ///
-		title("B", size(large)) saving("${TABLE}/fig/projwise.gph", replace)
+		title("B", size(large)) xsize(4.6) ///
+		saving("${TABLE}/fig/projwise.gph", replace)
 	graph export "${TABLE}/fig/projwise.png", replace
 
 	*--------------------------
 	* 3. FRAGMENTATION-WISE
 	*--------------------------
 	
-	// Quantiles of Forest Cover
+	// Quantiles of Forest Cover -- works with truncated
 	* Note : monotonic decline until q5. This is mainly remote NE where there is little eBird activity and estimates are noisy/selected on those who go there
 	*g tree_cover_base_p = (tree_cover_base/tot_area)*100
 	*xtile tcover_base = tree_cover_base_p, nquantiles(5)
@@ -169,22 +171,22 @@ if `main_analysis' == 1 {
 	eststo clear
 	eststo: reg_sat sr c.dist_f_cum_km2##c.(tcover_q2-tcover_q5) n_*_cum_s `ctrls'
 
-	coefplot, keep(c.dist_f_cum_km2#c.*) xline(0, lcolor(maroon) lpattern(solid)) ///
+	coefplot, keep(c.dist_f_cum_km2#c.*) xline(0, lcolor(black*0.8) lpattern(dash)) ///
 		coeflabels(c.dist_f_cum_km2#c.tcover_q2 = "2nd" ///
 		c.dist_f_cum_km2#c.tcover_q3 = "3rd" ///
 		c.dist_f_cum_km2#c.tcover_q4 = "4th" ///
 		c.dist_f_cum_km2#c.tcover_q5 = "5th", labsize(medium)) ///
 		msize(small) mfcolor(white) msymbol(D) mcolor(black) ///
-		levels(99 95 90) ciopts(lwidth(*1 *3 *4) color(black black black) ///
-		lcolor(*.2 *.3 *.6)) legend(order(1 "99" 2 "95" 3 "90") rows(1) pos(6)) ///
+		levels(99 95 90) ciopts(recast(rcap) lwidth(*1 *3 *4) ///
+		color(dkgreen dkgreen dkgreen) lcolor(*.3 *.5 *.8)) ///
+		legend(order(1 "99" 2 "95" 3 "90")) ///
 		mlabel ytitle("Forest Cover" "(Quintiles)", size(large) margin(l=8)) ///
 		format(%9.2g) mlabposition(1) mlabsize(medium) mlabcolor(black) ///
 		xlabel(-2(1)1, labsize(medium)) ylabel(, labsize(medium)) ///
 		mlabgap(*2) title("C", size(large)) yscale(titlegap(3)) ///
-		saving("${TABLE}/fig/tcoverwise.gph", replace)
-
+		saving("${TABLE}/fig/tcoverwise.gph", replace) xsize(4.6)
 	graph export "${TABLE}/fig/tcoverwise.png", replace
-	
+
 	* MAIN RESULTS
 	graph combine "${TABLE}/fig/main.gph" "${TABLE}/fig/projwise.gph" ///
 		"${TABLE}/fig/tcoverwise.gph", holes(4) 
@@ -205,7 +207,6 @@ if `scratch' == 1 {
 	**# Extensive margin: Does fragmentation displace users to other districts
 	
 	* District level
-	preserve
 	
 	collapse (mean) exp_idx duration distance group_size traveling ///
 			 (firstnm) dist_f_cum_* coverage_dym tree_cover_s temp rain biome ///
@@ -221,20 +222,20 @@ if `scratch' == 1 {
 	replace dist_f_cum_km2_slx_i_200 = dist_f_cum_km2_slx_i_200/10000
 	local ctrls temp rain tree_cover_s ln_duration ln_distance ///
 		        ln_exp_idx ln_group_size traveling
-	
+	la var dist_f_cum_km2 "Infrastructure (district $\emph{i}$)"
+	la var dist_f_cum_km2_slx_i_200 "Infrastructure (district j $\neq$ i)"
 	* Does deforestation increase activity in *other* districts (w/n 200 km)?
 	foreach v of varlist n_users_dym n_trips_dym {
 	
 		eststo: reghdfe ln_`v' dist_f_cum_km2 *_slx_i_200 `ctrls', ///
 			a(c_code_2011_num state_code_2011_num#month year) vce(cl c_code_2011_num)
-		
+			
 			estadd local agg "District"
 			estadd local dist_fe "$\checkmark$"
 			estadd local st_m_fe "$\checkmark$"
 			estadd local year_fe "$\checkmark$"
 	}
-	restore
-	
+	/*
 	**# Intensive margin: Does fragmentation displace users within district?
 	g ln_n_trips = ln(n_trips)
 	la var dist_f_cum_km2 "Infrastructure (district $\emph{i}$)"
@@ -252,19 +253,16 @@ if `scratch' == 1 {
 			estadd local st_m_fe "$\checkmark$"
 			estadd local year_fe "$\checkmark$"
 	}
-	
+	*/
 	* Tabulate
 	esttab using "${TABLE}/tables/displacement.tex", replace ///
-		stats(agg dist_fe st_m_fe year_fe N r2, labels(`"Data Aggregation"' ///
-		`"District FEs"' `"State x Month FEs"' `"Year FEs"' `"N"' `"\(R^{2}\)"') ///
-		fmt(0 0 0 0 0 3)) mgroups("Cross-District" "Within-District", ///
-		pattern(1 0 1 0) prefix(\multicolumn{@span}{c}{) suffix(}) span ///
-		erepeat(\cmidrule(lr){@span})) mlabels("Num. Users" "Num. Trips" ///
-		"Num. Trips" "Coverage") indicate("Controls = `ctrls'") wrap nocons ///
+		stats(agg dist_fe st_m_fe year_fe N, labels(`"Data Aggregation"' ///
+		`"District FEs"' `"State x Month FEs"' `"Year FEs"' `"N"') ///
+		fmt(0 0 0 0 0 3)) mlabels("Num. Users" "Num. Trips") indicate("Controls = `ctrls'") wrap nocons ///
 		nonotes booktabs nomtitles star(* .1 ** .05 *** .01) label se ///
 		b(%5.3f) width(\hsize)
 	eststo clear
-	
+	kk
 	
 	* Is location-FE result driven by increasing variance of user types?
 	use "${DATA}/dta/fc_ebd_user_v01", clear
@@ -424,12 +422,12 @@ if `dynamics' == 1 {
 	
 	coefplot (nolag, rename((1) = "Baseline") \ lag_1, rename((1) = "Sum L0-L1") \ ///
 		lag_3, rename((1) = "Sum L0-L3") \ lag_5, rename((1) = "Sum L0-L5")), ///
-		xline(0, lcolor(maroon) lpattern(solid)) msymbol(D) msize(small) ///
-		mfcolor(white) levels(99 95 90) ciopts(lwidth(*1 *3 *4) /// 
-		color(black black black) lcolor(*.2 *.3 *.6)) ///
+		xline(0, lcolor(black*0.8) lpattern(dash)) msymbol(D) msize(small) ///
+		mfcolor(white) levels(99 95 90) ciopts(recast(rcap) lwidth(*1 *3 *4) /// 
+		color(dkgreen dkgreen dkgreen) lcolor(*.3 *.5 *.8)) ///
 		legend(order(1 "99" 2 "95" 3 "90")) coeflabels(, labsize(large)) ///
 		mlabel format(%9.2g) mlcolor(black) mlabposition(1) mlabgap(*2) ///
-		mlabsize(medium) mlabcolor(black) xlabel(, labsize(medium))
+		mlabsize(medium) mlabcolor(black) xlabel(, labsize(medium)) xsize(4.6)
 	graph export "${TABLE}/fig/cumulative_lag.png", width(1000) replace
 	
 }
@@ -514,7 +512,7 @@ if `simulation' == 1 {
 *===============================================================================
 if `robustness' == 1 {
 	
-	* ADD: district FE, cell FE, users who stay in one district?, shannon/simpson, weighted, drop outliers
+	* ADD: district FE, cell FE, users who stay in one district?, shannon/simpson, weighted, drop outliers, IHS, dist_f_cum_km2 share
 	if `patch' == 1 {
 		
 		* Read

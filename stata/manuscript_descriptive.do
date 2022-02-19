@@ -145,6 +145,7 @@ if `sumstats' == 1 {
 	*-------------------------------------
 	* 3. VARIATION in USER CHARACTERISTICS
 	*-------------------------------------
+	// Add figures separately in latex instead of graph combine (see https://twitter.com/michaelstepner/status/1201621569736445957)
 	preserve
 		
 		collapse (first) n_*_user, by(user_id)
@@ -207,7 +208,6 @@ if `learning' == 1 {
 	drop if year == 2014
 	drop_outliers
 	
-	/*
 	*---------------------
 	* BIAS PLOTS
 	*---------------------
@@ -231,10 +231,9 @@ if `learning' == 1 {
 			684 "Jan-17" 690 "Jul-17" 696 "Jan-18" 702 "Jul-18" 708 "Jan-19" ///
 			714 "Jul-19" 720 "Jan-20" 726 "Jul-20", labsize(medium) angle(45)) ///
 			legend(order(2 "Species" "Richness" 1 "Num." "Trips") ///
-			size(medsmall) pos(6) rows(1)) fysize(37.5) title("A", pos(1) size(large)) ///
-			saving("./fig/season.gph", replace) 
+			size(medsmall) pos(12) rows(1)) xsize(4.6) title("A: Seasonality", ///
+			pos(11) size(large) margin(b=3)) saving("./fig/season.gph", replace) 
 	restore
-
 	**# 2. Learning Bias
 	
 	* No learning
@@ -292,11 +291,13 @@ if `learning' == 1 {
 			msize(small) msymbol(square) || ///
 			lfit mean_nl year, lcolor(black) lwidth(medthick) ||, ///
 			ylabel(, angle(hor)) ytitle("Mean User Residual", size(medium)) ///
-			xtitle("") yscale(titlegap(*-30)) ylabel(, labsize(medsmall)) ///
-			legend(order(1 "Learning Bias" 3 "Experience Index" ///
-			5 "No Learning Bias") size(medsmall) position(6) rows(2)) ///
-			xlabel(, labsize(medsmall)) title("C", size(medium) pos(1)) ///
-			fxsize(75) fysize(90) saving("./fig/learn_nl.gph", replace)
+			xtitle("Year") yscale(titlegap(*-30)) ylabel(, labsize(medsmall)) ///
+			text(-.4 2016.5 "Learning Bias" "(User FE)", place(e) color(maroon) size(medsmall)) ///
+			text(-.19 2015.2 "User FE +" "Experience Index", place(e) color(navy) size(medsmall)) ///
+			text(0.07 2016 "No Learning Bias" "(User x Year FE)", place(c) color(black) size(medsmall)) ///
+			legend(off) xlabel(, labsize(medsmall)) title("C: Learning", ///
+			size(medium) pos(11) margin(b=3)) fxsize(75) fysize(90) ///
+			saving("./fig/learn_nl.gph", replace)
 	
 	restore
 
@@ -316,16 +317,15 @@ if `learning' == 1 {
 			yscale(titlegap(3)) xscale(titlegap(3)) ///
 			graphregion(color(white)) bgcolor(white) ///
 			legend(order(1 "Mean" 2 "95% CI") size(medium)) ///
-			title("B", pos(1) size(large)) fysize(45) ///
-			saving("./fig/bl_dist.gph", replace)
+			title("B: Site Choice", pos(11) size(large) margin(b=3)) ///
+			xsize(4.6) saving("./fig/bl_dist.gph", replace)
 	restore
 	
 	* combine
 	graph combine "./fig/season.gph" "./fig/bl_dist.gph", rows(2) saving("./fig/comb.gph", replace)
 	graph combine "./fig/comb.gph" "./fig/learn_nl.gph", imargin(0 0 1 0)
 	graph export "${TABLE}/fig/bias_plot.png", replace
-	*/
-	
+ll
 	*-----------------------------------------
 	* IDENTIFYING VARIATION ACROSS FE SPECS
 	*-----------------------------------------
@@ -381,7 +381,8 @@ if `estudy_f' == 1 {
 	
 	* Read
 	use "${DATA}/dta/fc_dym_s2_v02", clear
-	keep *_code_2011 year_month year month dist_f_cum_km2 tree* n_proj_cum
+	
+	keep *_code_2011 year_month year month dist_*_cum_km2 tree* n_proj_cum
 	order *_code_2011, first
 	*drop if year == 2014
 	
@@ -412,6 +413,12 @@ if `estudy_f' == 1 {
 	g ln_n_proj_cum = asinh(n_proj_cum)
 	g ln_tree_cover_s = ln(tree_cover_s)
 	la var n_proj_cum "Num. Projects"
+	
+	foreach v of varlist dist_*_cum_km2 {
+		g `v'_ihs = asinh(`v')
+	}
+	kk
+	
 	
 	foreach v of varlist dist_f_cum_km2 n_proj_cum {
 		
@@ -656,6 +663,32 @@ if `valuation' == 1 {
 		label unstack
 
 	*----------------------
+	* Tabulate Top 5
+	*----------------------
+	bys state: egen state_npv = total(dist_f_npv)
+	gsort -state_npv
+	egen rank = group(state_npv)
+	drop if state_npv == 0
+	labmask rank, values(state)
+	
+	eststo clear
+	eststo: estpost tabstat dist_f_nwfp_npv if inrange(rank, 29,33), by(rank) c(s) s(sum) nototal
+	eststo: estpost tabstat dist_f_fodder_npv if inrange(rank, 29,33), by(rank) c(s) s(sum) nototal
+	eststo: estpost tabstat dist_f_fuelwood_npv if inrange(rank, 29,33), by(rank) c(s) s(sum) nototal
+	eststo: estpost tabstat dist_f_cseq_npv if inrange(rank, 29,33), by(rank) c(s) s(sum) nototal
+	eststo: estpost tabstat dist_f_csto if inrange(rank, 29,33), by(rank) c(s) s(sum) nototal
+	eststo: estpost tabstat dist_f_soil_npv if inrange(rank, 29,33), by(rank) c(s) s(sum) nototal
+	eststo: estpost tabstat dist_f_water_npv if inrange(rank, 29,33), by(rank) c(s) s(sum) nototal
+	eststo: estpost tabstat dist_f_seed_npv if inrange(rank, 29,33), by(rank) c(s) s(sum) nototal
+	
+	esttab using "${TABLE}/tables/valuation_boe_top5.tex", replace ///
+		cells("sum(fmt(%12.0fc) label())") mgroups("Livelihoods" "Carbon" ///
+		"Watershed Services" "", pattern(1 0 0 1 0 1 0 1) ///
+		prefix(\multicolumn{@span}{c}{) suffix(}) span ///
+		erepeat(\cmidrule(lr){@span})) mlabels("NWFP" "Fodder" "Wood" "Flow" ///
+		"Stock" "Soil" "Water" "Seed") collabel(none) booktabs noobs ///
+		label unstack
+	*----------------------
 	* Value of a bird
 	*----------------------
 	* Assume birds contribute
@@ -687,7 +720,7 @@ if `valuation' == 1 {
 		ytitle("Proportion of Districts", size(medium)) ///
 		xlabel(,labsize(medium)) ylabel(,labsize(medium)) ///
 		xline(`mean', lcolor(red)) ///
-		text(0.2 4000 "Mean = `mean' Rs.", place(e) color(red))
+		text(0.2 6500 "Mean = `mean' Rs.", place(n) color(red)) 
 	graph export "${TABLE}/fig/hist_species_value.png", replace
 	
 	*----------------------

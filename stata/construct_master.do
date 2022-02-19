@@ -33,11 +33,11 @@ local merge					0
 
 if `ebird' == 1 {
 	
-	local level "uct" // udt = user-district-yearmonth, uct = user-cell-yearmonth
+	local level "udt" // udt = user-district-yearmonth, uct = user-cell-yearmonth
 	
 	**# Read
 	import delimited using "${DATA}/csv/ebird_`level'.csv", clear
-	
+
 	* Format Date
 	g year_month = ym(year, month(date(yearmonth, "20YM")))
 	format year_month %tmCCYY-NN
@@ -190,6 +190,7 @@ program define construct_deforest
 			append using "${DATA}/dta/fc_pre2014_clean_v02"
 			replace pre2014 = 0 if pre2014 == .
 		}
+		
 	}
 	if `stage' == 1 {
 		keep if prop_status == "approved by rohq" | regexm(prop_status, "principle") == 1 | regexm(prop_status, "pending at ho") == 1 | prop_status == "pending at ro for stage-ii" // 3,858 (4068) projects
@@ -347,7 +348,7 @@ program define construct_deforest
 end
 
 if `district_forest' == 1 {
-	/*
+	
 	* Full
 	construct_deforest, stage(2) include("pre")
 	drop dist_nf* // non-forest for post-2014 submissions only
@@ -358,7 +359,7 @@ if `district_forest' == 1 {
 	construct_deforest, stage(2) include("pre") restrict("drop")
 	drop dist_nf*
 	save "${DATA}/dta/fc_dym_s2_trunc_v02", replace
-	*/
+	
 	* Post-2014 only (add restrict?)
 	construct_deforest, stage(2)
 	save "${DATA}/dta/fc_dym_s2_post_v02", replace

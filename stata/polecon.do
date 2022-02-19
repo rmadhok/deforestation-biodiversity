@@ -25,9 +25,9 @@ gl TABLE	"${ROOT}/docs/jmp/tex_doc/"
 cd "${TABLE}"
 
 // Modules
-local bartik	0
+local bartik	1
 local hte		0
-local project	1
+local project	0
 
 *------------------
 * PROGRAM
@@ -70,7 +70,7 @@ if `bartik' == 1{
 	* Political Reservation
 	foreach v in st scst {
 		
-		eststo: reghdfe dist_f_cum_km2 c.st_f_cum_km2_p##c.`v'_seats p_`v'_share p_tcover, ///
+		eststo: reghdfe dist_f_cum_km2 c.st_f_cum_km2_p##c.`v'_seats p_`v'_share st_ha p_tcover, ///
 			a(c_code_2011_num state_code_2011_num#month year) vce(cl c_code_2011_num)
 		
 			estadd local dist_fe "$\checkmark$"
@@ -83,7 +83,8 @@ if `bartik' == 1{
 		fmt(0 0 0 0 3)) interaction(" $\times$ ") wrap nocons nonotes ///
 		booktabs nomtitles star(* .1 ** .05 *** .01) label se b(%5.3f)
 	eststo clear
-	
+	kk
+	/*
 	* Reservation X presence (triple interaction)
 	foreach v in st scst {
 		
@@ -100,6 +101,7 @@ if `bartik' == 1{
 		`"\(R^{2}\)"') fmt(0 0 0 0 3)) wrap nocons nonotes booktabs nomtitles ///
 		star(* .1 ** .05 *** .01) label se b(%5.3f)
 	eststo clear
+	*/
 }
 
 *-------------------------------------------------------------------------------
@@ -111,18 +113,17 @@ if `hte' == 1 {
 	use "${DATA}/dta/fc_ebd_udt_v02"
 	
 	* Merge political economy
-	merge m:1 c_code_2011 year_month using "${DATA}/dta/polecon_v02", keep(1 3) keepusing(*_seats schedule) nogen // mismatched are 2019-2020 (no election data)
-	
+	merge m:1 c_code_2011 year_month using "${DATA}/dta/polecon_v02", keep(1 3) keepusing(*_seats *_ha schedule) nogen // mismatched are 2019-2020 (no election data)
+
 	* Prep
-	drop if year == 2014
+	*drop if year == 2014
 	drop_outliers
 	local ctrls temp rain tree_cover_s ln_duration ln_distance ///
 		        ln_exp_idx ln_coverage_udym traveling ln_group_size
 	replace st_seats = st_seats*10 // scaling factor
-	g dist_f_cum_ihs = asinh(dist_f_cum_km2) // het table only works with IHS
 	
-	* HTE
-	foreach v of varlist st_seats sc_seats schedule {
+	* HTE (only works with IHS)
+	foreach v of varlist st_seats schedule {
 		
 		eststo: reghdfe sr c.dist_f_cum_km2##c.`v' `ctrls', ///
 			a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
