@@ -83,17 +83,17 @@ ebird <- ebird %>%
   dplyr::select(-complete)
 
 # Export protocol list (appendix)
-protocol <- ebird %>%
-  distinct(trip_id, .keep_all = T) %>%
-  group_by(protocol_type) %>%
-  summarize(`Num. Trips` = n()) %>%
-  mutate(Pct. = round((`Num. Trips`/sum(`Num. Trips`)*100),2)) %>%
-  rename(Protocol = protocol_type) %>%
-  arrange(desc(Pct.))
-stargazer(protocol, 
-          summary=F, 
-          rownames=F, 
-          out=paste(SAVE,'docs/jmp/tex_doc/v3/tables/protocol.tex', sep=''))
+#protocol <- ebird %>%
+#  distinct(trip_id, .keep_all = T) %>%
+#  group_by(protocol_type) %>%
+#  summarize(`Num. Trips` = n()) %>%
+#  mutate(Pct. = round((`Num. Trips`/sum(`Num. Trips`)*100),2)) %>%
+#  rename(Protocol = protocol_type) %>%
+#  arrange(desc(Pct.))
+#stargazer(protocol, 
+#          summary=F, 
+ #         rownames=F, 
+#          out=paste(SAVE,'docs/jmp/tex_doc/v3/tables/protocol.tex', sep=''))
 
 # Filter Protocol (stationary, travelling) (n=18,458,042)
 ebird <- filter(ebird, protocol_code %in% c('P21', 'P22'))
@@ -101,10 +101,9 @@ ebird <- filter(ebird, protocol_code %in% c('P21', 'P22'))
 ## 3. IDENTIFY DISTRICTS AND COASTAL TRIPS
 #----------------------------------------------------------------  
 
-# Distric Map
+# District Map
 india_dist <- st_read(paste(SHP, "maps/india-district", sep=""), 
-                      'SDE_DATA_IN_F7DSTRBND_2011', 
-                      stringsAsFactors = F) %>%
+                      'SDE_DATA_IN_F7DSTRBND_2011') %>%
   dplyr::select(c_code_11) %>% 
   rename(c_code_2011=c_code_11)
 
@@ -129,6 +128,8 @@ ebird <- ebird %>%
   group_by(user_id, year) %>%
   mutate(n_mon_yr = n_distinct(yearmonth), # Months per year of birding - 'high ability' users
          sr_uyr = n_distinct(species_id)) %>% # species richness per user-year
+  group_by(c_code_2011, yearmonth) %>%
+  mutate(sr_dym = n_distinct(species_id)) %>%
   group_by(user_id, c_code_2011, yearmonth) %>%
   mutate(sr_udym = n_distinct(species_id))
 
@@ -190,6 +191,7 @@ ebird_user_cell <- ebird_trip %>%
             sr=mean(sr, na.rm=T),
             sr_hr=mean(sr_hr, na.rm=T),
             sr_udym=first(sr_udym),
+            sr_dym=first(sr_dym),
             sr_uyr=first(sr_uyr),
             sr_ym=first(sr_ym),
             sh_index=mean(sh_index, na.rm=T),
@@ -217,6 +219,7 @@ ebird_user <- ebird_trip %>%
             sr=mean(sr, na.rm=T),
             sr_hr=mean(sr_hr, na.rm=T),
             sr_udym=first(sr_udym),
+            sr_dym=first(sr_dym),
             sr_uyr=first(sr_uyr),
             sr_ym=first(sr_ym),
             sh_index=mean(sh_index, na.rm=T),

@@ -44,22 +44,23 @@ end
 *-------------------------------------------------------------------------------
 * SHIFT-SHARE
 *-------------------------------------------------------------------------------
-if `bartik' == 1{
+if `bartik' == 1 {
 	
 	* Read
 	use "${DATA}/dta/polecon_v02", clear
-	keep if year >= 2015 // bc 2014 is used for pre-period shares
+	keep if year > 2015 // bc 2014 is used for pre-period shares
 	
-	* ST Presence/autonomy
+	* ST Presence
 	foreach v in st scst {
 		
-		eststo: reghdfe dist_f_cum_km2 c.st_f_cum_km2_p##c.`v'_ha p_`v'_share p_tcover, ///
+		eststo `v'_pop: reghdfe dist_f_cum_km2 c.st_f_cum_km2_p##(c.`v'_ha c.`v'_state_share), ///
 			a(c_code_2011_num state_code_2011_num#month year) vce(cl c_code_2011_num)
 		
 			estadd local dist_fe "$\checkmark$"
 			estadd local st_m_fe "$\checkmark$"
 			estadd local year_fe "$\checkmark$"
 	}
+	
 	esttab using "${TABLE}/v3/tables/polecon_fra.tex", replace keep(c.*) ///
 		stats(dist_fe st_m_fe year_fe N r2, labels(`"District FEs"' ///
 		`"State x Month FEs"' `"Year FEs"' `"N"' `"\(R^{2}\)"') fmt(0 0 0 0 3)) ///
@@ -70,7 +71,7 @@ if `bartik' == 1{
 	* Political Reservation
 	foreach v in st scst {
 		
-		eststo: reghdfe dist_f_cum_km2 c.st_f_cum_km2_p##c.`v'_seats p_`v'_share st_ha p_tcover, ///
+		eststo: reghdfe dist_f_cum_km2 c.st_f_cum_km2_p##(c.`v'_seats c.`v'_state_share), ///
 			a(c_code_2011_num state_code_2011_num#month year) vce(cl c_code_2011_num)
 		
 			estadd local dist_fe "$\checkmark$"
@@ -83,25 +84,15 @@ if `bartik' == 1{
 		fmt(0 0 0 0 3)) interaction(" $\times$ ") wrap nocons nonotes ///
 		booktabs nomtitles star(* .1 ** .05 *** .01) label se b(%5.3f)
 	eststo clear
-	kk
-	/*
-	* Reservation X presence (triple interaction)
-	foreach v in st scst {
-		
-		eststo: reghdfe dist_f_cum_km2 c.st_f_cum_km2##c.`v'_seats##c.`v'_ha p_`v'_share p_tcover, a(c_code_2011_num state_code_2011_num#month year) ///
-			vce(cl c_code_2011_num)
-		
-			estadd local dist_fe "$\checkmark$"
-			estadd local st_m_fe "$\checkmark$"
-			estadd local year_fe "$\checkmark$"
-	}
-	esttab using "${TABLE}/v3/tables/polecon_fra_seats.tex", replace ///
-		keep(c.*#c.*_seats c*#*#*) stats(dist_fe st_m_fe year_fe N r2, ///
-		labels(`"District FEs"' `"State x Month FEs"' `"Year FEs"' `"N"' ///
-		`"\(R^{2}\)"') fmt(0 0 0 0 3)) wrap nocons nonotes booktabs nomtitles ///
-		star(* .1 ** .05 *** .01) label se b(%5.3f)
-	eststo clear
-	*/
+
+	* Historical land tenure
+	use "${DATA}/dta/polecon_91_v02", replace
+	keep if year > 2015
+	
+	eststo: reghdfe dist_f_cum_km2 c.st_f_cum_km2_p##(i.mahrai c.st_state_share), ///
+			a(c_code_1991_num state_code_1991_num#month year) vce(cl c_code_1991_num)
+	
+	
 }
 
 *-------------------------------------------------------------------------------
@@ -109,6 +100,8 @@ if `bartik' == 1{
 *-------------------------------------------------------------------------------
 if `hte' == 1 {
 	
+	**# reservations
+	/*
 	* Read master
 	use "${DATA}/dta/fc_ebd_udt_v02"
 	
@@ -116,7 +109,7 @@ if `hte' == 1 {
 	merge m:1 c_code_2011 year_month using "${DATA}/dta/polecon_v02", keep(1 3) keepusing(*_seats *_ha schedule) nogen // mismatched are 2019-2020 (no election data)
 
 	* Prep
-	*drop if year == 2014
+	drop if year == 2014
 	drop_outliers
 	local ctrls temp rain tree_cover_s ln_duration ln_distance ///
 		        ln_exp_idx ln_coverage_udym traveling ln_group_size
@@ -142,6 +135,42 @@ if `hte' == 1 {
 		fmt(3 0 0 0 0 3)) interaction(" $\times$ ") wrap nocons nonotes booktabs ///
 		nomtitles star(* .1 ** .05 *** .01) label se b(%5.3f) width(0.8\hsize)
 	eststo clear
+	*/
+	**# historical land tenure
+	
+	* Read master
+	use "${DATA}/dta/fc_ebd_udt_v02"
+	merge m:1 c_code_2011 using "${DATA}/dta/crosswalk_full", keep(3) nogen // 40 districts untracked
+	
+	* Aggregate to 1991 border
+	collapse (mean) temp rain tree_cover_s duration ///
+					distance exp_idx coverage_udym ///
+					traveling group_size sr ///
+			 (sum) n_trips ///
+			 (first) year month biome, by(uid c_code_1991 year_month) 
+	
+	* Merge to banerjee
+	merge m:1 c_code_1991 year_month using "${DATA}/dta/polecon_91_v02", keep(1 3) nogen
+	
+	* Prep
+	drop if year == 2014
+	drop_outliers
+	foreach v of varlist duration exp_idx coverage_udym group_size {
+		g ln_`v' = ln(`v')
+	}
+	g ln_distance = asinh(distance)
+	local ctrls temp rain tree_cover_s ln_duration ln_distance ///
+		        ln_exp_idx ln_coverage_udym traveling ln_group_size
+	
+	eststo: reghdfe sr c.dist_f_cum_km2##(c.mahrai c.st_state_share) `ctrls' if britdum, ///
+			a(uid#year c_code_1991_num state_code_1991_num#month) vce(cl biome)	
+	
+			sum sr if e(sample)==1
+			estadd scalar ymean = `r(mean)'
+			estadd local user_y_fe "$\checkmark$"
+			estadd local dist_fe "$\checkmark$"
+			estadd local st_m_fe "$\checkmark$"
+	
 }
 
 *-------------------------------------------------------------------------------

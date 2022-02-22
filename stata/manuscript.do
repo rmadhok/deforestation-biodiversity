@@ -203,31 +203,31 @@ if `scratch' == 1 {
 	use "${DATA}/dta/fc_ebd_udt_v02", clear
 	drop if year == 2014
 	drop_outliers
-	
+	ll
 	**# Extensive margin: Does fragmentation displace users to other districts
 	
 	* District level
 	
-	collapse (mean) exp_idx duration distance group_size traveling ///
+	collapse (mean) exp_idx duration distance group_size traveling coverage_udym ///
 			 (firstnm) dist_f_cum_* coverage_dym tree_cover_s temp rain biome ///
 					   n_trips_dym n_users_dym month year *_code_2011_num, ///
 					   by(c_code_2011 year_month)
 	
-	foreach v of varlist duration distance exp_idx group_size ///
-		n_*_dym coverage_dym {
-		
+	foreach v of varlist duration exp_idx group_size n_*_dym coverage_* {
 		g ln_`v' = ln(`v')
 	}
+	g ln_distance = asinh(distance)
 	
-	replace dist_f_cum_km2_slx_i_200 = dist_f_cum_km2_slx_i_200/10000
+	replace dist_f_cum_km2_slx_i_500 = dist_f_cum_km2_slx_i_500/10000
 	local ctrls temp rain tree_cover_s ln_duration ln_distance ///
 		        ln_exp_idx ln_group_size traveling
 	la var dist_f_cum_km2 "Infrastructure (district $\emph{i}$)"
-	la var dist_f_cum_km2_slx_i_200 "Infrastructure (district j $\neq$ i)"
+	la var dist_f_cum_km2_slx_i_500 "Infrastructure (district d $\neq$ i)"
+	
 	* Does deforestation increase activity in *other* districts (w/n 200 km)?
 	foreach v of varlist n_users_dym n_trips_dym {
 	
-		eststo: reghdfe ln_`v' dist_f_cum_km2 *_slx_i_200 `ctrls', ///
+		eststo: reghdfe ln_`v' dist_f_cum_km2 *_slx_i_500 `ctrls', ///
 			a(c_code_2011_num state_code_2011_num#month year) vce(cl c_code_2011_num)
 			
 			estadd local agg "District"
@@ -235,11 +235,11 @@ if `scratch' == 1 {
 			estadd local st_m_fe "$\checkmark$"
 			estadd local year_fe "$\checkmark$"
 	}
-	/*
+	
 	**# Intensive margin: Does fragmentation displace users within district?
 	g ln_n_trips = ln(n_trips)
 	la var dist_f_cum_km2 "Infrastructure (district $\emph{i}$)"
-	la var dist_f_cum_km2_slx_i_200 "Infrastructure (district j $\neq$ i)"
+	la var dist_f_cum_km2_slx_i_500 "Infrastructure (district d $\neq$ i)"
 	local ctrls temp rain tree_cover_s ln_duration ln_distance ///
 		        ln_exp_idx ln_group_size traveling 
 	
@@ -253,7 +253,7 @@ if `scratch' == 1 {
 			estadd local st_m_fe "$\checkmark$"
 			estadd local year_fe "$\checkmark$"
 	}
-	*/
+	
 	* Tabulate
 	esttab using "${TABLE}/tables/displacement.tex", replace ///
 		stats(agg dist_fe st_m_fe year_fe N, labels(`"Data Aggregation"' ///

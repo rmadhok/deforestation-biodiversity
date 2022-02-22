@@ -25,8 +25,8 @@ gl DO		"${ROOT}/scripts/stata"
 
 // Module
 local ebird					0
-local district_forest		1
-local merge					0
+local district_forest		0
+local merge					1
 *===============================================================================
 * BIODIVERSITY
 *===============================================================================
@@ -393,7 +393,7 @@ if `merge' == 1 {
 	
 		* Read approvals (pre + post)
 		use "${DATA}/dta/fc_dym_s2_`fc_data'v02", clear
-		merge 1:1 c_code_2011 year_month using "`slx'" // merge slx
+		merge 1:1 c_code_2011 year_month using "`slx'", nogen // merge slx
 		merge 1:m c_code_2011 year_month using "${DATA}/dta/ebird_`level'", keep(3) nogen // merge ebird
 		
 		* Save

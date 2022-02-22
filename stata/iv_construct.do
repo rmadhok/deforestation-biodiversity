@@ -26,9 +26,8 @@ gl DATA "/Users/rmadhok/Dropbox/def_biodiv/data/"
 local fra			0
 local vil			0
 local election		0
-local landlord		1
-local shiftshare	0
-
+local ss_11			1
+local ss_91			1
 *-------------------------------------------------------------------------------
 * COMMUNITY CFR POTENTIAL (Lele et al. 2020)
 *-------------------------------------------------------------------------------
@@ -249,87 +248,17 @@ if `election' == 1 {
 	save "${DATA}/dta/iv_scst_seats", replace
 
 }
-*-------------------------------------------------------------------------------
-* LANDLORD DISTRICTS (Banerjee and Iyer 2005)
-*-------------------------------------------------------------------------------
-if `landlord' == 1 {
-	
-	**# Construct 91-01-11 crosswalk
-
-	* Read from SHRUG
-	foreach year in 91 01 11 {
-	
-		use "${READ}/shrug/shrug-v1.5.samosa-pop-econ-census-dta/shrug-v1.5.samosa-keys-dta/shrug_pc`year'_district_key", clear
-		g c_code_`year' = "c" + pc`year'_state_id + pc`year'_district_id
-		keep shrid c_code_`year' pc`year'_*_name
-		tempfile key_`year'
-		save "`key_`year''"
-	}
-
-	* Merge
-	use "`key_11'", clear
-	merge 1:1 shrid using "`key_01'", keep(3) nogen
-	merge 1:1 shrid using "`key_91'", keep(3) nogen
-	duplicates drop c_code_11, force
-	keep if length(c_code_11) == 6
-	drop shrid
-	tempfile crosswalk
-	save "`crosswalk'"
-	
-	**# Banerjee Data
-
-	* Read
-	use "${READ}/def_biodiv/banerjee_iyer/yld_sett_aug03", clear
-	
-	* Prep
-	collapse (firstnm) p_nland mahrai state, by(dist_91)
-	
-	replace dist_91 = lower(dist_91)
-	replace state = lower(state)
-	replace dist_91 = "north twenty four parganas" if dist_91 == "24 parganas(north)"
-	replace dist_91 = "banas kantha" if dist_91 == "banaskantha"
-	replace dist_91 = "bathinda" if dist_91 == "bhatinda"
-	replace dist_91 = "bid" if dist_91 == "bir"
-	replace dist_91 = "chikmagalur" if dist_91 == "chikmangalur"
-	replace dist_91 = "the dangs" if dist_91 == "dangs"
-	replace dist_91 = "hugli" if dist_91 == "hooghly"
-	replace dist_91 = "haora" if dist_91 == "howrah"
-	replace dist_91 = "raigarh" if dist_91 == "kolaba"
-	replace dist_91 = "maldah" if dist_91 == "malda"
-	replace dist_91 = "nashik" if dist_91 == "nasik"
-	replace dist_91 = "nilgiri" if dist_91 == "nilgiris"
-	replace dist_91 = "north arcot ambedker" if dist_91 == "north arcot" 
-	replace dist_91 = "palamu" if dist_91 == "palamau"
-	replace dist_91 = "panch mahals" if dist_91 == "panchmahals"
-	replace dist_91 = "pashchimi singhbhum" if dist_91 == "pashchim singhbhum"
-	replace dist_91 = "phulabani" if dist_91 == "phulbani"
-	replace dist_91 = "sabar kantha" if dist_91 == "sabarkantha"
-	replace dist_91 = "solapur" if dist_91 == "sholapur"
-	replace dist_91 = "sundargarh" if dist_91 == "sundergarh"
-	replace dist_91 = "tiruchchirappalli" if dist_91 == "tiruchirapalli"
-	replace dist_91 = "tirunelveli kattabomman" if dist_91 == "tirunelveli"
-	replace dist_91 = "visakhapatnam" if dist_91 == "vishakhapatnam"
-	ren (dist_91 state) (pc91_district_name pc91_state_name)
-	
-	* Merge
-	merge 1:m pc91_district_name pc91_state_name using "`crosswalk'", keep(3) nogen
-	
-	* Save
-	save "${DATA}/dta/iv_landlord", replace
-
-}
 
 *-------------------------------------------------------------------------------
 * MERGE FILES
 *-------------------------------------------------------------------------------
-if `shiftshare' == 1 {
+if `ss_11' == 1 {
 
 	**# Predicted State Intrusions
 	*-----------------------------------------------------
 	
 	* Read FC
 	use "${DATA}/dta/fc_dym_s2_v02", clear
-	*drop if year == 2014
 	
 	* Reduce
 	keep *_code_2011* year year_month month dist_f_cum_km2 tree_cover_base
@@ -337,8 +266,8 @@ if `shiftshare' == 1 {
 	* 2014 State Fractions
 	preserve
 	
-		* Pre-period 
-		keep if year == 2014
+		* Pre-period
+		keep if year == 2015
 		keep c_code_2011 state_code_2011 year_month dist_f_cum_km2
 		
 		* Cumulatives
@@ -361,7 +290,6 @@ if `shiftshare' == 1 {
 	
 	* Merge state shares
 	merge m:1 state_code_2011 using "`shares'", nogen
-	*keep if year >= 2016
 	
 	* Predicted state deforestation
 	bys year_month: egen nat_f_cum_km2 = total(dist_f_cum_km2)
@@ -393,47 +321,166 @@ if `shiftshare' == 1 {
 	* Election leaders/reservations
 	merge m:1 c_code_2011 year using "${DATA}/dta/iv_scst_seats", keep(1 3) nogen
 	
-	* State Population Shares
+	* Population Shares
 	merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist", keepusing(tot_st tot_sc tot_pop tot_area) nogen
 	ren	(tot_st tot_sc) (st sc)
 	g scst = sc + st
 	foreach v of varlist sc st scst {
+		g `v'_share = `v' / tot_pop // district share
 		bys state_code_2011: egen `v'_state = total(`v'), m
-		g `v'_state_share = `v'/`v'_state
+		g `v'_state_share = `v'/`v'_state // state share
 	}
-	
-	*---------------------------
-	* NIGHTLIGHTS
-	*---------------------------
-	/*
-	tempfile temp2
-	save "`temp2'"
-	
-	* Read
-	import delimited "${DATA}/csv/india_nightlights.csv", clear
-	
-	* Date
-	g year_month = ym(year(date(yearmonth, "20YM")), month(date(yearmonth, "20YM")))
-	format year_month %tmCCYY-NN
-	drop yearmonth
-	
-	* Merge
-	merge 1:1 c_code_2011 year_month using "`temp2'", keep(3) nogen
-	*/
-	
-	* Covariates
-	g p_scst = (scst/tot_pop) * st_f_cum_km2_p
-	g p_st = (st/tot_pop) * st_f_cum_km2_p
-	g p_sc = (sc/tot_pop) * st_f_cum_km2_p
-	g p_tcover = (tree_cover_base/tot_area) * st_f_cum_km2_p 
-	g p_st_share = st_state_share * st_f_cum_km2_p
-	g p_sc_share = sc_state_share * st_f_cum_km2_p
-	g p_scst_share = scst_state_share * st_f_cum_km2_p
 
 	* Save
 	sort c_code_2011 year_month
 	save "${DATA}/dta/polecon_v02", replace
-
 }
 
+if `ss_91' == 1 {
+	
+	
+	**# Construct 91-01-11 crosswalk
+	{
+	/*
+	* Read from SHRUG
+	foreach year in 91 01 11 {
+	
+		use "${READ}/shrug/shrug-v1.5.samosa-pop-econ-census-dta/shrug-v1.5.samosa-keys-dta/shrug_pc`year'_district_key", clear
+		g c_code_`year' = "c" + pc`year'_state_id + pc`year'_district_id
+		keep shrid c_code_`year' pc`year'_*_name
+		tempfile key_`year'
+		save "`key_`year''"
+	}
+	
+	* Merge
+	use "`key_11'", clear
+	merge 1:1 shrid using "`key_01'", keep(3) nogen
+	merge 1:1 shrid using "`key_91'", keep(3) nogen
+	duplicates drop c_code_11, force
+	keep if length(c_code_11) == 6
+	drop shrid
+	ren (c_code_91 c_code_01 c_code_11) (c_code_1991 c_code_2001 c_code_2011)
+	save "${DATA}/dta/crosswalk_full", replace
+	*/
+	}
+	
+	* Read FC
+	use "${DATA}/dta/fc_dym_s2_v02", clear
+	
+	* 1991 borders
+	merge m:1 c_code_2011 using "${DATA}/dta/crosswalk_full", keep(3) nogen // 40 districts cannot traceback
+	
+	* Aggregate
+	collapse (sum) dist_f_cum_km2 tree_cover_km2 tree_cover_base ///
+			 (first) year month, by(c_code_1991 year_month)
+	g state_code_1991 = substr(c_code_1991, 1, 3) 
+	
+	* 2014 State Fractions
+	preserve
+	
+		* Pre-period 
+		keep if year == 2015
+		keep c_code_1991 state_code_1991 year_month dist_f_cum_km2
+		
+		* Cumulatives
+		bys state_code_1991 year_month: egen st_f_cum_km2 = total(dist_f_cum_km2) 
+		bys state_code_1991 year_month: keep if _n == 1 // state-monthly cumulative
+		drop dist_f_cum_km2 c_code_1991
+		bys year_month: egen nat_f_cum_km2 = total(st_f_cum_km2) // national monthly cumulative
+		
+		* Collapse to end-of-year
+		sort state_code_1991 year_month
+		collapse (lastnm) st_f* nat_f*, by(state_code_1991)
+		
+		* Share
+		g st_f_share = st_f_cum_km2 / nat_f_cum_km2
+		keep state_code_1991 *_share
+		tempfile shares 
+		save "`shares'"
+	
+	restore
+	
+	* Merge state shares
+	merge m:1 state_code_1991 using "`shares'", nogen
+	
+	* Predicted state deforestation
+	bys year_month: egen nat_f_cum_km2 = total(dist_f_cum_km2)
+	g st_f_cum_km2_p = st_f_share * nat_f_cum_km2
+	la var st_f_cum_km2_p "State Approvals"
+	sort c_code_1991 year_month
+	tempfile temp
+	save "`temp'"
+	
+	**# Landlord (Banerjee and Iyer 2005)
+
+	* Read
+	use "${READ}/def_biodiv/banerjee_iyer/yld_sett_aug03", clear
+
+	* Prop (sync names to for merge)
+	collapse (firstnm) p_nland mahrai state britdum brule1 tot_area=totarea, by(dist_91)
+	
+	replace dist_91 = lower(dist_91)
+	replace state = lower(state)
+	replace dist_91 = "north twenty four parganas" if dist_91 == "24 parganas(north)"
+	replace dist_91 = "banas kantha" if dist_91 == "banaskantha"
+	replace dist_91 = "bathinda" if dist_91 == "bhatinda"
+	replace dist_91 = "bid" if dist_91 == "bir"
+	replace dist_91 = "chikmagalur" if dist_91 == "chikmangalur"
+	replace dist_91 = "the dangs" if dist_91 == "dangs"
+	replace dist_91 = "hugli" if dist_91 == "hooghly"
+	replace dist_91 = "haora" if dist_91 == "howrah"
+	replace dist_91 = "raigarh" if dist_91 == "kolaba"
+	replace dist_91 = "maldah" if dist_91 == "malda"
+	replace dist_91 = "nashik" if dist_91 == "nasik"
+	replace dist_91 = "nilgiri" if dist_91 == "nilgiris"
+	replace dist_91 = "north arcot ambedker" if dist_91 == "north arcot" 
+	replace dist_91 = "palamu" if dist_91 == "palamau"
+	replace dist_91 = "panch mahals" if dist_91 == "panchmahals"
+	replace dist_91 = "pashchimi singhbhum" if dist_91 == "pashchim singhbhum"
+	replace dist_91 = "phulabani" if dist_91 == "phulbani"
+	replace dist_91 = "sabar kantha" if dist_91 == "sabarkantha"
+	replace dist_91 = "solapur" if dist_91 == "sholapur"
+	replace dist_91 = "sundargarh" if dist_91 == "sundergarh"
+	replace dist_91 = "tiruchchirappalli" if dist_91 == "tiruchirapalli"
+	replace dist_91 = "tirunelveli kattabomman" if dist_91 == "tirunelveli"
+	replace dist_91 = "visakhapatnam" if dist_91 == "vishakhapatnam"
+	ren (dist_91 state) (pc91_district_name pc91_state_name)
+	
+	* Get district code
+	merge 1:m pc91_district_name pc91_state_name using "${DATA}/dta/crosswalk_full", ///
+		keepusing(c_code_1991) keep(3) nogen
+	duplicates drop c_code_1991, force
+	
+	* Merge to shift share
+	merge 1:m c_code_1991 using "`temp'", keep(3) nogen
+	save "`temp'", replace
+	
+	**# Covariates
+	
+	* Population
+	use "${READ}/shrug/shrug-v1.5.samosa-pop-econ-census-dta/shrug-v1.5.samosa-pop-econ-census-dta/shrug_pc91", clear
+	keep shrid pc91_pca_tot_p pc91_pca_p_st pc91_pca_p_sc pc91_td_area
+	merge 1:1 shrid using "${READ}/shrug/shrug-v1.5.samosa-pop-econ-census-dta/shrug-v1.5.samosa-keys-dta/shrug_pc91_district_key.dta", keep(3) nogen
+	g c_code_1991 = "c" + pc91_state_id + pc91_district_id
+	ren pc91_pca_* *
+	collapse (sum) st=p_st sc=p_sc tot_pop = tot_p, by(c_code_1991)
+	merge 1:m c_code_1991 using "`temp'", keep(3) nogen
+	
+	g scst = sc + st
+	foreach v of varlist sc st scst {
+		g `v'_share = `v' / tot_pop // district share
+		bys state_code_1991: egen `v'_state = total(`v'), m
+		g `v'_state_share = `v'/`v'_state // state share
+	}
+	
+	* Covariates
+	g st_ha = (st / tree_cover_base)/1000
+	
+	* Save
+	encode c_code_1991, gen(c_code_1991_num)
+	encode state_code_1991, gen(state_code_1991_num)
+	sort c_code_1991 year_month
+	save "${DATA}/dta/polecon_91_v02", replace
+	
+}
 
