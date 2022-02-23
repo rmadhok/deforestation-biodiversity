@@ -33,7 +33,7 @@ local merge					1
 
 if `ebird' == 1 {
 	
-	local level "udt" // udt = user-district-yearmonth, uct = user-cell-yearmonth
+	local level "uct" // udt = user-district-yearmonth, uct = user-cell-yearmonth
 	
 	**# Read
 	import delimited using "${DATA}/csv/ebird_`level'.csv", clear
@@ -131,6 +131,7 @@ if `ebird' == 1 {
 	la var n_trips_user "Num. Trips"
 	la var n_users_dym "Num. Users per District-Yearmonth"
 	la var sr "Species Richness"
+	la var sr_dym "Species richness across all users in district-month"
 	la var sr_udym "Species richness across all trips in district-month"
 	la var sr_uyr "Species richness across all trips in year"
 	la var sr_ym "Species richness across all users in year-month"
@@ -376,7 +377,7 @@ if `district_forest' == 1 {
 *===============================================================================
 if `merge' == 1 {
 
-	local fc_data "post" // either "" (main dataset), "trunc_", "post"
+	local fc_data "" // either "" (main dataset), "trunc_", "post"
 	local level "udt" // udt (user-dist-time) or uct (user-cell-time)
 	
 	if "`fc_data'" == "" | "`fc_data'" == "trunc_" {

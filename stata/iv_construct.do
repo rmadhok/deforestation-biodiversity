@@ -26,8 +26,9 @@ gl DATA "/Users/rmadhok/Dropbox/def_biodiv/data/"
 local fra			0
 local vil			0
 local election		0
-local ss_11			1
-local ss_91			1
+local ss_11			0
+local ss_01			0
+local ss_91			0
 *-------------------------------------------------------------------------------
 * COMMUNITY CFR POTENTIAL (Lele et al. 2020)
 *-------------------------------------------------------------------------------
@@ -181,7 +182,7 @@ if `vil' == 1 {
 	g f_rev_vil = f_rev * f_rev_d
 	foreach v of varlist sc st scst {
 		g `v'_ha = 0 if `v' != .
-		replace `v'_ha = (`v' / f_rev_vil)/1000 if f_rev_vil > 0 & f_rev_vil < . // population per ha. (if revenue forest)
+		replace `v'_ha = (`v' / f_rev_vil)/10 if f_rev_vil > 0 & f_rev_vil < . // population per ha. (if revenue forest)
 	}
 
 	* District level (n=631 districts; remaining have no villages)
@@ -200,6 +201,10 @@ if `vil' == 1 {
 *-------------------------------------------------------------------------------
 if `election' == 1 {
 	
+	*--------------------
+	* SEAT SHARES
+	*--------------------
+	
 	* Read SHRUG assembly
 	use "${READ}/shrug/shrug-v1.5.samosa-assembly-dta/shrug-v1.5.samosa-assembly-dta/assembly_elections_clean", clear
 	
@@ -215,6 +220,27 @@ if `election' == 1 {
 	g scst_seats = st_seats | sc_seats // dalit reservations
 	replace scst_seats = . if st_seats == . | sc_seats == .
 	
+	* State election year panel
+	preserve
+		
+		* State-year
+		g elec = 1
+		collapse (first) elec, by(pc01_state_id year)
+		ren pc01_state_id state_code_2001
+		replace state_code_2001 = "c" + state_code_2001
+		
+		* Fill
+		encode state_code_2001, gen(state_code_2001_num)
+		drop state_code_2001
+		tsset state_code_2001_num year
+		tsfill, full
+		replace elec = 0 if elec == .
+		decode state_code_2001_num, gen(state_code_2001)
+		drop state_code_2001_num
+		save "${DATA}/dta/state_elec", replace
+		
+	restore
+		
 	* District level
 	drop if pc01_district_id == "" // drops 15% of obs
 	g c_code_2001 = "c" + pc01_state_id + pc01_district_id
@@ -223,28 +249,82 @@ if `election' == 1 {
 	la var sc_seats "SC seat share"
 	la var scst_seats "Dalit seat share"
 	
-	* Identify unchanging district borders
+	* Balance
+	encode c_code_2001, gen(c_code_2001_num)
+	drop c_code_2001
+	tsset c_code_2001_num year
+	tsfill, full
+	bys c_code_2001_num: carryforward *_seats, replace
+	decode c_code_2001_num, gen(c_code_2001)
+	drop c_code_2001_num
+	keep if year >=2014
+	order c_code_2001, first
 	tempfile temp
 	save "`temp'"
-	import delimited "${DATA}/csv/c_code_crosswalk.csv", varn(1) clear
-	bys c_code_2001: g splits = _N
-	keep if splits == 1 // N=523 districts
-	drop splits
-	merge 1:m c_code_2001 using "`temp'", keep(3) nogen // N=496 matching districts
-	drop c_code_2001
-
-	* Balance
-	encode c_code_2011, gen(c_code_2011_num)
-	drop c_code_2011
-	tsset c_code_2011_num year
-	tsfill, full
-	bys c_code_2011_num: carryforward *_seats, replace
-	decode c_code_2011_num, gen(c_code_2011)
-	drop c_code_2011_num
 	
-	* Save
-	keep if year >=2014
-	order c_code_2011, first
+	*-------------------
+	* POPULATION SHARES
+	*-------------------
+	
+	**# Intercensal
+	
+	* census shares
+	foreach year in 01 11 {
+		
+		* read shrug
+		use "${READ}/shrug/shrug-v1.5.samosa-pop-econ-census-dta/shrug-v1.5.samosa-pop-econ-census-dta/shrug_pc`year'", clear
+		keep shrid pc`year'_pca_tot_p pc`year'_pca_p_st pc`year'_pca_p_sc
+
+		* add district key
+		merge 1:1 shrid using "${READ}/shrug/shrug-v1.5.samosa-pop-econ-census-dta/shrug-v1.5.samosa-keys-dta/shrug_pc`year'_district_key.dta", keep(3) nogen 
+		g c_code_20`year' = "c" + pc`year'_state_id + pc`year'_district_id
+		ren pc`year'_pca_* *
+		collapse (sum) st=p_st sc=p_sc tot_pop=tot_p, by(c_code_20`year')
+		g year = 20`year'
+		tempfile pca`year'
+		save "`pca`year''"
+	}
+	
+	* 2011 --> 2001 xwalk
+	merge 1:1 c_code_2011 using "${DATA}/dta/c_code_crosswalk", keep(3) nogen
+	collapse (sum) st sc tot_pop (first) year, by(c_code_2001)
+	append using "`pca01'"
+	keep if strlen(c_code_2001) == 5
+	sort c_code_2001 year
+	
+	* Add missing 2018
+	expand 2 if year == 2011, gen(new)
+	replace year = 2018 if new
+	foreach v of varlist st sc tot_pop {
+		replace `v' = . if year == 2018
+	}
+	sort c_code_2001 year
+	drop new
+	
+	* Balance panel
+	encode c_code_2001, gen(c_code_2001_num)
+	drop c_code_2001
+	tsset c_code_2001_num year
+	tsfill, full
+	decode c_code_2001_num , gen(c_code_2001)
+	drop c_code_2001_num
+	
+	* Interpolate
+	foreach v of varlist st sc tot_pop {
+		bys c_code_2001: ipolate `v' year, g(`v'_i) epolate
+		replace `v'_i = 0 if `v'_i < 0
+	}
+	bys c_code_2001: carryforward st sc tot_pop, replace 
+
+	* Shares
+	g st_cen_share = st / tot_pop
+	g sc_cen_share = sc / tot_pop
+	g st_curr_share = st_i / tot_pop_i
+	g sc_curr_share = sc_i / tot_pop_i
+	
+	* Merge to seat shares
+	order c_code_2001, first
+	merge 1:1 c_code_2001 year using "`temp'", keep(3) nogen
 	save "${DATA}/dta/iv_scst_seats", replace
 
 }
@@ -263,7 +343,7 @@ if `ss_11' == 1 {
 	* Reduce
 	keep *_code_2011* year year_month month dist_f_cum_km2 tree_cover_base
 
-	* 2014 State Fractions
+	* State Fractions
 	preserve
 	
 		* Pre-period
@@ -305,7 +385,7 @@ if `ss_11' == 1 {
 	sort c_code_2011 year_month
 	
 	* ATREE CFR
-	merge m:1 c_code_2011 using "${DATA}/dta/iv_cfr", nogen
+	*merge m:1 c_code_2011 using "${DATA}/dta/iv_cfr", nogen
 	
 	* Scheduled Areas
 	tempfile temp
@@ -316,10 +396,10 @@ if `ss_11' == 1 {
 	keep c_code_2011 schedule
 	merge 1:m c_code_2011 using "`temp'", nogen
 	order schedule, last
-	la var schedule "Scheduled Area"
+	la var schedule "Scheduled (=1)"
 	
 	* Election leaders/reservations
-	merge m:1 c_code_2011 year using "${DATA}/dta/iv_scst_seats", keep(1 3) nogen
+	*merge m:1 c_code_2011 year using "${DATA}/dta/iv_scst_seats", keep(1 3) nogen
 	
 	* Population Shares
 	merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist", keepusing(tot_st tot_sc tot_pop tot_area) nogen
@@ -327,13 +407,85 @@ if `ss_11' == 1 {
 	g scst = sc + st
 	foreach v of varlist sc st scst {
 		g `v'_share = `v' / tot_pop // district share
-		bys state_code_2011: egen `v'_state = total(`v'), m
+		bys state_code_2011 year_month: egen `v'_state = total(`v'), m
 		g `v'_state_share = `v'/`v'_state // state share
+		drop `v'_state
 	}
 
 	* Save
 	sort c_code_2011 year_month
 	save "${DATA}/dta/polecon_v02", replace
+}
+
+if `ss_01' == 1 {
+	
+	* Read FC
+	use "${DATA}/dta/fc_dym_s2_v02", clear
+	
+	* 2001 borders (18 districts cannot trace)
+	merge m:1 c_code_2011 using "${DATA}/dta/c_code_crosswalk", keep(3) nogen
+
+	* Aggregate
+	collapse (sum) dist_f_cum_km2 tree_cover_km2 tree_cover_base ///
+			 (first) year month, by(c_code_2001 year_month)
+	g state_code_2001 = substr(c_code_2001, 1, 3) 
+	la var dist_f_cum_km2 "Infrastructure" 
+	
+	* State Fractions
+	preserve
+	
+		* Pre-period 
+		keep if year == 2015
+		keep c_code_2001 state_code_2001 year_month dist_f_cum_km2
+		
+		* Cumulatives
+		bys state_code_2001 year_month: egen st_f_cum_km2 = total(dist_f_cum_km2) 
+		bys state_code_2001 year_month: keep if _n == 1 // state-monthly cumulative
+		drop dist_f_cum_km2 c_code_2001
+		bys year_month: egen nat_f_cum_km2 = total(st_f_cum_km2) // national monthly cumulative
+		
+		* Collapse to end-of-year
+		sort state_code_2001 year_month
+		collapse (lastnm) st_f* nat_f*, by(state_code_2001)
+		
+		* Share
+		g st_f_share = st_f_cum_km2 / nat_f_cum_km2
+		keep state_code_2001 *_share
+		tempfile shares 
+		save "`shares'"
+	
+	restore
+	
+	* Merge state shares
+	merge m:1 state_code_2001 using "`shares'", nogen
+	
+	* Predicted state deforestation
+	bys year_month: egen nat_f_cum_km2 = total(dist_f_cum_km2)
+	g st_f_cum_km2_p = st_f_share * nat_f_cum_km2
+	la var st_f_cum_km2_p "State Approvals"
+	sort c_code_2001 year_month
+	
+	* Merge with seat shares
+	merge m:1 c_code_2001 year using "${DATA}/dta/iv_scst_seats", keep(3) nogen
+	
+	* Merge election years
+	merge m:1 state_code_2001 year using "${DATA}/dta/state_elec", keep(3) nogen
+	
+	* Covariates
+	g scst = sc + st
+	foreach v of varlist sc st scst {
+		bys state_code_2001 year_month: egen `v'_state = total(`v'), m
+		g `v'_state_share = `v'/`v'_state // state share
+		drop `v'_state
+	}
+	
+	* Save
+	encode c_code_2001, gen(c_code_2001_num)
+	encode state_code_2001, gen(state_code_2001_num)
+	sort c_code_2001 year_month
+	order c_code_2001 state_code_2001, first
+	save "${DATA}/dta/polecon_01_v02", replace
+	
 }
 
 if `ss_91' == 1 {
@@ -364,6 +516,7 @@ if `ss_91' == 1 {
 	*/
 	}
 	
+	
 	* Read FC
 	use "${DATA}/dta/fc_dym_s2_v02", clear
 	
@@ -374,8 +527,9 @@ if `ss_91' == 1 {
 	collapse (sum) dist_f_cum_km2 tree_cover_km2 tree_cover_base ///
 			 (first) year month, by(c_code_1991 year_month)
 	g state_code_1991 = substr(c_code_1991, 1, 3) 
+	la var dist_f_cum_km2 "Infrastructure" 
 	
-	* 2014 State Fractions
+	* State Fractions
 	preserve
 	
 		* Pre-period 
@@ -418,6 +572,7 @@ if `ss_91' == 1 {
 
 	* Prop (sync names to for merge)
 	collapse (firstnm) p_nland mahrai state britdum brule1 tot_area=totarea, by(dist_91)
+	la var mahrai "Non-landlord (=1)"
 	
 	replace dist_91 = lower(dist_91)
 	replace state = lower(state)
@@ -469,12 +624,10 @@ if `ss_91' == 1 {
 	g scst = sc + st
 	foreach v of varlist sc st scst {
 		g `v'_share = `v' / tot_pop // district share
-		bys state_code_1991: egen `v'_state = total(`v'), m
+		bys state_code_1991 year_month: egen `v'_state = total(`v'), m
 		g `v'_state_share = `v'/`v'_state // state share
+		drop `v'_state
 	}
-	
-	* Covariates
-	g st_ha = (st / tree_cover_base)/1000
 	
 	* Save
 	encode c_code_1991, gen(c_code_1991_num)

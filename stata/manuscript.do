@@ -203,14 +203,16 @@ if `scratch' == 1 {
 	use "${DATA}/dta/fc_ebd_udt_v02", clear
 	drop if year == 2014
 	drop_outliers
-	ll
+	
 	**# Extensive margin: Does fragmentation displace users to other districts
 	
 	* District level
 	
-	collapse (mean) exp_idx duration distance group_size traveling coverage_udym ///
-			 (firstnm) dist_f_cum_* coverage_dym tree_cover_s temp rain biome ///
-					   n_trips_dym n_users_dym month year *_code_2011_num, ///
+	collapse (mean) exp_idx duration distance group_size ///
+					traveling coverage_udym ///
+			 (firstnm) dist_f_cum_* coverage_dym tree_cover_s ///
+					   temp rain biome n_trips_dym n_users_dym ///
+					   sr_dym month year *_code_2011_num, ///
 					   by(c_code_2011 year_month)
 	
 	foreach v of varlist duration exp_idx group_size n_*_dym coverage_* {
@@ -262,7 +264,7 @@ if `scratch' == 1 {
 		nonotes booktabs nomtitles star(* .1 ** .05 *** .01) label se ///
 		b(%5.3f) width(\hsize)
 	eststo clear
-	kk
+	
 	
 	* Is location-FE result driven by increasing variance of user types?
 	use "${DATA}/dta/fc_ebd_user_v01", clear
