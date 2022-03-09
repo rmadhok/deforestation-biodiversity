@@ -7,7 +7,7 @@
 ### SET-UP
 # Directories
 rm(list=ls())
-READ <- '/Volumes/Backup Plus/research/data/'
+READ <- '/Volumes/Backup Plus 1/research/data'
 SAVE <- '/Users/rmadhok/Dropbox/def_biodiv/'
 SHP <- '/Users/rmadhok/Dropbox/IndiaPowerPlant/data/'
 setwd(READ)
@@ -90,9 +90,9 @@ write_csv(home, paste(SAVE, 'data/csv/user_home_impute.csv', sep=''))
 ## Home Coordinates of sample
 
 # Analysis sample users (n=16,908 users)
-home <- merge(distinct(read_csv('./def_biodiv/ebird/ebird_trip.csv'), OBSERVER.ID),
+home <- merge(distinct(read_csv('./def_biodiv/ebird/ebird_trip.csv'), user_id),
               read_csv('./ebird_wtp/user_home_impute.csv'),
-              by.x = 'OBSERVER.ID', by.y = 'observer_id')
+              by.x = 'user_id', by.y = 'observer_id')
 
 # Number of homes per cell
 grid <- raster(extent(india_dist))
@@ -101,20 +101,19 @@ crs(grid) <- crs(india_dist)
 home_grid <- rasterize(home[, c('lon_home', 'lat_home')], grid, fun='count')
 home_grid[is.na(home_grid)] <- 0 
 home_grid <- mask(home_grid, india_dist)
-
+  
 # Plot
-df <- as.data.frame(home_grid, xy = T)
+df <- as.data.frame(home_grid, xy = T) %>%
+  filter(!is.na(layer))
 df$cuts <- cut(df$layer, breaks=c(0, 1, 20, 40, 60, 80, 100, 450), 
                labels=c('0', '1-20', '20-40', '40-60', '60-80', '80-100', '100+'),
                right=F,
                include.lowest=T)
 
 ebd_pop_plot <- ggplot() + 
-  ggtitle("A") +
   geom_tile(data=df, mapping = aes(x = x, y = y, fill = cuts)) + 
-  #geom_sf(data=india_st, alpha = 0.1, size = 0.05) +
   coord_sf(datum = NA) +
-  scale_fill_viridis_d(name='Home Locations',
+  scale_fill_viridis_d(name='User Homes',
                        direction=-1,
                        guide=guide_legend(title.position='top')) +
   theme_minimal() +
@@ -124,7 +123,6 @@ ebd_pop_plot <- ggplot() +
         axis.ticks = element_blank(), 
         axis.title = element_blank(),
         panel.background = element_blank(),
-        legend.position='bottom',
         legend.key.width=unit(1.3,'cm'),
         legend.text=element_text(size=13),
         legend.title=element_text(size=13)) 
@@ -141,18 +139,17 @@ r <- mask(r, india_dist)
 r_ag <- raster::aggregate(r, fact = 20, fun=sum) # population per 20km cell
 
 # Plot
-df <- as.data.frame(r_ag, xy = T)
+df <- as.data.frame(r_ag, xy = T) %>%
+  filter(!is.na(ppp_2015_1km_Aggregated))
 df$cuts <- cut(df$ppp_2015_1km_Aggregated, breaks=c(0, 1000, 200000, 400000, 600000, 800000, 1000000, 8000000), 
                labels=c('0-1','1-200', '200-400', '400-600', '600-800', '800-1000', '1000+'),
                right=F,
                include.lowest=T)
 
 wpop_plot <- ggplot() + 
-  ggtitle("B") +
-  #geom_sf(data=india_st, alpha = 0.1, size = 0.05) +
   geom_tile(data=df, mapping = aes(x = x, y = y, fill = cuts)) + 
   coord_sf(datum = NA) +
-  scale_fill_viridis_d(name='2015 Population Density (Thousands)',
+  scale_fill_viridis_d(name='2015 Pop. Density\n(Thousands)',
                        direction=-1,
                        guide=guide_legend(title.position='top')) +
   theme_minimal() +
@@ -162,7 +159,6 @@ wpop_plot <- ggplot() +
         axis.ticks = element_blank(), 
         axis.title = element_blank(),
         panel.background = element_blank(),
-        legend.position='bottom',
         legend.key.width=unit(1.3,'cm'),
         legend.text=element_text(size=13),
         legend.title=element_text(size=13)) 

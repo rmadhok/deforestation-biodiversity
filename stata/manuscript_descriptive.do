@@ -26,8 +26,8 @@ cd "${TABLE}"
 
 // Modules
 local sumstats			0
-local learning			1
-local estudy_f			0
+local learning			0
+local estudy_f			1
 local estudy			0
 local valuation			0
 
@@ -99,7 +99,9 @@ if `sumstats' == 1 {
 	*---------------------------------------
 	* 1. TABLE: OUTCOMES AND COVARIATES
 	*---------------------------------------
-
+	
+	**# Split by Treatment / Control
+	
 	* District Variables
 	eststo clear
 	eststo A: estpost tabstat `dist_vars' if tag_d & treat, s(n mean sd) c(s)
@@ -129,6 +131,32 @@ if `sumstats' == 1 {
 	eststo B: estpost tabstat `covariates' if tag_dym & !treat, s(n mean med sd) c(s)
 	
 	esttab A B using "${TABLE}/tables/sumstats_ebd.tex", append f main(mean) aux(sd) ///
+		cells("mean(fmt(2)) sd(fmt(2)) count(fmt(0))") refcat(tree_cover_s ///
+		"\underline{\emph{District-Time}}" , nolabel) nomtitle collabel(none) ///
+		booktabs noobs label unstack nonumber plain
+	
+	**# Full Summary Stats
+	
+	eststo clear
+	eststo: estpost tabstat `dist_vars' if tag_d, s(n mean sd) c(s) // District
+
+	esttab using "${TABLE}/tables/sumstats_ebd_full.tex", replace f main(mean) aux(sd) ///
+		cells("mean(fmt(2) label(Mean)) sd(fmt(2) label(SD)) count(fmt(0) label(N))") ///
+		refcat(n_users_dist "\underline{\emph{District}}", nolabel) ///
+		nomtitle booktabs noobs label unstack nonumber
+
+	eststo clear
+	eststo: estpost tabstat `trip', s(n mean med sd) c(s) // Birdwatching
+
+	esttab using "${TABLE}/tables/sumstats_ebd_full.tex", append f main(mean) aux(sd) ///
+		cells("mean(fmt(2)) sd(fmt(2)) count(fmt(0))") ///
+		refcat(sr "\underline{\emph{User-District-Time}}", nolabel) nomtitle collabel(none) ///
+		width(\hsize) nomtitle booktabs noobs label unstack nonumber plain
+	
+	eststo clear
+	eststo: estpost tabstat `covariates' if tag_dym, s(n mean med sd) c(s) // Covariates
+	
+	esttab using "${TABLE}/tables/sumstats_ebd_full.tex", append f main(mean) aux(sd) ///
 		cells("mean(fmt(2)) sd(fmt(2)) count(fmt(0))") refcat(tree_cover_s ///
 		"\underline{\emph{District-Time}}" , nolabel) nomtitle collabel(none) ///
 		booktabs noobs label unstack nonumber plain
@@ -325,7 +353,7 @@ if `learning' == 1 {
 	graph combine "./fig/season.gph" "./fig/bl_dist.gph", rows(2) saving("./fig/comb.gph", replace)
 	graph combine "./fig/comb.gph" "./fig/learn_nl.gph", imargin(0 0 1 0)
 	graph export "${TABLE}/fig/bias_plot.png", replace
-ll
+
 	*-----------------------------------------
 	* IDENTIFYING VARIATION ACROSS FE SPECS
 	*-----------------------------------------
@@ -379,10 +407,14 @@ ll
 *===============================================================================
 if `estudy_f' == 1 {
 	
-	* Read
-	use "${DATA}/dta/fc_dym_s2_v02", clear
+	** TO DO: AGGREGATE FC DATA TO ANNUAL AND DO EVENT STUDY + TWFE
 	
-	keep *_code_2011 year_month year month dist_*_cum_km2 tree* n_proj_cum
+	* Read
+	*use "${DATA}/dta/fc_dym_s2_v02", clear
+	use "${DATA}/dta/fc_dym_s2_post_v02", clear
+	merge 1:1 c_code_2011 year_month using "${DATA}/dta/fc_dym_s1_post_v02", keep(3) nogen // merge stage 1
+	*keep *_code_2011 year_month year month dist_*_cum_km2 tree* n_proj_cum
+	keep *_code_2011 year_month year month dist_f_cum_km2* tree* n_proj_cum
 	order *_code_2011, first
 	*drop if year == 2014
 	
@@ -413,56 +445,46 @@ if `estudy_f' == 1 {
 	g ln_n_proj_cum = asinh(n_proj_cum)
 	g ln_tree_cover_s = ln(tree_cover_s)
 	la var n_proj_cum "Num. Projects"
-	
-	foreach v of varlist dist_*_cum_km2 {
-		g `v'_ihs = asinh(`v')
-	}
-	kk
-	
-	
+
 	foreach v of varlist dist_f_cum_km2 n_proj_cum {
 		
 		* lin-lin
-		eststo: reghdfe tree_cover_pct `v', ///
-			a(c_code_2011_num state_code_2011_num#year month) vce(cl c_code_2011_num)
+		eststo `v'_linlin: reghdfe tree_cover_pct `v', ///
+			a(c_code_2011_num state_code_2011_num#year) vce(cl c_code_2011_num)
 	
 			estadd local dist_fe "$\checkmark$"
 			estadd local st_y_fe "$\checkmark$"
-			estadd local month_fe "$\checkmark$"
 		
 		* log-lin
-		eststo: reghdfe ln_tree_cover_pct `v', ///
-			a(c_code_2011_num state_code_2011_num#year month) vce(cl c_code_2011_num)
+		eststo `v'_loglin: reghdfe ln_tree_cover_pct `v', ///
+			a(c_code_2011_num state_code_2011_num#year) vce(cl c_code_2011_num)
 			
 			estadd local dist_fe "$\checkmark$"
 			estadd local st_y_fe "$\checkmark$"
-			estadd local month_fe "$\checkmark$"
 			
 		* lin-log
-		eststo: reghdfe tree_cover_pct ln_`v', ///
-			a(c_code_2011_num state_code_2011_num#year month) vce(cl c_code_2011_num)
+		eststo `v'_linlog: reghdfe tree_cover_pct ln_`v', ///
+			a(c_code_2011_num state_code_2011_num#year) vce(cl c_code_2011_num)
 			
 			estadd local dist_fe "$\checkmark$"
 			estadd local st_y_fe "$\checkmark$"
-			estadd local month_fe "$\checkmark$"
 		
 		* log-log
-		eststo: reghdfe ln_tree_cover_pct ln_`v', ///
-			a(c_code_2011_num state_code_2011_num#year month) vce(cl c_code_2011_num)
+		eststo `v'_loglog: reghdfe ln_tree_cover_pct ln_`v', ///
+			a(c_code_2011_num state_code_2011_num#year) vce(cl c_code_2011_num)
 			
 			estadd local dist_fe "$\checkmark$"
 			estadd local st_y_fe "$\checkmark$"
-			estadd local month_fe "$\checkmark$"
 	
-		esttab using "${TABLE}/tables/f_verify_`v'.tex", replace ///
-			stats(dist_fe st_y_fe month_fe N r2, labels(`"District FEs"' ///
-			`"State x Year FEs"' `"Month FEs"' `"N"' `"\(R^{2}\)"') fmt(0 0 0 0 3)) ///
-			mlabels("Tree Cover" "log(Tree Cover)" "Tree Cover" "log(Tree Cover)") ///
+		esttab `v'_linlin `v'_loglog using "${TABLE}/tables/f_verify_`v'.tex", ///
+			replace stats(dist_fe st_y_fe N r2, labels(`"District FEs"' ///
+			`"State x Year FEs"' `"N"' `"\(R^{2}\)"') fmt(0 0 0 3)) ///
+			mlabels("Tree Cover (\%)" "log(Tree Cover)") ///
 			wrap nocons nonotes booktabs nomtitles star(* .1 ** .05 *** .01) ///
 			label se b(%5.3f) width(0.8\hsize)
 		eststo clear
 	}
-	
+	ll
 	/*
 	**# Event-Study -- New DID Lit
 	
@@ -633,7 +655,7 @@ if `valuation' == 1 {
 	
 		g `v'_npv = (((1-(1/(1.04)^60))/0.04) * `v')
 	}
-	
+
 	* Project Eco-Valuation (NPV Rs.)
 	foreach v of varlist *_npv csto npv {
 		g dist_f_`v'= dist_f_cum_km2 * `v'
@@ -646,20 +668,18 @@ if `valuation' == 1 {
 
 	eststo clear
 	eststo: estpost tabstat dist_f_nwfp_npv, by(state) c(s) s(sum)
-	eststo: estpost tabstat dist_f_fodder_npv, by(state) c(s) s(sum)
+	*eststo: estpost tabstat dist_f_fodder_npv, by(state) c(s) s(sum)
 	eststo: estpost tabstat dist_f_fuelwood_npv, by(state) c(s) s(sum)
 	eststo: estpost tabstat dist_f_cseq_npv, by(state) c(s) s(sum)
 	eststo: estpost tabstat dist_f_csto, by(state) c(s) s(sum)
-	eststo: estpost tabstat dist_f_soil_npv, by(state) c(s) s(sum)
-	eststo: estpost tabstat dist_f_water_npv, by(state) c(s) s(sum)
+	*eststo: estpost tabstat dist_f_soil_npv, by(state) c(s) s(sum)
+	*eststo: estpost tabstat dist_f_water_npv, by(state) c(s) s(sum)
 	eststo: estpost tabstat dist_f_seed_npv, by(state) c(s) s(sum)
+	eststo: estpost tabstat dist_f_tev_npv, by(state) c(s) s(sum)
 	
 	esttab using "${TABLE}/tables/valuation_boe.tex", replace ///
-		cells("sum(fmt(%12.0fc) label())") mgroups("Livelihoods" "Carbon" ///
-		"Watershed Services" "", pattern(1 0 0 1 0 1 0 1) ///
-		prefix(\multicolumn{@span}{c}{) suffix(}) span ///
-		erepeat(\cmidrule(lr){@span})) mlabels("NWFP" "Fodder" "Wood" "Flow" ///
-		"Stock" "Soil" "Water" "Seed") collabel(none) booktabs noobs ///
+		cells("sum(fmt(%12.0fc) label())") mlabels("NWFP" "Wood" "C-Flow" ///
+		"C-Stock" "Seed" "Total") collabel(none) booktabs noobs ///
 		label unstack
 
 	*----------------------
@@ -673,21 +693,20 @@ if `valuation' == 1 {
 	
 	eststo clear
 	eststo: estpost tabstat dist_f_nwfp_npv if inrange(rank, 29,33), by(rank) c(s) s(sum) nototal
-	eststo: estpost tabstat dist_f_fodder_npv if inrange(rank, 29,33), by(rank) c(s) s(sum) nototal
+	*eststo: estpost tabstat dist_f_fodder_npv if inrange(rank, 29,33), by(rank) c(s) s(sum) nototal
 	eststo: estpost tabstat dist_f_fuelwood_npv if inrange(rank, 29,33), by(rank) c(s) s(sum) nototal
 	eststo: estpost tabstat dist_f_cseq_npv if inrange(rank, 29,33), by(rank) c(s) s(sum) nototal
 	eststo: estpost tabstat dist_f_csto if inrange(rank, 29,33), by(rank) c(s) s(sum) nototal
-	eststo: estpost tabstat dist_f_soil_npv if inrange(rank, 29,33), by(rank) c(s) s(sum) nototal
-	eststo: estpost tabstat dist_f_water_npv if inrange(rank, 29,33), by(rank) c(s) s(sum) nototal
+	*eststo: estpost tabstat dist_f_soil_npv if inrange(rank, 29,33), by(rank) c(s) s(sum) nototal
+	*eststo: estpost tabstat dist_f_water_npv if inrange(rank, 29,33), by(rank) c(s) s(sum) nototal
 	eststo: estpost tabstat dist_f_seed_npv if inrange(rank, 29,33), by(rank) c(s) s(sum) nototal
+	eststo: estpost tabstat dist_f_tev_npv if inrange(rank, 29,33), by(rank) c(s) s(sum) nototal
 	
 	esttab using "${TABLE}/tables/valuation_boe_top5.tex", replace ///
-		cells("sum(fmt(%12.0fc) label())") mgroups("Livelihoods" "Carbon" ///
-		"Watershed Services" "", pattern(1 0 0 1 0 1 0 1) ///
-		prefix(\multicolumn{@span}{c}{) suffix(}) span ///
-		erepeat(\cmidrule(lr){@span})) mlabels("NWFP" "Fodder" "Wood" "Flow" ///
-		"Stock" "Soil" "Water" "Seed") collabel(none) booktabs noobs ///
+		cells("sum(fmt(%12.0fc) label())") mlabels("NWFP" "Wood" "C-Flow" ///
+		"C-Stock" "Seed" "Total") collabel(none) booktabs noobs ///
 		label unstack
+	
 	*----------------------
 	* Value of a bird
 	*----------------------
@@ -695,7 +714,8 @@ if `valuation' == 1 {
 	* 50% of seed dispersal service
 	
 	* Pollination/Seed dispersal NPV (Rs./km2)
-	g bird_npv = seed_npv*0.5
+	*g bird_npv = seed_npv*0.5
+	g bird_npv = seed_npv
 	
 	* species/district (from BirdLife)
 	save "`temp'", replace
@@ -722,7 +742,7 @@ if `valuation' == 1 {
 		xline(`mean', lcolor(red)) ///
 		text(0.2 6500 "Mean = `mean' Rs.", place(n) color(red)) 
 	graph export "${TABLE}/fig/hist_species_value.png", replace
-	
+	nn
 	*----------------------
 	* Livelihood Loss
 	*----------------------

@@ -24,9 +24,9 @@ gl DATA 	"${ROOT}/data"
 gl DO		"${ROOT}/scripts/stata"
 
 // Module
-local ebird					0
+local ebird					1
 local district_forest		0
-local merge					1
+local merge					0
 *===============================================================================
 * BIODIVERSITY
 *===============================================================================
@@ -198,10 +198,10 @@ program define construct_deforest
 	}
 	
 	* Date
-	g year_month = ym(year(date_rec), month(date_rec))
+	g year_month = ym(year(date_rec), month(date_rec)) 
 	format year_month %tmCCYY-NN
 	drop if year_month == .
-	
+	kk
 	* Drop megaprojects
 	if "`restrict'" == "drop" {
 		sort proj_area_forest2
@@ -258,7 +258,7 @@ program define construct_deforest
 			 by(c_code_2011 year_month)
 
 	* Label
-	la var dist_f "Infrastructure"
+	la var dist_f "Infrastructure (\(km^{2}\))"
 	la var dist_nf "Non-forest Diversion"
 	foreach cat of local proj_cat {
 		
@@ -361,10 +361,10 @@ if `district_forest' == 1 {
 	drop dist_nf*
 	save "${DATA}/dta/fc_dym_s2_trunc_v02", replace
 	
-	* Post-2014 only (add restrict?)
+	* Post-2014 only
 	construct_deforest, stage(2)
 	save "${DATA}/dta/fc_dym_s2_post_v02", replace
-	kk
+
 	* Stage 1 (add restrict?)
 	construct_deforest, stage(1)
 	keep c_code_2011 year_month dist_f_cum_km2 dist_nf_cum_km2
@@ -378,7 +378,7 @@ if `district_forest' == 1 {
 if `merge' == 1 {
 
 	local fc_data "" // either "" (main dataset), "trunc_", "post"
-	local level "udt" // udt (user-dist-time) or uct (user-cell-time)
+	local level "uct" // udt (user-dist-time) or uct (user-cell-time)
 	
 	if "`fc_data'" == "" | "`fc_data'" == "trunc_" {
 	

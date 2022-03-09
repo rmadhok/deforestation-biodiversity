@@ -28,7 +28,7 @@ local vil			0
 local election		0
 local ss_11			0
 local ss_01			0
-local ss_91			0
+local ss_91			1
 *-------------------------------------------------------------------------------
 * COMMUNITY CFR POTENTIAL (Lele et al. 2020)
 *-------------------------------------------------------------------------------
@@ -516,7 +516,6 @@ if `ss_91' == 1 {
 	*/
 	}
 	
-	
 	* Read FC
 	use "${DATA}/dta/fc_dym_s2_v02", clear
 	
@@ -572,7 +571,7 @@ if `ss_91' == 1 {
 
 	* Prop (sync names to for merge)
 	collapse (firstnm) p_nland mahrai state britdum brule1 tot_area=totarea, by(dist_91)
-	la var mahrai "Non-landlord (=1)"
+	la var mahrai "Inclusive (=1)"
 	
 	replace dist_91 = lower(dist_91)
 	replace state = lower(state)
