@@ -33,7 +33,7 @@ local merge					0
 
 if `ebird' == 1 {
 	
-	local level "uct" // udt = user-district-yearmonth, uct = user-cell-yearmonth
+	local level "udt" // udt = user-district-yearmonth, uct = user-cell-yearmonth
 	
 	**# Read
 	import delimited using "${DATA}/csv/ebird_`level'.csv", clear
@@ -49,13 +49,13 @@ if `ebird' == 1 {
 	**# Merge to external data
 	
 	* Weather
-	foreach file in "india_rainfall_gpm" "india_temperature_era" {
+	foreach file in "india_rainfall_gpm" "india_temperature_era" "india_nightlights" {
 	
 		import delimited "${DATA}/csv/`file'", varn(1) clear
 		g year_month = ym(year(date(yearmonth, "20YM")), month(date(yearmonth, "20YM")))
 		format year_month %tmCCYY-NN
 		drop yearmonth
-		
+
 		* Merge
 		merge 1:m c_code_2011 year_month using "`ebd_user'", keep (2 3) nogen
 		save "`ebd_user'", replace
@@ -94,11 +94,10 @@ if `ebird' == 1 {
 	
 	* Transform
 	g pop_density = tot_pop / tot_area
-	g ln_exp_idx = ln(exp_idx)
-	g ln_duration = ln(duration)
+	foreach v of varlist exp_idx duration group_size rad_* {
+		g ln_`v' = ln(`v')
+	}
 	g ln_distance = asinh(distance)
-	g ln_traveling = asinh(traveling)
-	g ln_group_size = ln(group_size)
 	
 	* Coverage fraction
 	if "`level'" == "udt" {
@@ -201,7 +200,7 @@ program define construct_deforest
 	g year_month = ym(year(date_rec), month(date_rec)) 
 	format year_month %tmCCYY-NN
 	drop if year_month == .
-	kk
+	
 	* Drop megaprojects
 	if "`restrict'" == "drop" {
 		sort proj_area_forest2
@@ -258,7 +257,7 @@ program define construct_deforest
 			 by(c_code_2011 year_month)
 
 	* Label
-	la var dist_f "Infrastructure (\(km^{2}\))"
+	la var dist_f "Forest Infrastructure (\(km^{2}\))"
 	la var dist_nf "Non-forest Diversion"
 	foreach cat of local proj_cat {
 		
@@ -378,7 +377,7 @@ if `district_forest' == 1 {
 if `merge' == 1 {
 
 	local fc_data "" // either "" (main dataset), "trunc_", "post"
-	local level "uct" // udt (user-dist-time) or uct (user-cell-time)
+	local level "udt" // udt (user-dist-time) or uct (user-cell-time)
 	
 	if "`fc_data'" == "" | "`fc_data'" == "trunc_" {
 	

@@ -26,8 +26,8 @@ cd "${TABLE}"
 
 // Modules
 local sumstats			0
-local learning			0
-local estudy_f			1
+local learning			1
+local estudy_f			0
 local estudy			0
 local valuation			0
 
@@ -262,6 +262,7 @@ if `learning' == 1 {
 			size(medsmall) pos(12) rows(1)) xsize(4.6) title("A: Seasonality", ///
 			pos(11) size(large) margin(b=3)) saving("./fig/season.gph", replace) 
 	restore
+	
 	**# 2. Learning Bias
 	
 	* No learning
@@ -298,7 +299,7 @@ if `learning' == 1 {
 	preserve
 	
 		* Residualize
-		reghdfe sr ln_exp_idx, a(uid#year c_code_2011 state_code_2011_num#month) resid
+		reghdfe sr exp_idx, a(uid#year c_code_2011 state_code_2011_num#month) resid
 		
 		* Average residual per user-yearmonth
 		collapse (mean) resid = _reghdfe_resid, by(user_id year)
@@ -321,7 +322,7 @@ if `learning' == 1 {
 			ylabel(, angle(hor)) ytitle("Mean User Residual", size(medium)) ///
 			xtitle("Year") yscale(titlegap(*-30)) ylabel(, labsize(medsmall)) ///
 			text(-.4 2016.5 "Learning Bias" "(User FE)", place(e) color(maroon) size(medsmall)) ///
-			text(-.19 2015.2 "User FE +" "Experience Index", place(e) color(navy) size(medsmall)) ///
+			text(-.17 2015.2 "User FE +" "Experience Index", place(e) color(navy) size(medsmall)) ///
 			text(0.07 2016 "No Learning Bias" "(User x Year FE)", place(c) color(black) size(medsmall)) ///
 			legend(off) xlabel(, labsize(medsmall)) title("C: Learning", ///
 			size(medium) pos(11) margin(b=3)) fxsize(75) fysize(90) ///
