@@ -19,15 +19,16 @@ set maxvar 10000
 set matsize 10000
 
 //Set Directory Paths
+gl BACKUP 	"/Volumes/Backup Plus 1/research/data/def_biodiv/parivesh/"
 gl ROOT 	"/Users/rmadhok/Dropbox/def_biodiv"
 gl DATA 	"${ROOT}/data"
 gl TABLE	"${ROOT}/docs/jmp/tex_doc/v3"
 cd "${TABLE}"
 
 // Modules
-local bartik	1
+local bartik	0
 local hte		0
-local project	0
+local project	1
 
 *------------------
 * PROGRAM
@@ -82,7 +83,7 @@ if `bartik' == 1 {
 		fmt(0 0 0 0 3)) interaction(" $\times$ ") ///
 		indicate("ST Share=st_state_share") wrap nocons nonotes ///
 		booktabs nomtitles star(* .1 ** .05 *** .01) se b(%5.3f) width(0.3\hsize)
-	kk
+	
 	* Plot
 	coefplot (nld, keep(c.*mahrai) rename(c.st_f_cum_km2_p#c.mahrai = "Inclusive (=1)") ///
 		\ res, keep(st_seats) rename(st_seats = "ST Seat Share")), ///
@@ -194,44 +195,131 @@ if `hte' == 1 {
 * MECHANISMS
 *-------------------------------------------------------------------------------
 if `project' == 1 {
+	/*
+	**# 1. District-Month Panel
 	
 	* Read project level
 	use "${DATA}/dta/fc_pdym_s2_v02", clear
-
-	* Prep
-	keep c_code_2011 prop_no dist_id date_submit date_rec ///
-	     proj_in_pa_esz_num proj_fra_num dist_f dist_nf ///
-		 displacement_num *_fam_disp cba_num year_month patches
-	g year = year(dofm(year_month))
-	g month = month(dofm(year_month))	
-	g state_code_2011 = substr(c_code_2011, 1, 3)
-	encode state_code_2011, gen(state_code_2011_num)
+	
+	* Aggregate to dist-month
+	collapse (sum) n_cba = cba_num n_disp = displacement_num n_fra = proj_fra_num ///
+		     (count) n_proj = dist_id, ///
+			 by(c_code_2011 year_month)
+	
+	* Control group
+	merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist", keepus(c_code_2011)
+	
+	* Balance
 	encode c_code_2011, gen(c_code_2011_num)
+	tsset c_code_2011_num year_month
+	sort year_month 
+	g ym = year_month[1]
+	replace year_month = ym if _m == 2
+	tsfill, full
+	drop c_code_2011 _merge ym
+	decode c_code_2011_num, gen(c_code_2011)
+	
+	* Dates
+	g year = year(dofm(year_month))
+	g month = month(dofm(year_month))
+	keep if inrange(year, 2015, 2020)
+	
+	* Construct variables
+	foreach v of varlist n_proj n_cba n_disp n_fra {
+		
+		replace `v' = 0 if `v' == . // non-treated
+		bys c_code_2011 (year_month): g `v'_cum = sum(`v') // cumulative
+	}
+	
+	* Adjust to 1991 borders
+	merge m:1 c_code_2011 using "${DATA}/dta/crosswalk_full", ///
+		keepusing(c_code_1991) keep(3) nogen
+	collapse (sum) n_*_cum (first) year month, by(c_code_1991 year_month)
+
+	* Shares
+	foreach var of varlist n_cba_cum-n_fra_cum {
+		
+		g `var'_s = 0 
+		replace `var'_s = (`var' / n_proj_cum) if n_proj_cum > 0
+	}
+	
+	* Merge landlord
+	merge m:1 c_code_1991 year_month using "${DATA}/dta/polecon_91_v02", keep(1 3) nogen
+
+	**# REGRESSIONS
+	g tree_cover_base_s = tree_cover_base / tot_area
+	foreach v of varlist n_cba_cum-n_fra_cum {
+		reghdfe `v' mahrai st_state_share tree_cover_base_s tot_area, a(state_code_1991_num#year_month) vce(cl c_code_1991_num)
+	}
+	
+	**# 2. District-Month level project characteristics
+	
+	* Read project level
+	use "${DATA}/dta/fc_pdym_s2_v02", clear
+	
+	* Prep
+	keep c_code_2011 prop_no proj_fra_num dist_f dist_nf ///
+		displacement_num cba_num year_month patches
+	g year = year(dofm(year_month))
+	g month = month(dofm(year_month))
+	
+	* Merge to crosswalk
+	merge m:1 c_code_2011 using "${DATA}/dta/crosswalk_full", ///
+		keepusing(c_code_1991) keep(3) nogen
+	
+	* Aggregate
+	g encroach_frac = dist_f / (dist_f + dist_nf)
+	collapse (mean) cba = cba_num fra = proj_fra_num disp = displacement_num ///
+				    encroach_frac patches ///
+			 (first) year month, by(c_code_1991 year_month)
+	
+	* Merge landlord
+	merge m:1 c_code_1991 year_month using "${DATA}/dta/polecon_91_v02", keep(3) nogen
+	tempfile temp
+	save "`temp'"
+	
+	* Get controls
+	/*
+	use "${DATA}/dta/fc_ebd_udt_v02", clear
+	collapse (first) temp rain, by(c_code_2011 year_month)
+	merge m:1 c_code_2011 using "${DATA}/dta/crosswalk_full", keep(3) nogen
+	collapse (mean) temp rain, by(c_code_1991 year_month)
+	merge 1:1 c_code_1991 year_month using "`temp'", keep(2 3) nogen
+	*/
+	* Mechanisms
+	foreach v of varlist cba fra disp encroach_frac patches {
+		eststo: reghdfe `v' mahrai st_state_share tree_cover_base tot_area, a(state_code_1991_num#year_month) vce(cl state_code_1991_num)
+			
+			sum `v' if e(sample)==1
+			estadd scalar ymean = `r(mean)'
+			estadd local st_y_fe "$\checkmark$"
+			estadd local month "$\checkmark$"
+			estadd local clust "District"
+	}
+	
+	**# 3. Project Level
+	
+	* Read project level
+	use "${DATA}/dta/fc_pdym_s2_v02", clear
+	
+	keep c_code_2011 prop_no proj_fra_num dist_f dist_nf ///
+		displacement_num cba_num year_month patches tot_fam_disp
+	g year = year(dofm(year_month))
+	g month = month(dofm(year_month))
 	
 	* Merge to crosswalk
 	merge m:1 c_code_2011 using "${DATA}/dta/crosswalk_full", ///
 		keepusing(c_code_1991) keep(3) nogen
 	
 	* Merge landlord
-	merge m:1 c_code_1991 year_month using "${DATA}/dta/polecon_91_v02", keep(1 3) nogen
+	merge m:1 c_code_1991 year_month using "${DATA}/dta/polecon_91_v02", keep(3) nogen
 	
-	* Get controls
-	tempfile temp
-	save "`temp'"
-	use "${DATA}/dta/fc_ebd_udt_v02", clear
-	collapse (first) temp rain tree* tot_area, by(c_code_2011 year_month)
-	merge m:1 c_code_2011 using "${DATA}/dta/crosswalk_full", keep(3) nogen
-	collapse (mean) temp rain (sum) tot_area tree_cover_base, by(c_code_1991 year_month)
-	kk
-	
-	merge 1:m c_code_1991 year_month using "`temp'"
-	kk
-	
-	* Mechanisms
-	g ln_patches = ln(patches)
-	foreach v of varlist cba_num proj_fra_num displacement_num tot_fam_disp dist_f patches {
+	* Regressions
+	g encroach_frac = dist_f / (dist_f + dist_nf)
+	g tree_cover_base_s = tree_cover_base / tot_area
+	foreach v of varlist cba_num proj_fra_num displacement_num tot_fam_disp encroach_frac {
 		
-		eststo: reghdfe `v' p_nland st_state_share, a(state_code_1991_num#year) vce(cl c_code_1991_num)
+		eststo: reghdfe `v' mahrai st_state_share tree_cover_base_s tot_area tot_pop britdum, a(state_code_1991_num#year_month) vce(cl state_code_1991_num)
 			
 			sum `v' if e(sample)==1
 			estadd scalar ymean = `r(mean)'
@@ -248,6 +336,65 @@ if `project' == 1 {
 		"Size (ha.)" "log(patches)") wrap nocons nonotes booktabs nomtitles ///
 		star(* .1 ** .05 *** .01) label se b(%5.3f)
 	eststo clear
+	*/
+	
+	**# Monitoring Reports -- DROP (all projects need compliance report)
+
+	* pre-2014
+	import excel "${BACKUP}/fc_pre2014_raw.xlsx", firstrow clear
+	keep date_rec prop_no
+
+	* Clean strange characters
+	foreach v of varlist * {
+		replace `v' = lower(`v')
+		charlist `v' // get weird characters
+		local tokill `r(sepchars)' 
+		local good `c(alpha)' 0 1 2 3 4 5 6 7 8 9 : / . // keep a-z
+		local tokill: list tokill - good
+		foreach i of local tokill {
+			replace `v' = subinstr(`v',`"`i'"',"",.)
+		}
+	replace `v' = strtrim(`v')
+	}
+	
+	* Approval date
+	replace date_rec = subinstr(date_rec, " ", "", .)
+	split date_rec, parse("stageii:")
+	drop date_rec1 date_rec3
+	g date_s2_s = substr(date_rec2, 1, 9)
+	g date_s2 = date(date_s2_s, "DM20Y")
+	format date_s2 %td
+	drop date_rec2 date_s2_s
+	
+	* Post 2014 
+	keep if year(date_s2) >= 2014 // n = 1,854
+	
+	* Reports
+	egen monitor_report = noccur(date_rec), string("monitoring")
+	egen compliance_report = noccur(date_rec), string("compliance")
+	drop date_rec
+	
+	* Merge to pre-2014
+	merge 1:m prop_no using "${DATA}/dta/fc_pdym_s2_pre_v02", keep(3) nogen
+	g year = year(dofm(year_month))
+	g month = month(dofm(year_month))
+	
+	* Merge to crosswalk
+	merge m:1 c_code_2011 using "${DATA}/dta/crosswalk_full", ///
+		keepusing(c_code_1991) keep(3) nogen
+	
+	* Aggregate
+	collapse (mean) monitor* compliance* (first) year month, by(c_code_1991 year_month)
+	
+	* Merge landlord
+	merge m:1 c_code_1991 year_month using "${DATA}/dta/polecon_91_v02", keep(3) nogen
+	
+	* Regressions (null)
+	foreach v of varlist monitor_report compliance_report {
+		g `v'_ln = asinh(`v')
+		eststo: reghdfe `v'_ln mahrai st_state_share tree_cover_base tot_area tot_pop, a(state_code_1991_num#year_month) vce(cl state_code_1991_num)
+	}
+	
 
 }
 

@@ -94,7 +94,7 @@ if `sumstats' == 1 {
 	* Collect
 	local dist_vars n_users_dist n_trips_dist pop_density
 	local trip sr coverage_udym duration distance group_size
-	local covariates tree_cover_s rain temp
+	local covariates tree_cover_s rain temp rad_mean
 	
 	*---------------------------------------
 	* 1. TABLE: OUTCOMES AND COVARIATES

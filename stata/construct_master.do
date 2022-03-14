@@ -24,8 +24,8 @@ gl DATA 	"${ROOT}/data"
 gl DO		"${ROOT}/scripts/stata"
 
 // Module
-local ebird					1
-local district_forest		0
+local ebird					0
+local district_forest		1
 local merge					0
 *===============================================================================
 * BIODIVERSITY
@@ -33,7 +33,7 @@ local merge					0
 
 if `ebird' == 1 {
 	
-	local level "udt" // udt = user-district-yearmonth, uct = user-cell-yearmonth
+	local level "uct" // udt = user-district-yearmonth, uct = user-cell-yearmonth
 	
 	**# Read
 	import delimited using "${DATA}/csv/ebird_`level'.csv", clear
@@ -190,7 +190,6 @@ program define construct_deforest
 			append using "${DATA}/dta/fc_pre2014_clean_v02"
 			replace pre2014 = 0 if pre2014 == .
 		}
-		
 	}
 	if `stage' == 1 {
 		keep if prop_status == "approved by rohq" | regexm(prop_status, "principle") == 1 | regexm(prop_status, "pending at ho") == 1 | prop_status == "pending at ro for stage-ii" // 3,858 (4068) projects
@@ -237,6 +236,9 @@ program define construct_deforest
 	* Save project-level
 	if `stage' == 2 & "`include'" == "" & "`restrict'" == "" {
 		save "${DATA}/dta/fc_pdym_s2_v02", replace
+	}
+	if `stage' == 2 & "`include'" == "pre" & "`restrict'" == "" {
+		save "${DATA}/dta/fc_pdym_s2_`include'_v02", replace
 	}
 	
 	**# AGGREGATE TO DISTRICT-TIME
@@ -333,6 +335,16 @@ program define construct_deforest
 		la var `var'_s "`vlab' (Pct. of total)"
 		replace `var'_s = (`var' / n_proj_cum)*100 if n_proj_cum > 0
 		drop `var'
+	}
+	
+	* Lags
+	foreach i of numlist 1/6 {
+		
+		bys c_code_2011 (year_month): gen dist_f_cum_km2_lag`i' = dist_f_cum_km2[_n - `i']
+		la var dist_f_cum_km2_lag`i' "Lag `i'"
+			
+		bys c_code_2011 (year_month): gen dist_f_cum_km2_lead`i' = dist_f_cum_km2[_n + `i']
+		la var dist_f_cum_km2_lead`i' "Lead `i'"
 	}
 	
 	* State/Dist Strings

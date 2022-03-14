@@ -14,11 +14,9 @@
 *===============================================================================
 // Settings
 clear all
-pause on
 cap log close
 set more off
-set maxvar 10000
-set matsize 10000
+set scheme modern
 
 //Set Directory Paths
 gl ROOT 	"/Users/rmadhok/Dropbox/def_biodiv"
@@ -27,26 +25,24 @@ gl TABLE	"${ROOT}/docs/jmp/tex_doc/v3"
 cd "${TABLE}"
 
 // Modules
-local main_analysis		1
-local dynamics			0
+local main_analysis		0
+local dynamics			1
 local robustness		0
 	local mobility		0
 	local sensitivity	0
 	local slx			0
 
-set scheme modern
-
 *===============================================================================
 * PROGRAMS
 *===============================================================================
-// Main Spec
+
+* Regression Program
 capture program drop reg_sat
 program define reg_sat
 	
 	syntax varlist(fv) [if]
 	set more off
 	
-	* Parse 
 	local depvar : word 1 of `varlist'
 	local indepvar : word 2 of `varlist'
 	local ctrls = substr("`varlist'", length("`depvar'") + ///
@@ -62,7 +58,7 @@ program define reg_sat
 		estadd scalar ymean = `r(mean)'
 end
 
-// Drop Outliers
+* Drop Outliers
 capture program drop drop_outliers
 	program define drop_outliers
 
@@ -72,18 +68,17 @@ capture program drop drop_outliers
 
 end
 
-* Default data
+* Load default data
 use "${DATA}/dta/fc_ebd_udt_v02", clear
 drop if year == 2014
 drop_outliers
 local ctrls temp rain tree_cover_s ln_duration ln_distance ln_rad_sum ///
-	        ln_exp_idx ln_coverage_udym ln_group_size traveling // controls
-			
+	        ln_exp_idx ln_coverage_udym ln_group_size traveling
 *===============================================================================
 * MAIN ANALYSIS
 *===============================================================================
 if `main_analysis' == 1 {
-/*
+
 	*--------------------
 	* 1. MAIN RESULTS
 	*--------------------
@@ -107,18 +102,17 @@ if `main_analysis' == 1 {
 		estadd local dist_fe "$\checkmark$"
 		estadd local st_m_fe "$\checkmark$"
 
-	* Coefficient Plot
+	* Plot
 	coefplot (m1, rename(dist_f_cum_km2 = `" "(1) Learning""') \ m2, ///
 		rename(dist_f_cum_km2 = `" "(2) No Learning" "')), ///
 		keep(dist_f*) xline(0, lcolor(black*0.8) lpattern(dash)) ///
 		coeflabels(, labsize(medium)) mlabsize(medium) mlabcolor(black) ///
 		levels(99 95 90) ciopts(recast(rcap) lwidth(*1 *3 *4) ///
 		color(dkgreen dkgreen dkgreen) lcolor(*.3 *.5 *.8)) ///
-		legend(order(1 "99" 2 "95" 3 "90")) ///
-		msize(medium) mfcolor(white) msymbol(D) mlcolor(black) mlabel ///
-		format(%9.2g) mlabposition(1) mlabgap(*2) xlabel(-0.3(.1)0.1, ///
-		labsize(medium)) ylabel(, labsize(medium)) title("A", size(large)) ///
-		saving("${TABLE}/fig/main.gph", replace) xsize(4.6)
+		legend(order(1 "99" 2 "95" 3 "90")) msize(medium) mfcolor(white) ///
+		msymbol(D) mlcolor(black) mlabel format(%9.2g) mlabposition(1) ///
+		mlabgap(*2) xlabel(-0.3(.1)0.1, labsize(medium)) ylabel(, labsize(medium)) ///
+		title("A", size(large)) saving("${TABLE}/fig/main.gph", replace) xsize(4.6)
 	graph export "${TABLE}/fig/main.png", replace
 	
 	* Table
@@ -137,7 +131,7 @@ if `main_analysis' == 1 {
 	* 2. DECOMPOSED ESTIMATES
 	*--------------------------
 	
-	* Fig 2 - category-Wise Impacts
+	* Category-Wise Impacts
 	eststo clear
 	eststo: reg_sat sr dist_f_*_cum_km2 `ctrls'
 
@@ -151,20 +145,19 @@ if `main_analysis' == 1 {
 		title("B", size(large)) xsize(4.6) ///
 		saving("${TABLE}/fig/projwise.gph", replace)
 	graph export "${TABLE}/fig/projwise.png", replace
-	*/
-	* Category-wise impacts controlling for eBird sparsity
-	* (Mining impact small bc mines in low-activity districts)
+	
+	* Category-wise impacts: controlling for eBird sparsity
 	bys c_code_2011: egen mine = max(dist_f_min_cum_km2 > 0 & dist_f_min_cum_km2!=.)
 	egen tag_d = tag(c_code_2011)
 	tab mine if tag_d // N=76 districts with mines
 	egen tag_u = tag(uid)
-	sum n_trips_user if tag_u & min, d
+	sum n_trips_user if tag_u, d
 	g n_trips_user_med = r(p50)
-	sum n_users_dist if tag_d & min, d
+	sum n_users_dist if tag_d, d
 	g n_users_dist_med = r(p50)
-	tab mine if tag_d & (n_trips_user > n_trips_user_med) & (n_users_dist > n_users_dist_med) // N = 35 districts w mines
-	g subsample = ( (n_trips_user > n_trips_user_med) & (n_users_dist > n_users_dist_med) )
-
+	g subsample = ( (n_users_dist > n_users_dist_med) & (n_trips_user > n_trips_user_med) )
+	tab mine if tag_d == 1 & subsample == 1
+	
 	eststo clear
 	eststo: reg_sat sr dist_f_*_cum_km2 `ctrls' if subsample == 1
 	
@@ -174,38 +167,19 @@ if `main_analysis' == 1 {
 		lcolor(*.3 *.5 *.8)) legend(order(1 "99" 2 "95" 3 "90")) ///
 		mlabel format(%9.2g) mlabposition(1) mlabcolor(black) /// 
 		coeflabels(, labsize(medium)) mlabsize(medium) mcolor(black) ///
-		xlabel(, labsize(medium)) ylabel(, labsize(medium)) mlabgap(*2) ///
-		title("B", size(large)) xsize(4.6) ///
-		saving("${TABLE}/fig/projwise.gph", replace)
-	graph export "${TABLE}/fig/projwise.png", replace
+		xlabel(, labsize(medium)) ylabel(, labsize(medium)) mlabgap(*2) xsize(4.6)
+	graph export "${TABLE}/fig/projwise_highactivity.png", replace
+	/*-----------------------------------------------------------------
+	mining impact doubles in high-activity districts but others unchanged
+	i.e. mining coeff driven by low-activity users but others are not.
+	------------------------------------------------------------------*/
 	
-	
-	/*
-	* Multivariate vs bivariate -- remove?
-	eststo multivariate: reg_sat sr dist_f_*_cum_km2 `ctrls'
-	foreach cat in ele irr min oth res tra {
-		eststo `cat': reg_sat sr dist_f_`cat'_cum_km2 `ctrls'
-	}
-	coefplot (multivariate, keep(dist_f*) label("Multivariate")) ///
-		(ele irr min oth res tra, keep(dist_f*) label("Bivariate")), ///
-		xline(0, lcolor(black*0.8) lpattern(dash)) ///
-		msize(small) mfcolor(white) msymbol(D) levels(99 95 90) ///
-		ciopts(recast(rcap) lwidth(*1 *3 *4) lcolor(*.3 *.5 *.8)) ///
-		mlabel format(%9.2g) mlabposition(1) mlabcolor(black) coeflabels(, labsize(medium)) ///
-		mlabsize(medium) mcolor(black) xlabel(, labsize(medium)) ///
-		ylabel(, labsize(medium)) mlabgap(*2) ///
-		xsize(4.6) saving("${TABLE}/fig/projwise_bi.gph", replace
-	*/
 	*--------------------------
-	* 3. FRAGMENTATION-WISE
+	* 3. HETEROGENEITY
 	*--------------------------
 	
-	* Baseline biodiversity
+	* Baseline biodiversity/tree_cover
 	g tree_cover_base_p = (tree_cover_base/tot_area)*100 // forest cover %
-	xtile tcover_base = tree_cover_base_p, nquantiles(3)
-	xtile biodiv_base = sr_bl, nquantiles(3)
-	tab tcover_base, gen(tcover_q)
-	tab biodiv_base, gen(biodiv_q)
 	egen sr_bl_std = std(sr_bl) // standardize for comparison
 	egen tree_cover_base_p_std = std(tree_cover_base_p) // standardize for comparison
 	la var sr_bl_std "Baseline Species Diversity"
@@ -213,9 +187,7 @@ if `main_analysis' == 1 {
 	
 	eststo clear
 	eststo: reg_sat sr c.dist_f_cum_km2##c.sr_bl_std n_*_cum_s `ctrls'
-	eststo: reg_sat sr c.dist_f_cum_km2##c.tree_cover_base_p_std n_*_cum_s `ctrls'
-	*eststo: reg_sat sr c.dist_f_cum_km2##c.(tcover_q2-tcover_q3) n_*_cum_s `ctrls'
-	*eststo: reg_sat sr c.dist_f_cum_km2##c.(biodiv_q2-biodiv_q3) n_*_cum_s `ctrls'
+	eststo: reg_sat sr c.dist_f_cum_km2##c.tree_cover_base_p_std n_*_cum_s `ctrls'	
 	
 	esttab using "${TABLE}/tables/het_biodiv.tex", replace ///
 		keep(dist_f_cum_km2 c.*) stats(ymean user_y_fe dist_fe st_m_fe N r2, ///
@@ -225,29 +197,10 @@ if `main_analysis' == 1 {
 		star(* .1 ** .05 *** .01) label se b(%5.3f) width(0.6\hsize) varwidth(40)
 	eststo clear
 	
-	/*
-	coefplot, keep(c.dist_f_cum_km2#c.*) xline(0, lcolor(black*0.8) lpattern(dash)) ///
-		coeflabels(c.dist_f_cum_km2#c.tcover_q2 = "2nd" ///
-		c.dist_f_cum_km2#c.tcover_q3 = "3rd" ///
-		c.dist_f_cum_km2#c.tcover_q4 = "4th" ///
-		c.dist_f_cum_km2#c.tcover_q5 = "5th", labsize(medium)) ///
-		msize(small) mfcolor(white) msymbol(D) mcolor(black) ///
-		levels(99 95 90) ciopts(recast(rcap) lwidth(*1 *3 *4) ///
-		color(dkgreen dkgreen dkgreen) lcolor(*.3 *.5 *.8)) ///
-		legend(order(1 "99" 2 "95" 3 "90")) ///
-		mlabel ytitle("Forest Cover" "(Quintiles)", size(large) margin(l=8)) ///
-		format(%9.2g) mlabposition(1) mlabsize(medium) mlabcolor(black) ///
-		xlabel(-2(1)1, labsize(medium)) ylabel(, labsize(medium)) ///
-		mlabgap(*2) title("C", size(large)) yscale(titlegap(3)) ///
-		saving("${TABLE}/fig/tcoverwise.gph", replace) xsize(4.6)
-	graph export "${TABLE}/fig/tcoverwise.png", replace
-	
-	
 	* MAIN RESULTS
-	graph combine "${TABLE}/fig/main.gph" "${TABLE}/fig/projwise.gph" ///
-		"${TABLE}/fig/tcoverwise.gph", holes(4) 
+	graph combine "${TABLE}/fig/main.gph" "${TABLE}/fig/projwise.gph"
 	graph export "${TABLE}/fig/main_results.png", width(1000) replace
-	*/
+
 }
 
 *===============================================================================
@@ -255,42 +208,14 @@ if `main_analysis' == 1 {
 *===============================================================================
 if `dynamics' == 1 {
 	
-	* Lags/Leads
-	foreach var of varlist dist_f_cum_km2 {
-		foreach i of numlist 1/6 {
-		
-			bys c_code_2011 (year_month): gen `var'_lag`i' = `var'[_n - `i']
-			la var `var'_lag`i' "Lag `i'"
-			
-			bys c_code_2011 (year_month): gen `var'_lead`i' = `var'[_n + `i']
-			la var `var'_lead`i' "Lead `i'"
-		}
-	}
-	
-	* Show Serial Correlation -- see olken paper
-	/* ----------------------------------------
-	Since deforestation is serially correlated
-	individual lags are not well identified.
-	Sum of immediate + first K lags is better
-	identified so I use a cumulative lag model
-	------------------------------------------*/
-	preserve
-		bys c_code_2011_num year_month: keep if _n == 1
-		xtset c_code_2011_num year_month
-		reg dist_f_cum_km2 year_month
-		predict r, resid
-		corr r L.r
-		corr dist_f_cum_km2 L5.dist_f_cum_km2
-	restore
-
 	*--------------------
-	* 1. Lagged Analysis - ONLY CUMULATIVE LAG?
+	* Lagged Analysis - ONLY CUMULATIVE LAG?
 	*--------------------
 	*eststo clear
-	*eststo: reg_sat sr dist_f_cum_km2 dist_f_cum_km2_l*  `ctrls'
+	*eststo: reg_sat sr dist_f_cum_km2 dist_f_cum_km2_lag*  `ctrls'
 	
 	*----------------------------
-	* 2. Cumulative Dynamic Lag
+	* Cumulative Dynamic Lag
 	*----------------------------
 	
 	// No Lag
@@ -302,13 +227,25 @@ if `dynamics' == 1 {
 	reg_sat sr dist_f_cum_km2 dist_f_cum_km2_lag1 `ctrls'
 	eststo lag_1: lincomest dist_f_cum_km2_lag1 + dist_f_cum_km2 
 	
+	// 2 month
+	reg_sat sr dist_f_cum_km2 *_lag1 *_lag2 `ctrls'
+	eststo lag_2: lincomest dist_f_cum_km2_lag2 + dist_f_cum_km2_lag1 + dist_f_cum_km2 
+	
 	// 3 month
 	reg_sat sr dist_f_cum_km2 *_lag1 *_lag2 *_lag3 `ctrls'
 	eststo lag_3: lincomest dist_f_cum_km2_lag3 + dist_f_cum_km2_lag2 + dist_f_cum_km2_lag1 + dist_f_cum_km2 
 	
+	// 4 month
+	reg_sat sr dist_f_cum_km2 *_lag1 *_lag2 *_lag3 *_lag4 `ctrls'
+	eststo lag_4: lincomest dist_f_cum_km2_lag4 + dist_f_cum_km2_lag3 + dist_f_cum_km2_lag2 + dist_f_cum_km2_lag1 + dist_f_cum_km2 
+	
 	// 5 month
 	reg_sat sr dist_f_cum_km2 *_lag1 *_lag2 *_lag3 *_lag4 *_lag5 `ctrls'
 	eststo lag_5: lincomest dist_f_cum_km2_lag5 + dist_f_cum_km2_lag4 + dist_f_cum_km2_lag3 + dist_f_cum_km2_lag2 + dist_f_cum_km2_lag1 + dist_f_cum_km2
+	
+	// 6 month
+	reg_sat sr dist_f_cum_km2 *_lag1 *_lag2 *_lag3 *_lag4 *_lag5 *_lag6 `ctrls'
+	eststo lag_6: lincomest dist_f_cum_km2_lag6 + dist_f_cum_km2_lag5 + dist_f_cum_km2_lag4 + dist_f_cum_km2_lag3 + dist_f_cum_km2_lag2 + dist_f_cum_km2_lag1 + dist_f_cum_km2
 	
 	coefplot (nolag, rename((1) = "Baseline") \ lag_1, rename((1) = "Sum L0-L1") \ ///
 		lag_3, rename((1) = "Sum L0-L3") \ lag_5, rename((1) = "Sum L0-L5")), ///
@@ -319,6 +256,8 @@ if `dynamics' == 1 {
 		mlabel format(%9.2g) mlcolor(black) mlabposition(1) mlabgap(*2) ///
 		mlabsize(medium) mlabcolor(black) xlabel(, labsize(medium)) xsize(4.6)
 	graph export "${TABLE}/fig/cumulative_lag.png", width(1000) replace
+	
+	* Add table
 	
 }
 
@@ -334,20 +273,19 @@ if `robustness' == 1 {
 	collapse (mean) exp_idx duration distance group_size ///
 					traveling coverage_udym ///
 			 (firstnm) dist_f_cum_* coverage_dym tree_cover_s ///
-					   temp rain biome n_trips_dym n_users_dym ///
+					   temp rain biome rad_* n_trips_dym n_users_dym ///
 					   sr_dym month year *_code_2011_num, ///
 					   by(c_code_2011 year_month)
 	
 	* Controls
-	foreach v of varlist duration exp_idx group_size n_*_dym coverage_* {
+	foreach v of varlist duration exp_idx group_size n_*_dym coverage_* rad_* {
 		g ln_`v' = ln(`v')
 	}
 	g ln_distance = asinh(distance)
 	
 	* Spatial lag window (500km)
-	replace dist_f_cum_km2_slx_i_500 = dist_f_cum_km2_slx_i_500/10000
-	local ctrls temp rain tree_cover_s ln_duration ln_distance ///
-		        ln_exp_idx ln_group_size traveling
+	replace dist_f_cum_km2_slx_i_500 = dist_f_cum_km2_slx_i_500/100000
+	replace dist_f_cum_km2 = dist_f_cum_km2 / 100
 	la var dist_f_cum_km2 "Forest Infrastructure (district $\emph{d}$)"
 	la var dist_f_cum_km2_slx_i_500 "Forest Infrastructure (district j $\neq$ d)"
 	
@@ -355,7 +293,7 @@ if `robustness' == 1 {
 	foreach v of varlist n_users_dym n_trips_dym {
 	
 		eststo: reghdfe ln_`v' dist_f_cum_km2 *_slx_i_500 `ctrls', ///
-			a(c_code_2011_num state_code_2011_num#month year) vce(cl c_code_2011_num)
+			a(c_code_2011_num state_code_2011_num#month year) vce(cl biome)
 			
 			estadd local agg "District"
 			estadd local dist_fe "$\checkmark$"
@@ -388,15 +326,15 @@ if `robustness' == 1 {
 		nomtitles star(* .1 ** .05 *** .01) label se b(%5.3f) ///
 		width(0.6\hsize) varwidth(30)
 	eststo clear
-	
 	}
 	
 	if `sensitivity' == 1 {
 		
-		**# Control for general economic growth
-
+		**# Control for general economic growth (without nightlights)
+		local ctrls_alt temp rain tree_cover_s ln_duration ln_distance ln_exp_idx ln_coverage_udym ln_group_size traveling
+		
 		* State-Year FE
-		eststo: reghdfe sr dist_f_cum_km2 `ctrls', ///
+		eststo: reghdfe sr dist_f_cum_km2 `ctrls_alt', ///
 			a(uid c_code_2011_num state_code_2011_num#year month) vce(cl biome)
 			estadd local user_fe "$\checkmark$"
 			estadd local dist_fe "$\checkmark$"
@@ -404,43 +342,35 @@ if `robustness' == 1 {
 			estadd local month_fe "$\checkmark$"
 			
 		* State-Time Trend FE
-		eststo: reg_sat sr dist_f_cum_km2 `ctrls' i.state_code_2011_num#c.year_month
+		eststo: reg_sat sr dist_f_cum_km2 `ctrls_alt' i.state_code_2011_num#c.year_month
 			
 		* Nightlights
-		g ln_rad_sum = ln(rad_sum)
-		eststo: reg_sat sr dist_f_cum_km2 `ctrls' ln_rad_sum
+		eststo: reg_sat sr dist_f_cum_km2 `ctrls_alt' ln_rad_sum
 			
 		esttab using "${TABLE}/tables/robust_growth.tex", replace ///
 			stats(user_fe user_y_fe dist_fe st_y_fe st_m_fe month_fe N r2, ///
 			labels(`"User FEs"' `"User x Year FEs"' `"District FEs"' ///
 			`"State x Year FEs"' `"State x Month FEs"' `"Month FEs"' `"N"' ///
-			`"\(R^{2}\)"') fmt(0 0 0 0 0 0 0 3)) indicate("Main Controls=`ctrls'" ///
-			"State Time Trend=*c.year_month" "Nightlights=ln_rad_sum") ///
+			`"\(R^{2}\)"') fmt(0 0 0 0 0 0 0 3)) indicate("Main Controls=`ctrls_alt'" /// 
+			"State $\times$ Time Trend=*c.year_month" "Nightlights=ln_rad_sum") ///
 			wrap nocons nonotes booktabs nomtitles star(* .1 ** .05 *** .01) ///
 			label se b(%5.3f) width(0.8\hsize) varwidth(40)
 		eststo clear
 		
 		**# 1. Stage-I projects
 		
-		* Read
 		use "${DATA}/dta/fc_ebd_udt_post_v02", clear
-		
-		* Prep
 		drop if year == 2014
 		drop_outliers
-		local ctrls temp rain tree_cover_s ln_duration ln_distance ///
-			ln_exp_idx ln_coverage_udym ln_group_size traveling
 		la var dist_f_cum_km2_s1 "Stage-I Approvals (\(km^{2}\))"
 
 		eststo: reg_sat sr dist_f_cum_km2 *_s1 `ctrls'
 			estadd local data "Post-2014"
 			estadd local wt "No"
 			estadd local samp "None"
-			estadd local trend "No"
-		
+
 		**# 2. User x Month FE
 		
-		* Read
 		use "${DATA}/dta/fc_ebd_udt_v02", clear
 		drop if year == 2014
 		drop_outliers
@@ -466,8 +396,6 @@ if `robustness' == 1 {
 				estadd local data "All"
 				estadd local wt "Yes"
 				estadd local samp "None"
-		
-		**# ADD N_TRIPS_USER > 5 to verify that activity not driven by newcomers
 		
 		**# 4. Truncate - drop 3 largest projects
 		preserve
@@ -513,16 +441,16 @@ if `robustness' == 1 {
 		**# 7. Simpson/Shannon Index
 		preserve
 			
-			*replace dist_f_cum_km2 = dist_f_cum_km2 / 100
-			*eststo: reg_sat sh_index dist_f_cum_km2 `ctrls'
-			*	estadd local data "All"
-			*	estadd local samp "Full"
-			*	estadd local clust "Biome"
-			
-			eststo: reg_sat si_index dist_f_cum_km2 `ctrls'
+			replace dist_f_cum_km2 = dist_f_cum_km2 / 100
+			eststo: reg_sat sh_index dist_f_cum_km2 `ctrls'
 				estadd local data "All"
 				estadd local samp "None"
-				estadd local clust "Biome"	 
+				estadd local clust "Biome"
+			
+			*eststo: reg_sat si_index dist_f_cum_km2 `ctrls'
+			*	estadd local data "All"
+			*	estadd local samp "None"
+			*	estadd local clust "Biome"	 
 		restore
 		
 		**# 8. Share of Baseline Forest Cover
@@ -531,27 +459,21 @@ if `robustness' == 1 {
 		eststo: reg_sat sr dist_f_cum_km2_s `ctrls'
 				estadd local data "All"
 				estadd local samp "None"
-				estadd local clust "Biome"
-				
-		/*
-		**#. Alt Sample: Drop non-forest districts
-		preserve
-			
-			bys c_code_2011: egen treat = max(dist_f_cum_km2 > 0 & dist_f_cum_km2!=.)
-			drop if treat == 0
-			eststo: reg_sat sr dist_f_cum_km2 `ctrls'
-				estadd local data "All"
-				estadd local samp "Treated"
-				estadd local clust "Biome"
-		
-		restore
-		*/
+				estadd local clust "Biome"	
 		
 		**# 10. Alt Sample: Drop sparse eBird districts
 		preserve
-			egen pc25 = pctile(n_trips_dist), p(25)
-			drop if n_trips_dist < pc25
-			eststo: reg_sat sr dist_f_cum_km2 `ctrls'
+			
+			* Above median trips per user and users per district
+			egen tag_d = tag(c_code_2011) 
+			egen tag_u = tag(uid)
+			sum n_trips_user if tag_u, d
+			g n_trips_user_med = r(p50)
+			sum n_users_dist if tag_d, d
+			g n_users_dist_med = r(p50)
+			g high_activity = ( (n_users_dist > n_users_dist_med) & (n_trips_user > n_trips_user_med) )
+			
+			eststo: reg_sat sr dist_f_cum_km2 `ctrls' if high_activity
 				estadd local data "All"
 				estadd local samp "High-Activity"
 				estadd local clust "Biome"
@@ -574,9 +496,9 @@ if `robustness' == 1 {
 			drop if year == 2014
 			drop_outliers
 			
-			* Cell Fixed Effect
-			eststo: reghdfe sr dist_f_cum_km2 temp rain tree_cover_s ///
-				ln_duration ln_distance ln_exp_idx ln_group_size traveling, ///
+			* Cell Fixed Effect (remove coverage control)
+			eststo: reghdfe sr dist_f_cum_km2 temp rain tree_cover_s ln_duration ///
+				ln_distance ln_exp_idx ln_group_size ln_rad_sum traveling, ///
 				a(cell state_code_2011_num#month year) vce(cl biome)
 		
 				estadd local data "All"
@@ -588,9 +510,8 @@ if `robustness' == 1 {
 		
 		restore
 		
-		/*
 		* 13. Wild Bootstrap
-		
+		/*
 		// Partial out FEs
 		reghdfe sr `ctrls', a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome) residuals(r_sr)
 		reghdfe dist_f_cum_km2 `ctrls', a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome) residuals(r_treat)
@@ -628,7 +549,6 @@ if `robustness' == 1 {
 			boot_ci_lb(fmt(a3) par(`"["' `","')) ///
 			& boot_ci_ub(fmt(a3) par(`""' `"]"')))
 		*/
-		
 		* TABLE: ROBUSTNESS (Continued)
 		esttab using "${TABLE}/tables/robustness2.tex", replace ///
 			keep(dist_f*) stats(data samp user_y_fe dist_fe cell_fe st_m_fe ///
@@ -636,7 +556,7 @@ if `robustness' == 1 {
 			`"User x Year FEs"' `"District FEs"' `"Cell FEs"' ///
 			`"State x Month FEs"' `"Year FEs"' `"Clustering"' `"N"' ///
 			`"\(R^{2}\)"') fmt(0 0 0 0 0 0 0 0 0 3)) ///
-			mlabel("Simpson" "SR" "SR" "SR" "SR") ///
+			mlabel("Shannon" "SR" "SR" "SR" "SR") ///
 			wrap nocons nonotes booktabs nomtitles star(* .1 ** .05 *** .01) ///
 			label se b(%5.3f) width(\hsize) varwidth(40)
 		eststo clear

@@ -18,7 +18,7 @@ set more off
 set maxvar 10000
 
 //Set Directory Paths
-gl root 	"/Volumes/Backup Plus/research/data/def_biodiv/parivesh/"
+gl root 	"/Volumes/Backup Plus 1/research/data/def_biodiv/parivesh/"
 
 *===============================================================================
 * Generate File List

@@ -531,7 +531,7 @@ if `ss_91' == 1 {
 	* State Fractions
 	preserve
 	
-		* Pre-period 
+		* Pre-period  
 		keep if year == 2015
 		keep c_code_1991 state_code_1991 year_month dist_f_cum_km2
 		
