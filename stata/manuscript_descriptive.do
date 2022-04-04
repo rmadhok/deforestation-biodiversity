@@ -26,8 +26,8 @@ cd "${TABLE}"
 
 // Modules
 local sumstats			0
-local learning			1
-local estudy_f			0
+local learning			0
+local estudy_f			1
 local estudy			0
 local valuation			0
 
@@ -79,13 +79,14 @@ if `sumstats' == 1 {
 	drop if year == 2014
 	drop_outliers
 	
-	* Tag district
+	* Tag
 	bys c_code_2011: egen treat = max(dist_f_cum_km2 > 0 & dist_f_cum_km2!=.)
 	egen tag_d = tag(c_code_2011) //district-level
 	egen tag_dym = tag(c_code_2011 year_month)
+	egen tag_u = tag(uid)
 	
 	* Indent for pretty latex formatting
-	foreach v of varlist dist_f*_cum_km2 tree* pop* ///
+	foreach v of varlist dist_f*_cum_km2 tree* pop* rad* ///
 		sr coverage* n_* duration distance temp rain exp_idx group_size { 
 	
 			label variable `v' `"\hspace{0.2cm} `: variable label `v''"'	
@@ -93,6 +94,7 @@ if `sumstats' == 1 {
 
 	* Collect
 	local dist_vars n_users_dist n_trips_dist pop_density
+	local user_vars n_dist_user n_st_user n_ym_user
 	local trip sr coverage_udym duration distance group_size
 	local covariates tree_cover_s rain temp rad_mean
 	
@@ -114,7 +116,17 @@ if `sumstats' == 1 {
 		collabel("Mean" "Std. Dev." "N", prefix({) suffix(})) ///
 		refcat(n_users_dist "\underline{\emph{District}}", nolabel) ///
 		nomtitle booktabs noobs label unstack nonumber
+	
+	* User Details
+	eststo clear
+	eststo A: estpost tabstat `user_vars' if tag_u & treat, s(n mean med sd) c(s)
+	eststo B: estpost tabstat `user_vars' if tag_u & !treat, s(n mean med sd) c(s)
 
+	esttab A B using "${TABLE}/tables/sumstats_ebd.tex", append f main(mean) aux(sd) ///
+		cells("mean(fmt(2)) sd(fmt(2)) count(fmt(0))") ///
+		refcat(n_dist_user "\underline{\emph{User}}", nolabel) nomtitle collabel(none) ///
+		width(\hsize) nomtitle booktabs noobs label unstack nonumber plain
+	
 	* Birdwatching Details
 	eststo clear
 	eststo A: estpost tabstat `trip' if treat, s(n mean med sd) c(s)
@@ -136,18 +148,22 @@ if `sumstats' == 1 {
 		booktabs noobs label unstack nonumber plain
 	
 	**# Full Summary Stats
-	
 	eststo clear
 	eststo: estpost tabstat `dist_vars' if tag_d, s(n mean sd) c(s) // District
-
 	esttab using "${TABLE}/tables/sumstats_ebd_full.tex", replace f main(mean) aux(sd) ///
 		cells("mean(fmt(2) label(Mean)) sd(fmt(2) label(SD)) count(fmt(0) label(N))") ///
 		refcat(n_users_dist "\underline{\emph{District}}", nolabel) ///
 		nomtitle booktabs noobs label unstack nonumber
 
 	eststo clear
+	eststo: estpost tabstat `user_vars' if tag_u, s(n mean med sd) c(s) // Birdwatching
+	esttab using "${TABLE}/tables/sumstats_ebd_full.tex", append f main(mean) aux(sd) ///
+		cells("mean(fmt(2)) sd(fmt(2)) count(fmt(0))") ///
+		refcat(n_dist_user "\underline{\emph{User}}", nolabel) nomtitle collabel(none) ///
+		width(\hsize) nomtitle booktabs noobs label unstack nonumber plain
+	
+	eststo clear
 	eststo: estpost tabstat `trip', s(n mean med sd) c(s) // Birdwatching
-
 	esttab using "${TABLE}/tables/sumstats_ebd_full.tex", append f main(mean) aux(sd) ///
 		cells("mean(fmt(2)) sd(fmt(2)) count(fmt(0))") ///
 		refcat(sr "\underline{\emph{User-District-Time}}", nolabel) nomtitle collabel(none) ///
@@ -155,7 +171,6 @@ if `sumstats' == 1 {
 	
 	eststo clear
 	eststo: estpost tabstat `covariates' if tag_dym, s(n mean med sd) c(s) // Covariates
-	
 	esttab using "${TABLE}/tables/sumstats_ebd_full.tex", append f main(mean) aux(sd) ///
 		cells("mean(fmt(2)) sd(fmt(2)) count(fmt(0))") refcat(tree_cover_s ///
 		"\underline{\emph{District-Time}}" , nolabel) nomtitle collabel(none) ///
@@ -204,7 +219,6 @@ if `sumstats' == 1 {
 	replace proj_cat = "other" if inlist(proj_cat, "underground", "industry")
 	
 	* Tabulate
-	*drop if proj_area_forest2 > 2000 // drop 3 megaprojects
 	replace proj_cat = proper(proj_cat)
 	eststo clear
 	eststo: estpost tabstat proj_area_forest2, by(proj_cat) s(n mean sd sum) c(s)
@@ -408,21 +422,24 @@ if `learning' == 1 {
 *===============================================================================
 if `estudy_f' == 1 {
 	
-	** TO DO: AGGREGATE FC DATA TO ANNUAL AND DO EVENT STUDY + TWFE
-	
 	* Read
+	foreach file in "post_" "" {
+	
 	*use "${DATA}/dta/fc_dym_s2_v02", clear
-	use "${DATA}/dta/fc_dym_s2_post_v02", clear
+	use "${DATA}/dta/fc_dym_s2_`file'v02", clear
+	
+	if "`file'" == "post_" {
 	merge 1:1 c_code_2011 year_month using "${DATA}/dta/fc_dym_s1_post_v02", keep(3) nogen // merge stage 1
-	*keep *_code_2011 year_month year month dist_*_cum_km2 tree* n_proj_cum
+	}
+	
 	keep *_code_2011 year_month year month dist_f_cum_km2* tree* n_proj_cum
-	order *_code_2011, first
+	drop *_lag* *_lead*
 	*drop if year == 2014
 	
-	* Add Weather
+	* Add Controls
 	tempfile temp
 	save "`temp'"
-	foreach file in "india_rainfall_gpm" "india_temperature_era" {
+	foreach file in "india_rainfall_gpm" "india_temperature_era" "india_nightlights" {
 		import delimited "${DATA}/csv/`file'", varn(1) clear
 		g year_month = ym(year(date(yearmonth, "20YM")), month(date(yearmonth, "20YM")))
 		format year_month %tmCCYY-NN
@@ -431,47 +448,53 @@ if `estudy_f' == 1 {
 		save "`temp'", replace
 	}
 	
-	* Add area
-	merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist", keepusing(tot_area) nogen
+	* Annual
+	sort c_code_2011 year_month
+	collapse (lastnm) dist_f_cum_km2* n_proj_cum tree* state_code_2011 ///
+			 (mean) rain_gpm temp_era rad_mean, by(c_code_2011 year)
+	la var dist_f_cum_km2 "Forest Infrastructure (\(km^{2}\))"
 	encode c_code_2011, gen(c_code_2011_num)
 	encode state_code_2011, gen(state_code_2011_num)
-	g tree_cover_s = (tree_cover_km2 / tot_area)*100
+	
+	* Add area
+	*merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist", keepusing(tot_area) nogen
 	
 	**# TWFE
 	* Transform (see https://www.statalist.org/forums/forum/general-stata-discussion/general/1522076-how-do-i-interpret-a-log-level-and-log-log-model-when-my-independent-variable-is-already-a-percentage)
 	g ln_dist_f_cum_km2 = asinh(dist_f_cum_km2)
+	g ln_dist_f_cum_km2_s1 = asinh(dist_f_cum_km2_s1)
 	la var ln_dist_f_cum_km2 "log(Infrastructure)"
 	g ln_tree_cover_pct = ln(tree_cover_pct)
 	g ln_tree_cover_km2 = ln(tree_cover_km2)
 	g ln_n_proj_cum = asinh(n_proj_cum)
-	g ln_tree_cover_s = ln(tree_cover_s)
 	la var n_proj_cum "Num. Projects"
-
-	foreach v of varlist dist_f_cum_km2 n_proj_cum {
+	local controls temp_era rain_gpm rad_mean
+	
+	foreach v of varlist dist_f_cum_km2 {
 		
 		* lin-lin
-		eststo `v'_linlin: reghdfe tree_cover_pct `v', ///
+		eststo `v'_linlin: reghdfe tree_cover_pct `v' `v'_s1 `controls', ///
 			a(c_code_2011_num state_code_2011_num#year) vce(cl c_code_2011_num)
 	
 			estadd local dist_fe "$\checkmark$"
 			estadd local st_y_fe "$\checkmark$"
 		
 		* log-lin
-		eststo `v'_loglin: reghdfe ln_tree_cover_pct `v', ///
+		eststo `v'_loglin: reghdfe ln_tree_cover_pct `v' `v'_s1 `controls', ///
 			a(c_code_2011_num state_code_2011_num#year) vce(cl c_code_2011_num)
 			
 			estadd local dist_fe "$\checkmark$"
 			estadd local st_y_fe "$\checkmark$"
 			
 		* lin-log
-		eststo `v'_linlog: reghdfe tree_cover_pct ln_`v', ///
+		eststo `v'_linlog: reghdfe tree_cover_pct ln_`v' ln_`v'_s1 `controls', ///
 			a(c_code_2011_num state_code_2011_num#year) vce(cl c_code_2011_num)
 			
 			estadd local dist_fe "$\checkmark$"
 			estadd local st_y_fe "$\checkmark$"
 		
 		* log-log
-		eststo `v'_loglog: reghdfe ln_tree_cover_pct ln_`v', ///
+		eststo `v'_loglog: reghdfe ln_tree_cover_pct ln_`v' ln_`v'_s1 `controls', ///
 			a(c_code_2011_num state_code_2011_num#year) vce(cl c_code_2011_num)
 			
 			estadd local dist_fe "$\checkmark$"
@@ -480,12 +503,14 @@ if `estudy_f' == 1 {
 		esttab `v'_linlin `v'_loglog using "${TABLE}/tables/f_verify_`v'.tex", ///
 			replace stats(dist_fe st_y_fe N r2, labels(`"District FEs"' ///
 			`"State x Year FEs"' `"N"' `"\(R^{2}\)"') fmt(0 0 0 3)) ///
-			mlabels("Tree Cover (\%)" "log(Tree Cover)") ///
-			wrap nocons nonotes booktabs nomtitles star(* .1 ** .05 *** .01) ///
-			label se b(%5.3f) width(0.8\hsize)
+			mlabels("Tree Cover (\%)" "log(Tree Cover)") wrap nocons nonotes ///
+			indicate("Controls=`controls'") booktabs nomtitles ///
+			star(* .1 ** .05 *** .01) label se b(%5.3f) width(0.8\hsize)
 		eststo clear
 	}
-	ll
+	}
+	kk
+	
 	/*
 	**# Event-Study -- New DID Lit
 	

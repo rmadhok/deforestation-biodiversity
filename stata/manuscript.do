@@ -26,11 +26,11 @@ cd "${TABLE}"
 
 // Modules
 local main_analysis		0
-local dynamics			1
-local robustness		0
+local dynamics			0
+local robustness		1
 	local mobility		0
 	local sensitivity	0
-	local slx			0
+	local slx			1
 
 *===============================================================================
 * PROGRAMS
@@ -78,7 +78,7 @@ local ctrls temp rain tree_cover_s ln_duration ln_distance ln_rad_sum ///
 * MAIN ANALYSIS
 *===============================================================================
 if `main_analysis' == 1 {
-
+	/*
 	*--------------------
 	* 1. MAIN RESULTS
 	*--------------------
@@ -114,7 +114,7 @@ if `main_analysis' == 1 {
 		mlabgap(*2) xlabel(-0.3(.1)0.1, labsize(medium)) ylabel(, labsize(medium)) ///
 		title("A", size(large)) saving("${TABLE}/fig/main.gph", replace) xsize(4.6)
 	graph export "${TABLE}/fig/main.png", replace
-	
+
 	* Table
 	esttab using "${TABLE}/tables/main_results.tex", keep(dist_f_cum_km2) replace ///
 		stats(ymean user_fe user_y_fe dist_fe st_m_fe year_fe N r2, ///
@@ -152,10 +152,10 @@ if `main_analysis' == 1 {
 	tab mine if tag_d // N=76 districts with mines
 	egen tag_u = tag(uid)
 	sum n_trips_user if tag_u, d
-	g n_trips_user_med = r(p50)
-	sum n_users_dist if tag_d, d
-	g n_users_dist_med = r(p50)
-	g subsample = ( (n_users_dist > n_users_dist_med) & (n_trips_user > n_trips_user_med) )
+	g n_trips_user_med = r(p50) // median number of trips/user
+	sum n_users_dist if tag_d, d 
+	g n_users_dist_med = r(p50) // median number of users/district
+	g subsample = ( (n_users_dist > n_users_dist_med) & (n_trips_user > n_trips_user_med) ) // high-activity districts and users
 	tab mine if tag_d == 1 & subsample == 1
 	
 	eststo clear
@@ -173,7 +173,7 @@ if `main_analysis' == 1 {
 	mining impact doubles in high-activity districts but others unchanged
 	i.e. mining coeff driven by low-activity users but others are not.
 	------------------------------------------------------------------*/
-	
+	*/
 	*--------------------------
 	* 3. HETEROGENEITY
 	*--------------------------
@@ -188,7 +188,7 @@ if `main_analysis' == 1 {
 	eststo clear
 	eststo: reg_sat sr c.dist_f_cum_km2##c.sr_bl_std n_*_cum_s `ctrls'
 	eststo: reg_sat sr c.dist_f_cum_km2##c.tree_cover_base_p_std n_*_cum_s `ctrls'	
-	
+	ss
 	esttab using "${TABLE}/tables/het_biodiv.tex", replace ///
 		keep(dist_f_cum_km2 c.*) stats(ymean user_y_fe dist_fe st_m_fe N r2, ///
 		labels(`"Outcome Mean"' `"User x Year FEs"' `"District FEs"' ///
@@ -256,8 +256,6 @@ if `dynamics' == 1 {
 		mlabel format(%9.2g) mlcolor(black) mlabposition(1) mlabgap(*2) ///
 		mlabsize(medium) mlabcolor(black) xlabel(, labsize(medium)) xsize(4.6)
 	graph export "${TABLE}/fig/cumulative_lag.png", width(1000) replace
-	
-	* Add table
 	
 }
 
@@ -358,7 +356,6 @@ if `robustness' == 1 {
 		eststo clear
 		
 		**# 1. Stage-I projects
-		
 		use "${DATA}/dta/fc_ebd_udt_post_v02", clear
 		drop if year == 2014
 		drop_outliers
@@ -370,7 +367,6 @@ if `robustness' == 1 {
 			estadd local samp "None"
 
 		**# 2. User x Month FE
-		
 		use "${DATA}/dta/fc_ebd_udt_v02", clear
 		drop if year == 2014
 		drop_outliers
@@ -438,7 +434,7 @@ if `robustness' == 1 {
 			width(\hsize) varwidth(40)
 		eststo clear
 	
-		**# 7. Simpson/Shannon Index
+		**# 6. Simpson/Shannon Index
 		preserve
 			
 			replace dist_f_cum_km2 = dist_f_cum_km2 / 100
@@ -453,7 +449,7 @@ if `robustness' == 1 {
 			*	estadd local clust "Biome"	 
 		restore
 		
-		**# 8. Share of Baseline Forest Cover
+		**# 7. Share of Baseline Forest Cover
 		g dist_f_cum_km2_s = (dist_f_cum_km2 / tree_cover_base)*100
 		la var dist_f_cum_km2_s "Forest Infrastructure (\%)"
 		eststo: reg_sat sr dist_f_cum_km2_s `ctrls'
@@ -461,7 +457,7 @@ if `robustness' == 1 {
 				estadd local samp "None"
 				estadd local clust "Biome"	
 		
-		**# 10. Alt Sample: Drop sparse eBird districts
+		**# 8. Alt Sample: Drop sparse eBird districts
 		preserve
 			
 			* Above median trips per user and users per district
@@ -479,7 +475,7 @@ if `robustness' == 1 {
 				estadd local clust "Biome"
 		restore
 		
-		**# 11. Clustering
+		**# 9. Clustering
 		eststo: reghdfe sr dist_f_cum_km2 `ctrls', ///
 			a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl c_code_2011_num)
 				estadd local user_y_fe "$\checkmark$"
@@ -489,7 +485,7 @@ if `robustness' == 1 {
 				estadd local samp "None"
 				estadd local clust "District"
 		
-		**# Cell FEs
+		**# 10. Cell FEs
 		preserve
 			
 			use "${DATA}/dta/fc_ebd_uct_v02", clear
@@ -560,37 +556,39 @@ if `robustness' == 1 {
 			wrap nocons nonotes booktabs nomtitles star(* .1 ** .05 *** .01) ///
 			label se b(%5.3f) width(\hsize) varwidth(40)
 		eststo clear
-
 	}
 
 	if `slx' == 1 {
-	
-		** STANDARDIZE THE LAG TO BRING OUT COEFF
+		
+		* Standardize for ease of interpretation
+		foreach v of varlist dist_f_cum_km2 dist_f*slx* {
+			egen `v'_std = std(`v')
+		}
 		
 		* Spatial Spillovers
-		la var dist_f_cum_km2 "Forest Infrastructure (district d)"
-		la var dist_f_cum_km2_slx_bc "Forest Infrastructure (district j $\neq$ d)" 
-		eststo: reg_sat sr dist_f_cum_km2 `ctrls' *_slx_bc
+		la var dist_f_cum_km2_std "Forest Infrastructure (district d)"
+		la var dist_f_cum_km2_slx_bc_std "Forest Infrastructure (district j $\neq$ d)" 
+		eststo: reg_sat sr dist_f_cum_km2_std `ctrls' *_slx_bc_std
 			estadd local cutoff "N/A"
-		drop dist_f_cum_km2_slx_bc
-		ren dist_f_cum_km2_slx_i_0 dist_f_cum_km2_slx_bc
-		la var dist_f_cum_km2_slx_bc "Forest Infrastructure (district j $\neq$ d)"
-		eststo: reg_sat sr dist_f_cum_km2 `ctrls' *_slx_bc
+		drop dist_f_cum_km2_slx_bc_std
+		ren dist_f_cum_km2_slx_i_0_std dist_f_cum_km2_slx_bc_std
+		la var dist_f_cum_km2_slx_bc_std "Forest Infrastructure (district j $\neq$ d)"
+		eststo: reg_sat sr dist_f_cum_km2_std `ctrls' *_slx_bc_std
 			estadd local cutoff "None"
-		drop dist_f_cum_km2_slx_bc
-		ren dist_f_cum_km2_slx_i_100 dist_f_cum_km2_slx_bc
-		la var dist_f_cum_km2_slx_bc "Forest Infrastructure (district j $\neq$ d)"
-		eststo: reg_sat sr dist_f_cum_km2 `ctrls' *_slx_bc
+		drop dist_f_cum_km2_slx_bc_std
+		ren dist_f_cum_km2_slx_i_100_std dist_f_cum_km2_slx_bc_std
+		la var dist_f_cum_km2_slx_bc_std "Forest Infrastructure (district j $\neq$ d)"
+		eststo: reg_sat sr dist_f_cum_km2_std `ctrls' *_slx_bc_std
 			estadd local cutoff "100km"
-		drop dist_f_cum_km2_slx_bc
-		ren dist_f_cum_km2_slx_i_200 dist_f_cum_km2_slx_bc
-		la var dist_f_cum_km2_slx_bc "Forest Infrastructure (district j $\neq$ d)"
-		eststo: reg_sat sr dist_f_cum_km2 `ctrls' *_slx_bc
+		drop dist_f_cum_km2_slx_bc_std
+		ren dist_f_cum_km2_slx_i_200_std dist_f_cum_km2_slx_bc_std
+		la var dist_f_cum_km2_slx_bc_std "Forest Infrastructure (district j $\neq$ d)"
+		eststo: reg_sat sr dist_f_cum_km2_std `ctrls' *_slx_bc_std
 			estadd local cutoff "200km"
-		drop dist_f_cum_km2_slx_bc
-		ren dist_f_cum_km2_slx_i_500 dist_f_cum_km2_slx_bc
-		la var dist_f_cum_km2_slx_bc "Forest Infrastructure (district j $\neq$ d)"
-		eststo: reg_sat sr dist_f_cum_km2 `ctrls' *_slx_bc
+		drop dist_f_cum_km2_slx_bc_std
+		ren dist_f_cum_km2_slx_i_500_std dist_f_cum_km2_slx_bc_std
+		la var dist_f_cum_km2_slx_bc_std "Forest Infrastructure (district j $\neq$ d)"
+		eststo: reg_sat sr dist_f_cum_km2_std `ctrls' *_slx_bc_std
 			estadd local cutoff "500km"
 		
 		esttab using "${TABLE}/tables/spatial_spillovers.tex", replace ///
@@ -603,7 +601,6 @@ if `robustness' == 1 {
 			nomtitles star(* .1 ** .05 *** .01) label se b(%5.3f) ///
 			width(\hsize) varwidth(30)
 		eststo clear
-	
 	}
 	
 }

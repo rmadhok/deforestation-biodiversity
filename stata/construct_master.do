@@ -25,7 +25,7 @@ gl DO		"${ROOT}/scripts/stata"
 
 // Module
 local ebird					0
-local district_forest		1
+local district_forest		0
 local merge					0
 *===============================================================================
 * BIODIVERSITY
@@ -147,6 +147,7 @@ if `ebird' == 1 {
 	la var ln_duration "Duration (min)"
 	la var ln_distance "Distance (km)"
 	la var traveling "\% Travelling Trips"
+	la var rad_mean "Nightlights (radiance)"
 	
 	* Save
 	drop sr_uyr n_cells_dist
@@ -416,7 +417,6 @@ if `merge' == 1 {
 		save "${DATA}/dta/fc_ebd_`level'_`fc_data'v02", replace
 	}
 	
-	* NOTE: construct this on-the-fly?
 	if "`fc_data'" == "post" {
 		
 		* Read Stage II (post 2014)

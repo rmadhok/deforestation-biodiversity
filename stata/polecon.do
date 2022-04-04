@@ -27,8 +27,8 @@ cd "${TABLE}"
 
 // Modules
 local bartik	0
-local hte		0
-local project	1
+local hte		1
+local project	0
 
 *------------------
 * PROGRAM
@@ -113,7 +113,7 @@ if `hte' == 1 {
 	* Aggregate to 1991 border
 	collapse (mean) temp rain tree_cover_s duration ///
 					distance exp_idx coverage_udym ///
-					traveling group_size sr ///
+					traveling group_size rad_sum sr ///
 			 (sum) n_trips ///
 			 (first) year month biome, by(uid c_code_1991 year_month) 
 	
@@ -123,23 +123,23 @@ if `hte' == 1 {
 	* Prep
 	drop if year == 2014
 	drop_outliers
-	foreach v of varlist duration exp_idx coverage_udym group_size {
+	foreach v of varlist duration exp_idx coverage_udym group_size rad_sum {
 		g ln_`v' = ln(`v')
 	}
 	g ln_distance = asinh(distance)
 	local ctrls temp rain tree_cover_s ln_duration ln_distance ///
-		        ln_exp_idx ln_coverage_udym traveling ln_group_size
+		        ln_exp_idx ln_coverage_udym traveling ln_group_size rad_sum
 	
-	* HTE
+	* HTE (remove dist FE?, add if britdum==1)
 	eststo nld: reghdfe sr c.dist_f_cum_km2##(c.mahrai c.st_state_share) `ctrls', ///
-			a(uid#year c_code_1991_num state_code_1991_num#month) vce(cl biome)	
+			a(uid#year c_code_1991_num state_code_1991_num#month) vce(cl biome)
 	
 			sum sr if e(sample)==1
 			estadd scalar ymean = `r(mean)'
 			estadd local user_y_fe "$\checkmark$"
 			estadd local dist_fe "$\checkmark$"
 			estadd local st_m_fe "$\checkmark$"
-	
+	kk
 	**# Reservations
 	
 	* Read master
