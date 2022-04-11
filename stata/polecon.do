@@ -76,6 +76,7 @@ if `bartik' == 1 {
 			estadd local year_fe "$\checkmark$"
 	*/
 	* Table
+	kk
 	esttab nld using "${TABLE}/tables/polecon_ss.tex", replace ///
 		label keep(c.*mahrai) ///
 		stats(dist_fe st_y_fe month_fe N r2, labels(`"District FEs"' ///
@@ -140,6 +141,27 @@ if `hte' == 1 {
 			estadd local dist_fe "$\checkmark$"
 			estadd local st_m_fe "$\checkmark$"
 	kk
+	
+	/*
+	**# FRA (2006)
+	
+	* 2014 FRA Fraction
+	use "${DATA}/dta/fc_dym_s2_v02", clear
+	collapse (lastnm) fra = n_fra_cum_s, by(c_code_2011 year)
+	keep if year == 2015
+	sum fra, d
+	g fra_d = (fra >= r(mean))
+	drop year
+	
+	merge 1:m c_code_2011 using "${DATA}/dta/fc_ebd_udt_v02", keep(3) nogen
+	keep if year > 2015
+	drop_outliers
+	
+	reghdfe sr c.dist_f_cum_km2##c.fra_d `ctrls', ///
+			a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
+	*/
+	
+	
 	**# Reservations
 	
 	* Read master
@@ -187,7 +209,7 @@ if `hte' == 1 {
 		`"District FEs"' `"State x Month FEs"' `"N"' ///
 		`"\(R^{2}\)"') fmt(0 0 0 0 3)) interaction(" $\times$ ") ///
 		indicate("ST Share=st_state_share") wrap nocons nonotes booktabs ///
-		nomtitles star(* .1 ** .05 *** .01) label se b(%5.3f) width(0.3\hsize)
+		nomtitles star(* .1 ** .05 *** .01) label se b(%5.3f) width(0.5\hsize)
 	eststo clear
 }
 
@@ -195,9 +217,9 @@ if `hte' == 1 {
 * MECHANISMS
 *-------------------------------------------------------------------------------
 if `project' == 1 {
-	/*
-	**# 1. District-Month Panel
 	
+	**# 1. District-Month Panel
+	/*
 	* Read project level
 	use "${DATA}/dta/fc_pdym_s2_v02", clear
 	
@@ -246,7 +268,7 @@ if `project' == 1 {
 	* Merge landlord
 	merge m:1 c_code_1991 year_month using "${DATA}/dta/polecon_91_v02", keep(1 3) nogen
 
-	**# REGRESSIONS
+	**# Regression
 	g tree_cover_base_s = tree_cover_base / tot_area
 	foreach v of varlist n_cba_cum-n_fra_cum {
 		reghdfe `v' mahrai st_state_share tree_cover_base_s tot_area, a(state_code_1991_num#year_month) vce(cl c_code_1991_num)
@@ -296,7 +318,7 @@ if `project' == 1 {
 			estadd local month "$\checkmark$"
 			estadd local clust "District"
 	}
-	
+	*/
 	**# 3. Project Level
 	
 	* Read project level
@@ -314,88 +336,30 @@ if `project' == 1 {
 	* Merge landlord
 	merge m:1 c_code_1991 year_month using "${DATA}/dta/polecon_91_v02", keep(3) nogen
 	
-	* Regressions
+	* Regressions (state-year_month, state + year_month works)
 	g encroach_frac = dist_f / (dist_f + dist_nf)
 	g tree_cover_base_s = tree_cover_base / tot_area
-	foreach v of varlist cba_num proj_fra_num displacement_num tot_fam_disp encroach_frac {
+	local controls st_state_share tree_cover_base_s tot_area tot_pop dist_f britdum 
+	foreach v of varlist cba_num proj_fra_num displacement_num {
 		
-		eststo: reghdfe `v' mahrai st_state_share tree_cover_base_s tot_area tot_pop britdum, a(state_code_1991_num#year_month) vce(cl state_code_1991_num)
+		eststo: reghdfe `v' mahrai `controls', a(state_code_1991_num#year_month) ///
+			vce(cl state_code_1991_num)
 			
 			sum `v' if e(sample)==1
 			estadd scalar ymean = `r(mean)'
-			estadd local st_y_fe "$\checkmark$"
-			estadd local month "$\checkmark$"
-			estadd local clust "District"
+			estadd local st_ym_fe "$\checkmark$"
+			estadd local clust "State"
 	}
-	
-	esttab using "${TABLE}/v3/tables/mech_polecon.tex", replace ///
-		keep(st_seats) stats(ymean st_y_fe month clust N r2, ///
-		labels(`"Outcome Mean"' `"State $\times$ Year FEs"' `"Month FEs"' ///
-		`"Clustering"' `"N"' `"\(R^{2}\)"') fmt(3 0 0 0 0 3)) ///
-		mlabels("CBA (=1)" "FRA (=1)" "Displ. (=1)" "Displ. (Fam.)" ///
-		"Size (ha.)" "log(patches)") wrap nocons nonotes booktabs nomtitles ///
-		star(* .1 ** .05 *** .01) label se b(%5.3f)
+	kk
+	esttab using "${TABLE}/tables/mech_polecon.tex", replace ///
+		keep(mahrai) stats(ymean st_ym_fe clust N r2, ///
+		labels(`"Outcome Mean"' `"State $\times$ Time FEs"' ///
+		`"Clustering"' `"N"' `"\(R^{2}\)"') fmt(3 0 0 0 3)) ///
+		mlabels("CBA (=1)" "FRA (=1)" "Displacement") ///
+		indicate("Controls=`controls'") wrap nocons nonotes ///
+		booktabs nomtitles star(* .1 ** .05 *** .01) label se b(%5.3f) width(1\hsize)
 	eststo clear
-	*/
 	
-	**# Monitoring Reports -- DROP (all projects need compliance report)
-
-	* pre-2014
-	import excel "${BACKUP}/fc_pre2014_raw.xlsx", firstrow clear
-	keep date_rec prop_no
-
-	* Clean strange characters
-	foreach v of varlist * {
-		replace `v' = lower(`v')
-		charlist `v' // get weird characters
-		local tokill `r(sepchars)' 
-		local good `c(alpha)' 0 1 2 3 4 5 6 7 8 9 : / . // keep a-z
-		local tokill: list tokill - good
-		foreach i of local tokill {
-			replace `v' = subinstr(`v',`"`i'"',"",.)
-		}
-	replace `v' = strtrim(`v')
-	}
-	
-	* Approval date
-	replace date_rec = subinstr(date_rec, " ", "", .)
-	split date_rec, parse("stageii:")
-	drop date_rec1 date_rec3
-	g date_s2_s = substr(date_rec2, 1, 9)
-	g date_s2 = date(date_s2_s, "DM20Y")
-	format date_s2 %td
-	drop date_rec2 date_s2_s
-	
-	* Post 2014 
-	keep if year(date_s2) >= 2014 // n = 1,854
-	
-	* Reports
-	egen monitor_report = noccur(date_rec), string("monitoring")
-	egen compliance_report = noccur(date_rec), string("compliance")
-	drop date_rec
-	
-	* Merge to pre-2014
-	merge 1:m prop_no using "${DATA}/dta/fc_pdym_s2_pre_v02", keep(3) nogen
-	g year = year(dofm(year_month))
-	g month = month(dofm(year_month))
-	
-	* Merge to crosswalk
-	merge m:1 c_code_2011 using "${DATA}/dta/crosswalk_full", ///
-		keepusing(c_code_1991) keep(3) nogen
-	
-	* Aggregate
-	collapse (mean) monitor* compliance* (first) year month, by(c_code_1991 year_month)
-	
-	* Merge landlord
-	merge m:1 c_code_1991 year_month using "${DATA}/dta/polecon_91_v02", keep(3) nogen
-	
-	* Regressions (null)
-	foreach v of varlist monitor_report compliance_report {
-		g `v'_ln = asinh(`v')
-		eststo: reghdfe `v'_ln mahrai st_state_share tree_cover_base tot_area tot_pop, a(state_code_1991_num#year_month) vce(cl state_code_1991_num)
-	}
-	
-
 }
 
 

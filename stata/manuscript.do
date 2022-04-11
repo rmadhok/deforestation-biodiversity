@@ -29,8 +29,8 @@ local main_analysis		0
 local dynamics			0
 local robustness		1
 	local mobility		0
-	local sensitivity	0
-	local slx			1
+	local sensitivity	1
+	local slx			0
 
 *===============================================================================
 * PROGRAMS
@@ -282,10 +282,10 @@ if `robustness' == 1 {
 	g ln_distance = asinh(distance)
 	
 	* Spatial lag window (500km)
-	replace dist_f_cum_km2_slx_i_500 = dist_f_cum_km2_slx_i_500/100000
+	replace dist_f_cum_km2_slx_i_500 = dist_f_cum_km2_slx_i_500/10000
 	replace dist_f_cum_km2 = dist_f_cum_km2 / 100
-	la var dist_f_cum_km2 "Forest Infrastructure (district $\emph{d}$)"
-	la var dist_f_cum_km2_slx_i_500 "Forest Infrastructure (district j $\neq$ d)"
+	la var dist_f_cum_km2 "Infrastructure (district $\emph{d}$)"
+	la var dist_f_cum_km2_slx_i_500 "Infrastructure (district j $\neq$ d)"
 	
 	* Extensive margin: Do projects reshuffle users to other districts (w/n 500 km)?
 	foreach v of varlist n_users_dym n_trips_dym {
@@ -322,7 +322,7 @@ if `robustness' == 1 {
 		fmt(0 0 0 0 0 3)) mlabels("Num. Users" "Num. Trips") ///
 		indicate("Controls = `ctrls'") wrap nocons nonotes booktabs ///
 		nomtitles star(* .1 ** .05 *** .01) label se b(%5.3f) ///
-		width(0.6\hsize) varwidth(30)
+		width(1\hsize)
 	eststo clear
 	}
 	

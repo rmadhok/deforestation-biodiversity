@@ -26,14 +26,14 @@ gl DO		"${ROOT}/scripts/stata"
 // Module
 local ebird					0
 local district_forest		0
-local merge					0
+local merge					1
 *===============================================================================
 * BIODIVERSITY
 *===============================================================================
 
 if `ebird' == 1 {
 	
-	local level "uct" // udt = user-district-yearmonth, uct = user-cell-yearmonth
+	local level "udt" // udt = user-district-yearmonth, uct = user-cell-yearmonth
 	
 	**# Read
 	import delimited using "${DATA}/csv/ebird_`level'.csv", clear
@@ -252,7 +252,8 @@ program define construct_deforest
 		g dist_f_`abbrev_`cat'' = dist_f if proj_cat == "`cat'"
 		g n_`abbrev_`cat'' = (proj_cat == "`cat'") // number of projects of type
 		g dist_nf_`abbrev_`cat'' = dist_nf if proj_cat == "`cat'"
-	}	
+	}
+	ren proj_fra_num n_fra
 
 	* Aggregate
 	collapse (sum) dist_f* dist_nf* n_* ///
@@ -316,7 +317,7 @@ program define construct_deforest
 	}
 	
 	* Number of Projects
-	foreach var of varlist n_ele-n_proj {
+	foreach var of varlist n_fra-n_proj {
 		
 		* No deforestation
 		replace `var' = 0 if `var' == .
@@ -327,9 +328,9 @@ program define construct_deforest
 		la var `var'_cum "`vlab'"
 		drop `var'
 	}
-	
+
 	* Share of total projects
-	foreach var of varlist n_ele_cum - n_tra_cum {
+	foreach var of varlist n_fra_cum - n_tra_cum {
 		
 		local vlab : var lab `var'
 		g `var'_s = 0 

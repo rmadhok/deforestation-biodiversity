@@ -25,9 +25,9 @@ gl TABLE	"${ROOT}/docs/jmp/tex_doc/v3"
 cd "${TABLE}"
 
 // Modules
-local sumstats			0
+local sumstats			1
 local learning			0
-local estudy_f			1
+local estudy_f			0
 local estudy			0
 local valuation			0
 
@@ -93,9 +93,9 @@ if `sumstats' == 1 {
 	}
 
 	* Collect
-	local dist_vars n_users_dist n_trips_dist pop_density
+	local dist_vars n_users_dist n_trips_dist
 	local user_vars n_dist_user n_st_user n_ym_user
-	local trip sr coverage_udym duration distance group_size
+	local trip sr coverage_udym duration distance
 	local covariates tree_cover_s rain temp rad_mean
 	
 	*---------------------------------------
@@ -422,95 +422,94 @@ if `learning' == 1 {
 *===============================================================================
 if `estudy_f' == 1 {
 	
-	* Read
-	foreach file in "post_" "" {
+	foreach file in "" "post_" {
 	
-	*use "${DATA}/dta/fc_dym_s2_v02", clear
-	use "${DATA}/dta/fc_dym_s2_`file'v02", clear
+		* Read
+		use "${DATA}/dta/fc_dym_s2_`file'v02", clear
 	
-	if "`file'" == "post_" {
-	merge 1:1 c_code_2011 year_month using "${DATA}/dta/fc_dym_s1_post_v02", keep(3) nogen // merge stage 1
-	}
+		* Post-2014 only (for stage 1 placebo)
+		if "`file'" == "post_" {
+			* Merge stage 1
+			merge 1:1 c_code_2011 year_month using "${DATA}/dta/fc_dym_s1_post_v02", keep(3) nogen // merge stage 1
+		}
+		keep *_code_2011 year_month year month dist_f_cum_km2* tree*
+		drop *_lag* *_lead*
+		*drop if year == 2014
 	
-	keep *_code_2011 year_month year month dist_f_cum_km2* tree* n_proj_cum
-	drop *_lag* *_lead*
-	*drop if year == 2014
+		* Add Controls
+		tempfile temp
+		save "`temp'"
+		foreach file in "india_rainfall_gpm" "india_temperature_era" "india_nightlights" {
+			import delimited "${DATA}/csv/`file'", varn(1) clear
+			g year_month = ym(year(date(yearmonth, "20YM")), month(date(yearmonth, "20YM")))
+			format year_month %tmCCYY-NN
+			drop yearmonth
+			merge 1:1 c_code_2011 year_month using "`temp'", keep(2 3) nogen
+			save "`temp'", replace
+		}
 	
-	* Add Controls
-	tempfile temp
-	save "`temp'"
-	foreach file in "india_rainfall_gpm" "india_temperature_era" "india_nightlights" {
-		import delimited "${DATA}/csv/`file'", varn(1) clear
-		g year_month = ym(year(date(yearmonth, "20YM")), month(date(yearmonth, "20YM")))
-		format year_month %tmCCYY-NN
-		drop yearmonth
-		merge 1:1 c_code_2011 year_month using "`temp'", keep(2 3) nogen
-		save "`temp'", replace
-	}
+		* Collapse to Annual
+		sort c_code_2011 year_month
+		collapse (lastnm) dist_f_cum_km2* tree* state_code_2011 ///
+				 (mean) rain_gpm temp_era rad_mean, by(c_code_2011 year)
+		encode c_code_2011, gen(c_code_2011_num)
+		encode state_code_2011, gen(state_code_2011_num)
 	
-	* Annual
-	sort c_code_2011 year_month
-	collapse (lastnm) dist_f_cum_km2* n_proj_cum tree* state_code_2011 ///
-			 (mean) rain_gpm temp_era rad_mean, by(c_code_2011 year)
-	la var dist_f_cum_km2 "Forest Infrastructure (\(km^{2}\))"
-	encode c_code_2011, gen(c_code_2011_num)
-	encode state_code_2011, gen(state_code_2011_num)
-	
-	* Add area
-	*merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist", keepusing(tot_area) nogen
-	
-	**# TWFE
-	* Transform (see https://www.statalist.org/forums/forum/general-stata-discussion/general/1522076-how-do-i-interpret-a-log-level-and-log-log-model-when-my-independent-variable-is-already-a-percentage)
-	g ln_dist_f_cum_km2 = asinh(dist_f_cum_km2)
-	g ln_dist_f_cum_km2_s1 = asinh(dist_f_cum_km2_s1)
-	la var ln_dist_f_cum_km2 "log(Infrastructure)"
-	g ln_tree_cover_pct = ln(tree_cover_pct)
-	g ln_tree_cover_km2 = ln(tree_cover_km2)
-	g ln_n_proj_cum = asinh(n_proj_cum)
-	la var n_proj_cum "Num. Projects"
-	local controls temp_era rain_gpm rad_mean
-	
-	foreach v of varlist dist_f_cum_km2 {
+		**# TWFE
+		* Transform (see https://www.statalist.org/forums/forum/general-stata-discussion/general/1522076-how-do-i-interpret-a-log-level-and-log-log-model-when-my-independent-variable-is-already-a-percentage)
+		foreach v of varlist dist_f_cum_km2* {
+			g ln_`v' = asinh(`v')
+		}
+		la var ln_dist_f_cum_km2 "Stage-II Approvals"
+		if "`file'" == "post_" {
+			la var ln_dist_f_cum_km2_s1 "Stage-I Approvals"
+		}
+		g ln_tree_cover_pct = ln(tree_cover_pct)
+		g ln_tree_cover_km2 = ln(tree_cover_km2)
+		local controls temp_era rain_gpm rad_mean
 		
+		/*
 		* lin-lin
-		eststo `v'_linlin: reghdfe tree_cover_pct `v' `v'_s1 `controls', ///
+		eststo `file'linlin: reghdfe tree_cover_pct dist_f_cum_km2* `controls', ///
 			a(c_code_2011_num state_code_2011_num#year) vce(cl c_code_2011_num)
 	
 			estadd local dist_fe "$\checkmark$"
 			estadd local st_y_fe "$\checkmark$"
 		
-		* log-lin
-		eststo `v'_loglin: reghdfe ln_tree_cover_pct `v' `v'_s1 `controls', ///
+		* log-lon
+		eststo `file'loglin: reghdfe ln_tree_cover_pct dist_f_cum_km2* `controls', ///
 			a(c_code_2011_num state_code_2011_num#year) vce(cl c_code_2011_num)
 			
 			estadd local dist_fe "$\checkmark$"
 			estadd local st_y_fe "$\checkmark$"
 			
 		* lin-log
-		eststo `v'_linlog: reghdfe tree_cover_pct ln_`v' ln_`v'_s1 `controls', ///
+		eststo `file'linlog: reghdfe tree_cover_pct ln_dist_f_cum_km2* `controls', ///
 			a(c_code_2011_num state_code_2011_num#year) vce(cl c_code_2011_num)
 			
 			estadd local dist_fe "$\checkmark$"
 			estadd local st_y_fe "$\checkmark$"
-		
+		*/
 		* log-log
-		eststo `v'_loglog: reghdfe ln_tree_cover_pct ln_`v' ln_`v'_s1 `controls', ///
+		eststo: reghdfe ln_tree_cover_pct ln_dist_f_cum_km2* `controls', ///
 			a(c_code_2011_num state_code_2011_num#year) vce(cl c_code_2011_num)
-			
 			estadd local dist_fe "$\checkmark$"
 			estadd local st_y_fe "$\checkmark$"
-	
-		esttab `v'_linlin `v'_loglog using "${TABLE}/tables/f_verify_`v'.tex", ///
-			replace stats(dist_fe st_y_fe N r2, labels(`"District FEs"' ///
-			`"State x Year FEs"' `"N"' `"\(R^{2}\)"') fmt(0 0 0 3)) ///
-			mlabels("Tree Cover (\%)" "log(Tree Cover)") wrap nocons nonotes ///
-			indicate("Controls=`controls'") booktabs nomtitles ///
-			star(* .1 ** .05 *** .01) label se b(%5.3f) width(0.8\hsize)
-		eststo clear
+			if "`file'" == "" {
+				estadd local data "All"
+			}
+			if "`file'" == "post_" {
+				estadd local data "Post-2014"
+			}
 	}
-	}
+	esttab using "${TABLE}/tables/f_verify.tex", ///
+		replace stats(dist_fe st_y_fe N r2, labels(`"District FEs"' ///
+		`"State x Year FEs"' `"N"' `"\(R^{2}\)"') fmt(0 0 0 3)) ///
+		mlabels("Tree Cover (\%)" "Tree Cover (\%)") wrap nocons nonotes ///
+		indicate("Controls=`controls'") booktabs nomtitles ///
+		star(* .1 ** .05 *** .01) label se b(%5.3f) width(0.8\hsize)
+	eststo clear
 	kk
-	
 	/*
 	**# Event-Study -- New DID Lit
 	
@@ -560,79 +559,121 @@ if `estudy_f' == 1 {
 *===============================================================================
 if `estudy' == 1 {
 	
-	* Read
-	use "${DATA}/dta/fc_ebd_user_update2020", clear
+	** NOTE: biodiversity decline following first event is erratic
+	** Could be due to strange within-user specification...
 	
-	//1. EVENT STUDY OF FIRST PROJECT OPENING
+	* First Event (persistent)
+	* Read
+	use "${DATA}/dta/fc_dym_s2_v02", clear
+	keep *_code_2011* year month year_month dist_f_cum_km2 tree*
+	
+	* First Event
+	bys c_code_2011 (year_month): gen event = year_month if ///
+		dist_f_cum_km2[_n] != dist_f_cum_km2[_n-1]
+	bys c_code_2011 (year_month): replace event = . if _n == 1 
+	bys c_code_2011: egen first_event = min(event) // first event (0 if never treated)
+	drop event
+	recode first_event (.=0)
+	g running = year_month - first_event // time to treatment
+	replace running = -99 if first_event == 0
+	keep if inrange(running, -6, 12)
+	tab running, gen(t_)
+	
+	* Merge to ebird
+	merge 1:m c_code_2011 year_month using "${DATA}/dta/ebird_udt", keep(3) nogen // merge ebird
+	g tree_cover_s = (tree_cover_km2 / tot_area)*100
 	
 	* Prep
+	drop if year == 2014
 	drop_outliers
-	keep user_id *code* year_month n_trips ///
-		 sr dist_f_cum_km2 coverage ///
-		 tree_cover_* temp rain all_species ///
-		 group_size month year duration u_lin biome exp_idx
-	local controls coverage tree_cover_km2 temp rain all_species duration
-	
-	* Event Date
-	bys c_code_2011 (year_month): gen e_date = year_month if ///
-		dist_f_cum_km2[_n] != dist_f_cum_km2[_n-1]
-	bys c_code_2011 (year_month): replace e_date = . if _n == 1 
-	
-	* Fill
-	bys c_code_2011 (year_month): carryforward e_date, gen(event_date)
-	gen nym = -year_month
-	bysort c_code_2011 (nym): carryforward event_date, replace
-	sort c_code_2011 year_month
-	drop nym
-	
-	* Keep First Project
-	bys c_code_2011 (year_month): egen first = min(event_date)
-	keep if event_date == first
-	drop if event_date == . & first == .
-	format event_date %tmCCYY-NN
-	
-	* Time to Construction
-	gen dif = year_month - event_date
-	keep if inrange(dif, -6, 13) // 6 month window
-	
-	* Event dummies
-	tostring dif, replace
-	tab dif, gen(e_)
-	foreach v of varlist e_* {
-		local x : variable label `v'
-		local y = subinstr("`x'", "dif==", "",.)
-		la var `v' "`y'"
-	}
+	local ctrls temp rain tree_cover_s ln_duration ln_distance ln_rad_sum ///
+	        ln_exp_idx ln_coverage_udym ln_group_size traveling
 	
 	* Regression
-	reghdfe sr e_6 e_5 e_4 e_3 e_2 e_7 e_8 e_13-e_20 e_9-e_11 ///
-		`controls' [aweight=n_trips], ///
-		a(user_id#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
+	reghdfe sr t_1-t_5 t_7-t_19 `ctrls' [aw=n_trips], ///
+		a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
 	
-	/*
-	reghdfe sr e_6 e_5 e_4 e_3 e_2 e_1 e_8-e_13 ///
-		`controls' [aweight=n_trips], ///
-		a(user_id#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
-	*/
+	* Figure
 	parmest, label list(parm label estimate min* max* p) saving(results, replace)
 	use results, clear
-	
-	replace parm = label
+	replace parm = subinstr(label, "running==", "",.)
 	destring parm, replace force
 	drop if parm == . | p == .
-	
-	twoway (rcap min95 max95 parm, sort color(gs5) lpattern(shortdash)) ///
+	expand 2 if parm == 0, gen(omit) // omitted group
+	replace parm = -1 if omit
+	foreach v of varlist estimate min95 max95 {
+		replace `v' = 0 if omit
+	}
+	twoway (rarea min95 max95 parm, sort color(dkgreen*0.5) lpattern(shortdash)) ///
 		   (connected  estimate parm, sort mcolor(black) mfcolor(white) ///
 		   lpattern(solid) lcolor(black) msymbol(D)), ///
 		   yline(0, lcolor(maroon) lpattern(solid)) ///
 		   xline(-1, lcolor(maroon) lpattern(solid)) ///
 		   legend(on order(1 "95% CI" 2 "Coefficient")) ///
 		   xtitle("Months Since Approval", size(medium)) ///
-		   ytitle("Species Richness Relative" "To Approval Month", ///
-		   size(medium)) yscale(titlegap(6)) xlabel(-6(2)12) ///
-		   saving("${TABLE}/fig/event_study.gph", replace)
-	graph export "${TABLE}/fig/event_study.png", width(1000) replace
+		   ytitle("Species Richness", ///
+		   size(medium)) xlabel(-6(2)12) xsize(4.6)
+	graph export "${TABLE}/fig/event_study_persistent.png", replace
 	
+	* First event only
+	
+	* Read Project Panel
+	use "${DATA}/dta/fc_dym_s2_v02", clear
+	keep *_code_2011* year month year_month dist_f_cum_km2 tree*
+	
+	* Event
+	bys c_code_2011 (year_month): gen event = year_month if ///
+		dist_f_cum_km2[_n] != dist_f_cum_km2[_n-1]
+	bys c_code_2011 (year_month): replace event = . if _n == 1  
+	
+	* Time to event (first event only)
+	bys c_code_2011: egen first_event = min(event) // first event (0 if never treated)
+	bys c_code_2011: replace event = . if event == first_event
+	bys c_code_2011: egen second_event = min(event)
+	drop event
+	recode first_event (.=0)
+	recode second_event (.=0)
+	keep if year_month < second_event
+	g running = year_month - first_event // time to treatment
+	replace running = -99 if first_event == 0
+	keep if inrange(running, -6, 12)
+	tab running, gen(t_)
+	
+	* Merge to ebird
+	merge 1:m c_code_2011 year_month using "${DATA}/dta/ebird_udt", keep(3) nogen // merge ebird
+	g tree_cover_s = (tree_cover_km2 / tot_area)*100
+	
+	* Prep
+	drop if year == 2014
+	drop_outliers
+	local ctrls temp rain tree_cover_s ln_duration ln_distance ln_rad_sum ///
+	        ln_exp_idx ln_coverage_udym ln_group_size traveling
+	
+	* Regression
+	reghdfe sr t_1-t_5 t_7-t_19 `ctrls' [aw=n_trips], ///
+		a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
+	
+	* Figure 
+	parmest, label list(parm label estimate min* max* p) saving(results, replace)
+	use results, clear
+	replace parm = subinstr(label, "running==", "",.)
+	destring parm, replace force
+	drop if parm == . | p == .
+	expand 2 if parm == 0, gen(omit) // omitted group
+	replace parm = -1 if omit
+	foreach v of varlist estimate min95 max95 {
+		replace `v' = 0 if omit
+	}
+	twoway (rarea min95 max95 parm, sort color(dkgreen*0.5) lpattern(shortdash)) ///
+		   (connected  estimate parm, sort mcolor(black) mfcolor(white) ///
+		   lpattern(solid) lcolor(black) msymbol(D)), ///
+		   yline(0, lcolor(maroon) lpattern(solid)) ///
+		   xline(-1, lcolor(maroon) lpattern(solid)) ///
+		   legend(on order(1 "95% CI" 2 "Coefficient")) ///
+		   xtitle("Months Since Approval", size(medium)) ///
+		   ytitle("Species Richness", ///
+		   size(medium)) xlabel(-6(2)12) xsize(4.6)
+	graph export "${TABLE}/fig/event_study_first.png", width(1000) replace
 }
 
 *===============================================================================
@@ -805,9 +846,5 @@ if `valuation' == 1 {
 		sum INCCROP if ID13 == 5 [aw=WT] // mean = 20,283 Rs.
 		di r(mean)
 	restore
-	
-	
-	
-	
 		
 }
