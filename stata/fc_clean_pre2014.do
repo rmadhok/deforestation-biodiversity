@@ -24,7 +24,6 @@ cd "${READ}"
 *-------------------------------------------------------------------------------
 * PREP
 *-------------------------------------------------------------------------------
-
 * Read pre-2014 data entry
 import excel using "./raw/fc_pre2014_dataentry.xlsx", first allstring clear
 drop cost_comment prop_status AM-AP date_s1

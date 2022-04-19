@@ -19,97 +19,15 @@ set maxvar 10000
 set matsize 10000
 
 //Set Directory Paths
-gl READ	"/Volumes/Backup Plus/research/data/"
+gl READ	"/Volumes/Backup Plus 1/research/data/"
 gl DATA "/Users/rmadhok/Dropbox/def_biodiv/data/"
 
 // Module
-local fra			0
 local vil			0
 local election		0
 local ss_11			0
 local ss_01			0
 local ss_91			1
-*-------------------------------------------------------------------------------
-* COMMUNITY CFR POTENTIAL (Lele et al. 2020)
-*-------------------------------------------------------------------------------
-if `fra' == 1 {
-
-	**# Assemble Panel
-	*------------------------
-	
-	* Empty dataset
-	clear
-	tempfile cfr
-	save `cfr', emptyok
-	
-	* Append
-	foreach state in mp mh jh cg {
-	
-		* Read
-		import excel "${DATA}/raw/`state'_cfr_potential_villages.xlsx", first all clear
-		
-		* Append
-		append using `cfr'
-		save `cfr', replace	
-	}
-	
-	* Clean
-	ren *, lower
-	ren scpopulation sc
-	ren stpopulation st
-	ren forestinsiderevenueboundary f_rev
-	ren potentialcfrareain2kmbuffe cfr_buf
-	ren totalcfrpotentialhaforest cfr_tot
-	replace cfr_tot = f_rev if state == "Chhattisgarh"
-	destring f_rev cfr_buf cfr_tot st sc, replace force
-	
-	* Population per ha
-	g scst = sc + st
-	foreach v of varlist sc st scst {
-		g `v'_cfr_ha = (`v' / cfr_tot)/1000
-	}
-	
-	* Rename to match census
-	// CH
-	replace district = "Dakshin Bastar Dantewada" if district == "Dantewada"
-	replace district = "Janjgir - Champa" if district == "Janjgir-Champa"
-	replace district = "Kabeerdham" if district == "Kabirdham"
-	replace district = "Uttar Bastar Kanker" if district == "Kanker"
-	// JH
-	replace district = "Pakaur" if district == "Pakur"
-	replace district = "Saraikela-Kharsawan" if district == "Saraikella-Kharsawan"
-	// MP
-	replace district = "East Nimar" if district == "Khandwa (East Nimar)"
-	replace district = "West Nimar" if district == "Khargone (West Nimar)"
-	// MH
-	replace district = "Bid" if district == "Beed"
-	replace district = "Gondiya" if district == "Gondia"
-	replace district = "Nashik" if district == "Nasik"
-	replace district = "Thane" if district == "Palghar"
-	replace district = "Raigarh" if district == "Raigad"
-	replace district = "Sangli" if district == "Sangali"
-	
-	**# District Level
-	*-------------------------
-	
-	* Aggregate (n=125 districts)
-	collapse (mean) *_cfr_ha, by(state district)
-	*collapse (sum) cfr_buf cfr_tot, by(state district) // USE MEAN?
-	tempfile temp
-	save "`temp'"
-	
-	* Census codes
-	import delimited "${DATA}/csv/2011_india_dist.csv", clear
-	keep c_code_11 name state_ut 
-	ren (name state_ut c_code_11) (district state c_code_2011)
-	merge 1:1 state district using "`temp'", keep(3) nogen
-	drop state district
-	
-	* Save
-	save "${DATA}/dta/iv_cfr", replace
-
-}
-
 *-------------------------------------------------------------------------------
 * VILLAGE REVENUE FOREST AREA
 *-------------------------------------------------------------------------------
@@ -175,14 +93,14 @@ if `vil' == 1 {
 	drop if village_code_2011 == ""
 	ren (sc_pop st_pop) (sc st)
 
-	* Construct (village level)
+	* Construct
 	g scst = sc + st // dalit population
 	g f_rev_d = (f_rev > 10) // habitable forest w/n vil revenue boundary
 	replace f_rev_d = . if f_rev == .
 	g f_rev_vil = f_rev * f_rev_d
 	foreach v of varlist sc st scst {
 		g `v'_ha = 0 if `v' != .
-		replace `v'_ha = (`v' / f_rev_vil)/10 if f_rev_vil > 0 & f_rev_vil < . // population per ha. (if revenue forest)
+		replace `v'_ha = (`v' / f_rev_vil) if f_rev_vil > 0 & f_rev_vil < . // population per ha. (if revenue forest)
 	}
 
 	* District level (n=631 districts; remaining have no villages)
@@ -300,7 +218,7 @@ if `election' == 1 {
 	}
 	sort c_code_2001 year
 	drop new
-	
+
 	* Balance panel
 	encode c_code_2001, gen(c_code_2001_num)
 	drop c_code_2001
@@ -308,7 +226,7 @@ if `election' == 1 {
 	tsfill, full
 	decode c_code_2001_num , gen(c_code_2001)
 	drop c_code_2001_num
-	
+
 	* Interpolate
 	foreach v of varlist st sc tot_pop {
 		bys c_code_2001: ipolate `v' year, g(`v'_i) epolate
@@ -380,12 +298,9 @@ if `ss_11' == 1 {
 	**# Merge Political Economy
 	*-------------------------------------------------------
 	
-	* FRA
+	* Tribal population / hectare
 	merge m:1 c_code_2011 using "${DATA}/dta/iv_fra", nogen
 	sort c_code_2011 year_month
-	
-	* ATREE CFR
-	*merge m:1 c_code_2011 using "${DATA}/dta/iv_cfr", nogen
 	
 	* Scheduled Areas
 	tempfile temp
@@ -401,7 +316,7 @@ if `ss_11' == 1 {
 	* Election leaders/reservations
 	*merge m:1 c_code_2011 year using "${DATA}/dta/iv_scst_seats", keep(1 3) nogen
 	
-	* Population Shares
+	* 2011 Census Population Shares
 	merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist", keepusing(tot_st tot_sc tot_pop tot_area) nogen
 	ren	(tot_st tot_sc) (st sc)
 	g scst = sc + st
@@ -422,14 +337,14 @@ if `ss_01' == 1 {
 	* Read FC
 	use "${DATA}/dta/fc_dym_s2_v02", clear
 	
-	* 2001 borders (18 districts cannot trace)
+	* 2001 borders (18 districts untracked)
 	merge m:1 c_code_2011 using "${DATA}/dta/c_code_crosswalk", keep(3) nogen
 
 	* Aggregate
-	collapse (sum) dist_f_cum_km2 tree_cover_km2 tree_cover_base ///
+	collapse (sum) dist_f_cum_km2 tree_cover_base ///
 			 (first) year month, by(c_code_2001 year_month)
 	g state_code_2001 = substr(c_code_2001, 1, 3) 
-	la var dist_f_cum_km2 "Infrastructure" 
+	la var dist_f_cum_km2 "Forest Infrastructure" 
 	
 	* State Fractions
 	preserve
@@ -465,11 +380,9 @@ if `ss_01' == 1 {
 	la var st_f_cum_km2_p "State Approvals"
 	sort c_code_2001 year_month
 	
-	* Merge with seat shares
-	merge m:1 c_code_2001 year using "${DATA}/dta/iv_scst_seats", keep(3) nogen
-	
-	* Merge election years
-	merge m:1 state_code_2001 year using "${DATA}/dta/state_elec", keep(3) nogen
+	* Merge with elections
+	merge m:1 c_code_2001 year using "${DATA}/dta/iv_scst_seats", keep(3) nogen // seat shares
+	merge m:1 state_code_2001 year using "${DATA}/dta/state_elec", keep(3) nogen // state election year
 	
 	* Covariates
 	g scst = sc + st
@@ -523,16 +436,16 @@ if `ss_91' == 1 {
 	merge m:1 c_code_2011 using "${DATA}/dta/crosswalk_full", keep(3) nogen // 40 districts cannot traceback
 	
 	* Aggregate
-	collapse (sum) dist_f_cum_km2 tree_cover_km2 tree_cover_base ///
+	collapse (sum) dist_f_cum_km2 tree_cover_base ///
 			 (first) year month, by(c_code_1991 year_month)
 	g state_code_1991 = substr(c_code_1991, 1, 3) 
-	la var dist_f_cum_km2 "Infrastructure" 
+	la var dist_f_cum_km2 "Forest Infrastructure"
 	
 	* State Fractions
 	preserve
 	
 		* Pre-period  
-		keep if year == 2015
+		keep if year == 2014
 		keep c_code_1991 state_code_1991 year_month dist_f_cum_km2
 		
 		* Cumulatives
@@ -569,8 +482,8 @@ if `ss_91' == 1 {
 	* Read
 	use "${READ}/def_biodiv/banerjee_iyer/yld_sett_aug03", clear
 
-	* Prop (sync names to for merge)
-	collapse (firstnm) p_nland mahrai state britdum brule1 tot_area=totarea, by(dist_91)
+	* Sync Names with Census
+	collapse (firstnm) p_nland mahrai state britdum brule1 tot_area=totarea lat alt coastal, by(dist_91)
 	la var mahrai "Inclusive (=1)"
 	
 	replace dist_91 = lower(dist_91)
@@ -611,9 +524,9 @@ if `ss_91' == 1 {
 	
 	**# Covariates
 	
-	* Population
+	* Population (use 1991 PCA?)
 	use "${READ}/shrug/shrug-v1.5.samosa-pop-econ-census-dta/shrug-v1.5.samosa-pop-econ-census-dta/shrug_pc91", clear
-	keep shrid pc91_pca_tot_p pc91_pca_p_st pc91_pca_p_sc pc91_td_area
+	keep shrid pc91_pca_tot_p pc91_pca_p_st pc91_pca_p_sc
 	merge 1:1 shrid using "${READ}/shrug/shrug-v1.5.samosa-pop-econ-census-dta/shrug-v1.5.samosa-keys-dta/shrug_pc91_district_key.dta", keep(3) nogen
 	g c_code_1991 = "c" + pc91_state_id + pc91_district_id
 	ren pc91_pca_* *
@@ -632,6 +545,7 @@ if `ss_91' == 1 {
 	encode c_code_1991, gen(c_code_1991_num)
 	encode state_code_1991, gen(state_code_1991_num)
 	sort c_code_1991 year_month
+	order c_code_1991 year_month dist_f_*
 	save "${DATA}/dta/polecon_91_v02", replace
 	
 }

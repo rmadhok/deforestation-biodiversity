@@ -24,9 +24,9 @@ gl DATA 	"${ROOT}/data"
 gl DO		"${ROOT}/scripts/stata"
 
 // Module
-local ebird					0
+local ebird					1
 local district_forest		0
-local merge					1
+local merge					0
 *===============================================================================
 * BIODIVERSITY
 *===============================================================================
@@ -94,10 +94,12 @@ if `ebird' == 1 {
 	
 	* Transform
 	g pop_density = tot_pop / tot_area
-	foreach v of varlist exp_idx duration group_size rad_* {
+	foreach v of varlist exp_idx duration group_size {
 		g ln_`v' = ln(`v')
 	}
-	g ln_distance = asinh(distance)
+	foreach v of varlist distance rad_* {
+		g ln_distance = asinh(distance)
+	}
 	
 	* Coverage fraction
 	if "`level'" == "udt" {
@@ -130,9 +132,7 @@ if `ebird' == 1 {
 	la var n_trips_user "Num. Trips"
 	la var n_users_dym "Num. Users per District-Yearmonth"
 	la var sr "Species Richness"
-	la var sr_dym "Species richness across all users in district-month"
 	la var sr_udym "Species richness across all trips in district-month"
-	la var sr_uyr "Species richness across all trips in year"
 	la var sr_ym "Species richness across all users in year-month"
 	la var group_size "Group Size"
 	la var sh_index "Shannon Index"
@@ -150,7 +150,7 @@ if `ebird' == 1 {
 	la var rad_mean "Nightlights (radiance)"
 	
 	* Save
-	drop sr_uyr n_cells_dist
+	drop n_cells_dist
 	order user_id c_code_2011 year_month sr* *_index
 	sort user_id c_code_2011 year_month
 	save "${DATA}/dta/ebird_`level'", replace

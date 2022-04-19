@@ -14,7 +14,6 @@ set more off
 set maxvar 10000
 
 //Set Directory Paths
-*gl READ 	"/Volumes/Backup Plus/research/data/def_biodiv/parivesh"
 gl READ		"/Users/rmadhok/Dropbox/def_biodiv/data"
 cd "${READ}"
 *===============================================================================
@@ -185,23 +184,18 @@ replace proj_cat = "resettlement" if inlist(proj_category, "forest village conve
 replace proj_cat = "mining" if inlist(proj_category, "mining", "quarrying")
 replace proj_cat = "industry" if inlist(proj_category, "industry")
 replace proj_cat = "underground" if inlist(proj_category, "optical fibre cable", "pipeline")
-*replace proj_cat = "underground" if proj_cat == "mining" & mining_type == "underground"
 replace proj_cat = "other" if proj_cat == ""
 replace proj_shape = "nonlinear" if proj_shape == "non linear"
 
 * Recategorize Others
 foreach v of varlist proj_name proj_narr {
-	
+
 	* Resettlement
-	replace proj_cat = "resettlement" if regexm(`v', "migrant")
-	replace proj_cat = "resettlement" if regexm(`v', "refugee")
-	replace proj_cat = "resettlement" if regexm(`v', "resettle")
-	replace proj_cat = "resettlement" if regexm(`v', "pattayam")
-	replace proj_cat = "resettlement" if regexm(`v', "relocat")
-	
-	* Roads
-	*replace proj_cat = "transportation" if regexm(`v', "approach") & proj_cat == "other"
-	*replace proj_cat = "transportation" if regexm(`v', "access") & proj_cat == "other"
+	replace proj_cat = "resettlement" if regexm(`v', "migrant") & proj_cat == "other"
+	replace proj_cat = "resettlement" if regexm(`v', "refugee") & proj_cat == "other"
+	replace proj_cat = "resettlement" if regexm(`v', "resettle") & proj_cat == "other"
+	replace proj_cat = "resettlement" if regexm(`v', "pattayam") & proj_cat == "other"
+	replace proj_cat = "resettlement" if regexm(`v', "relocat") & proj_cat == "other"
 	
 	* Power
 	replace proj_cat = "electricity" if regexm(`v', "power") & proj_cat == "other"
@@ -238,10 +232,10 @@ drop ua_legal_status
 tempfile temp
 save "`temp'"
 
-// Read
+* Read
 import delimited "./raw/fc_records_v3.csv", clear
 
-// Sync to FC data
+* Sync to FC data
 keep proposal_no area_applied proposal_status date_of_recomm date_from_ua_to_nodal
 ren (proposal_no area_applied proposal_status date_from_ua_to_nodal date_of_recomm) ///
 	(prop_no proj_area_forest2 prop_status date_submitted date_recomm)
@@ -250,7 +244,7 @@ replace prop_no = trim(itrim(lower(prop_no)))
 replace prop_status = trim(itrim(lower(prop_status)))
 duplicates drop prop_no, force
 
-// Merge 
+* Merge 
 merge 1:1 prop_no using "`temp'", keep(3) nogen
 
 * Format Dates

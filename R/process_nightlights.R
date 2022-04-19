@@ -7,7 +7,7 @@
 # ----------- SET-UP -----------------------------------------------------
 # Directories
 rm(list=ls())
-READ.DIR <- '/Volumes/Backup Plus/research/data/def_biodiv/nightlights/'
+READ.DIR <- '/Volumes/Backup Plus 1/research/data/def_biodiv/nightlights/'
 SAVE.DIR <- '/Users/rmadhok/Dropbox/def_biodiv/data/csv/'
 SHP <- '/Users/rmadhok/Dropbox/IndiaPowerPlant/data/'
 
@@ -83,5 +83,3 @@ df <- results %>%
 # Save
 setwd(SAVE.DIR)
 write_csv(df, 'india_nightlights.csv')
-
-
