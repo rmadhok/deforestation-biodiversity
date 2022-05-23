@@ -24,8 +24,8 @@ gl DATA 	"${ROOT}/data"
 gl DO		"${ROOT}/scripts/stata"
 
 // Module
-local ebird					1
-local district_forest		0
+local ebird					0
+local district_forest		1
 local merge					0
 *===============================================================================
 * BIODIVERSITY
@@ -33,7 +33,7 @@ local merge					0
 
 if `ebird' == 1 {
 	
-	local level "udt" // udt = user-district-yearmonth, uct = user-cell-yearmonth
+	local level "uct" // udt = user-district-yearmonth, uct = user-cell-yearmonth
 	
 	**# Read
 	import delimited using "${DATA}/csv/ebird_`level'.csv", clear
@@ -50,7 +50,8 @@ if `ebird' == 1 {
 	
 	* Weather
 	foreach file in "india_rainfall_gpm" "india_temperature_era" "india_nightlights" {
-	
+		
+		* read
 		import delimited "${DATA}/csv/`file'", varn(1) clear
 		g year_month = ym(year(date(yearmonth, "20YM")), month(date(yearmonth, "20YM")))
 		format year_month %tmCCYY-NN
@@ -94,11 +95,8 @@ if `ebird' == 1 {
 	
 	* Transform
 	g pop_density = tot_pop / tot_area
-	foreach v of varlist exp_idx duration group_size {
-		g ln_`v' = ln(`v')
-	}
-	foreach v of varlist distance rad_* {
-		g ln_distance = asinh(distance)
+	foreach v of varlist exp_idx duration group_size distance rad_* {
+		g ln_`v' = ln(1+`v')
 	}
 	
 	* Coverage fraction
@@ -176,17 +174,17 @@ program define construct_deforest
 	* program syntax
 	syntax, stage(integer) [include(string)] [restrict(string)] 
 	
-	**# APPROVAL STAGE
+	**# APPROVAL STAGE **#
 	
 	* Read post-2014 permits
 	use "${DATA}/dta/fc_clean_v02", clear
 
-	* Stage
+	* [option] Stage
 	if `stage' == 2 {
 	
-		keep if prop_status == "approved" // post-2014 projects
+		keep if prop_status == "approved"
 		
-		* add pre-2014 submissions
+		* [option] add pre-2014 submissions
 		if "`include'" == "pre" {
 			append using "${DATA}/dta/fc_pre2014_clean_v02"
 			replace pre2014 = 0 if pre2014 == .
@@ -201,16 +199,16 @@ program define construct_deforest
 	format year_month %tmCCYY-NN
 	drop if year_month == .
 	
-	* Drop megaprojects
+	* [option] Drop megaprojects
 	if "`restrict'" == "drop" {
 		sort proj_area_forest2
 		drop if _n > _N - 3 // drops 3 largest megaprojects
 	}
 	
-	**# RESHAPE TO PROJECT-DISTRICT
+	**# RESHAPE TO PROJECT-DISTRICT **#
 	
 	* Condense categories
-	replace proj_cat = "other" if inlist(proj_cat, "underground", "industry") // n=1468 pipelines, 89 industry (small)
+	replace proj_cat = "other" if inlist(proj_cat, "underground", "industry") // n=1468 pipelines, 89 small industry
 	
 	* Reshape project-district level
 	reshape long district_ dist_f_ dist_nf_, i(prop_no) j(dist_id)
@@ -222,7 +220,7 @@ program define construct_deforest
 	tempfile fc_dist
 	save "`fc_dist'"
 	
-	* Merge Census Code
+	* Merge 2011 Census Codes
 	use "${DATA}/dta/2011_india_dist", clear
 	keep state district c_code_2011
 	replace state = lower(state)
@@ -238,11 +236,8 @@ program define construct_deforest
 	if `stage' == 2 & "`include'" == "" & "`restrict'" == "" {
 		save "${DATA}/dta/fc_pdym_s2_v02", replace
 	}
-	if `stage' == 2 & "`include'" == "pre" & "`restrict'" == "" {
-		save "${DATA}/dta/fc_pdym_s2_`include'_v02", replace
-	}
 	
-	**# AGGREGATE TO DISTRICT-TIME
+	**# AGGREGATE TO DISTRICT-TIME **#
 
 	* Land Diversion by project category
 	levelsof proj_cat, local(proj_cat)
@@ -254,7 +249,7 @@ program define construct_deforest
 		g dist_nf_`abbrev_`cat'' = dist_nf if proj_cat == "`cat'"
 	}
 	ren proj_fra_num n_fra
-
+	
 	* Aggregate
 	collapse (sum) dist_f* dist_nf* n_* ///
 		     (count) n_proj = dist_id, ///
@@ -262,7 +257,6 @@ program define construct_deforest
 
 	* Label
 	la var dist_f "Forest Infrastructure (\(km^{2}\))"
-	la var dist_nf "Non-forest Diversion"
 	foreach cat of local proj_cat {
 		
 		local lab = proper("`cat'")
@@ -271,7 +265,7 @@ program define construct_deforest
 		la var dist_nf_`abbrev_`cat'' "`lab'"
 	}
 
-	* Add census codes for control group
+	* Add control group
 	merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist", keepus(c_code_2011)
 	
 	* Balance Panel
@@ -289,19 +283,19 @@ program define construct_deforest
 	g month = month(dofm(year_month))
 	keep if inrange(year, 2014, 2020)
 
-	**# CONSTRUCT VARIABLES
+	**# CONSTRUCT VARIABLES **#
 	
 	* Add Forest Area
-	tempfile temp
-	save "`temp'"
+	save "`fc_dist'", replace
 	import delimited "${DATA}/csv/forest_cover.csv", clear
-	merge 1:m c_code_2011 year using "`temp'", keep(2 3) nogen
-	la var tree_cover_km2 "Tree Cover (\(km^{2}\))"
-	la var tree_cover_pct "Tree Cover (\%)"
 	
 	* Baseline tree cover
-	bys c_code_2011 (year_month): g tree_cover_base = tree_cover_km2 if _n == 1
+	bys c_code_2011 (year): g tree_cover_base = tree_cover_km2 if _n == 1
 	bys c_code_2011: carryforward tree_cover_base, replace
+	
+	merge 1:m c_code_2011 year using "`fc_dist'", keep(2 3) nogen
+	la var tree_cover_km2 "Tree Cover (\(km^{2}\))"
+	la var tree_cover_pct "Tree Cover (\%)"
 
 	* Encroachment Area
 	foreach var of varlist dist_f-dist_nf_tra {
@@ -365,23 +359,24 @@ if `district_forest' == 1 {
 	
 	* Full
 	construct_deforest, stage(2) include("pre")
-	drop dist_nf* // non-forest for post-2014 submissions only
+	drop dist_nf_*_cum_km2 // non-forest for post-2014 submissions only
 	save "${DATA}/dta/fc_dym_s2_v02", replace
 	export delimited "${DATA}/csv/fc_dym_s2_v02.csv", replace
-	
+
 	* Truncate
 	construct_deforest, stage(2) include("pre") restrict("drop")
-	drop dist_nf*
+	drop dist_nf_*_cum_km2
 	save "${DATA}/dta/fc_dym_s2_trunc_v02", replace
 	
 	* Post-2014 only
 	construct_deforest, stage(2)
 	save "${DATA}/dta/fc_dym_s2_post_v02", replace
-
-	* Stage 1 (add restrict?)
+	
+	* Stage 1
 	construct_deforest, stage(1)
 	keep c_code_2011 year_month dist_f_cum_km2 dist_nf_cum_km2
 	ren (dist_f_cum_km2 dist_nf_cum_km2) (dist_f_cum_km2_s1 dist_nf_cum_km2_s1)
+	bys c_code_2011 (year_month): g dist_f_km2_s1 = dist_f_cum_km2_s1[_n] - dist_f_cum_km2_s1[_n-1]
 	save "${DATA}/dta/fc_dym_s1_post_v02", replace
 }
 
@@ -412,7 +407,7 @@ if `merge' == 1 {
 		
 		* Save
 		g tree_cover_s = (tree_cover_km2 / tot_area)*100
-		la var tree_cover_s "Forest Coverage (\%)"
+		la var tree_cover_s "Forest Cover (\%)"
 		sort user_id year_month
 		order user_id *_code_2011 year_month state district sr *_index
 		save "${DATA}/dta/fc_ebd_`level'_`fc_data'v02", replace
@@ -427,7 +422,7 @@ if `merge' == 1 {
 		
 		* Save
 		g tree_cover_s = (tree_cover_km2 / tot_area)*100
-		la var tree_cover_s "Forest Coverage (\%)"
+		la var tree_cover_s "Forest Cover (\%)"
 		sort user_id c_code_2011 year_month
 		order user_id *_code_2011 year_month state district sr *_index
 		save "${DATA}/dta/fc_ebd_`level'_`fc_data'_v02", replace

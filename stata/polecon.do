@@ -27,8 +27,8 @@ cd "${TABLE}"
 
 // Modules
 local bartik	0
-local hte		0
-local project	1
+local hte		1
+local project	0
 
 *------------------
 * PROGRAM
@@ -123,13 +123,13 @@ if `hte' == 1 {
 			estadd local st_m_fe "$\checkmark$"
 	
 	**# FRA (2006)
-	
+
 	* 2015 FRA Fraction
 	use "${DATA}/dta/fc_dym_s2_v02", clear
 	collapse (lastnm) fra = n_fra_cum_s (first) state_code_2011, by(c_code_2011 year)
 	keep if year == 2015
-	bys state_code_2011: egen fra_mean = mean(fra)
-	g fra_d = (fra > 50)
+	egen fra_mean = mean(fra)
+	g fra_d = (fra )
 	la var fra_d "ST Consulted (=1)"
 	drop year
 	
@@ -149,7 +149,7 @@ if `hte' == 1 {
 			estadd local user_y_fe "$\checkmark$"
 			estadd local dist_fe "$\checkmark$"
 			estadd local st_m_fe "$\checkmark$"
-	
+
 	* Table
 	esttab using "${TABLE}/tables/hte_polecon.tex", replace ///
 		keep(dist_f_cum_km2 c*mahrai c*fra_d) stats(user_y_fe ///

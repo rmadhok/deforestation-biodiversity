@@ -7,7 +7,7 @@
 ### SET-UP
 # Directories
 rm(list=ls())
-READ <- '/Volumes/Backup Plus/research/data/'
+READ <- '/Volumes/Backup Plus 1/research/data/'
 SAVE <- '/Users/rmadhok/Dropbox/def_biodiv/'
 setwd(READ)
 
@@ -21,7 +21,7 @@ require(stargazer)
 # CONSTRUCT SAMPLE
 #-------------------------------------------------------------
 
-# Load eBird-DHS matched sample
+# Load eBird-DHS matched sample (10,832 paird users)
 ebd_dhs <- read_csv(paste(SAVE, 'data/csv/ebd_dhs_match.csv', sep='')) %>%
   filter(keep == 1) %>% 
   dplyr::select(!c('similar', 'keep'))
@@ -71,7 +71,8 @@ dhs <- dhs %>%
 match <- ebd_dhs %>%
   group_by(dhsclust) %>%
   summarise(n_users = n(),
-            ru_dhs = first(ru_dhs))
+            ru_dhs = first(ru_dhs)) %>%
+  ungroup()
 
 # hh subset
 match <- merge(dhs, match, by='dhsclust')
@@ -79,98 +80,108 @@ match <- merge(dhs, match, by='dhsclust')
 #-------------------------------------------------------------
 # T-TESTS
 #-------------------------------------------------------------
-varlist <- c('hh_size', 'wealth_idx', 'rooms_per_adult', 'cellphone', 
-             'fridge', 'car', 'kitchen_separate', 'tv_colour',
-             'internet', 'washer', 'water_piped', 'flush_toilet')
+varlist <- c('hh_size', 'cellphone', 'fridge', 'car', 
+             'kitchen_separate', 'tv_colour', 'internet', 
+             'washer', 'flush_toilet')
 
 # ttest function
 t_test <- function(i, sample = 'All') {
   
   # select variables
   if(sample == 'All') {
-    x <- match %>% ungroup() %>% dplyr::select(varlist[i]) %>% as_vector()
-    y <- dhs %>% ungroup() %>% dplyr::select(varlist[i]) %>% as_vector()
+    x <- match %>% dplyr::select(varlist[i]) %>% as_vector()
+    y <- dhs %>% dplyr::select(varlist[i]) %>% as_vector()
     xwt <- dplyr::select(match, n_users) %>% as_vector()
     ywt <- dplyr::select(dhs, wt) %>% as_vector()
   }
   
   if(sample == 'U') {
-    x <- match %>% ungroup() %>% filter(ruralurban == 1) %>% dplyr::select(varlist[i]) %>% as_vector()
-    y <- dhs %>% ungroup() %>% filter(ruralurban == 1) %>% dplyr::select(varlist[i]) %>% as_vector()
-    xwt <- match %>% ungroup() %>% filter(ruralurban == 1) %>% dplyr::select(n_users) %>% as_vector()
-    ywt <- dhs %>% ungroup() %>% filter(ruralurban == 1) %>% dplyr::select(wt) %>% as_vector()
+    x <- match %>% filter(ruralurban == 1) %>% dplyr::select(varlist[i]) %>% as_vector()
+    y <- dhs %>% filter(ruralurban == 1) %>% dplyr::select(varlist[i]) %>% as_vector()
+    xwt <- match %>% filter(ruralurban == 1) %>% dplyr::select(n_users) %>% as_vector()
+    ywt <- dhs %>% filter(ruralurban == 1) %>% dplyr::select(wt) %>% as_vector()
   }
   
   if(sample == 'R') {
-    x <- match %>% ungroup() %>% filter(ruralurban == 2) %>% dplyr::select(varlist[i]) %>% as_vector()
-    y <- dhs %>% ungroup() %>% filter(ruralurban == 2) %>% dplyr::select(varlist[i]) %>% as_vector()
-    xwt <- match %>% ungroup() %>% filter(ruralurban == 2) %>% dplyr::select(n_users) %>% as_vector()
-    ywt <- dhs %>% ungroup() %>% filter(ruralurban == 2) %>% dplyr::select(wt) %>% as_vector()
+    x <- match %>% filter(ruralurban == 2) %>% dplyr::select(varlist[i]) %>% as_vector()
+    y <- dhs %>% filter(ruralurban == 2) %>% dplyr::select(varlist[i]) %>% as_vector()
+    xwt <- match %>% filter(ruralurban == 2) %>% dplyr::select(n_users) %>% as_vector()
+    ywt <- dhs %>% filter(ruralurban == 2) %>% dplyr::select(wt) %>% as_vector()
   }
   
   # ttest
-  ttest <- wtd.t.test(x, y, weight = xwt, weighty = ywt, samedata = F, mean1 = F, bootse=T, bootn=1000)
+  ttest <- wtd.t.test(x, y, 
+                      weight = xwt, 
+                      weighty = ywt, 
+                      samedata = F, 
+                      mean1 = F, 
+                      bootse = F, 
+                      bootn = 100)
   
   # build output dataframe
   item <- data.frame(
     list(
-    Variable = varlist[i],
-    `Matched DHS` = ttest$additional[[2]],
-    DHS = ttest$additional[[3]],
-    Difference = ttest$additional[[1]],
-    `p-value` = ttest$coefficients[[3]]
-    )
+      Variable = varlist[i],
+      `Matched eBird` = ttest$additional[[2]],
+      DHS = ttest$additional[[3]],
+      Difference = ttest$additional[[1]],
+      `p-value` = ttest$coefficients[[3]]
+      )
   )
   
   return(item)
 }
 idx <- 1:length(varlist)
 
-# difference in means for all, rural, and urban subsamples
+# difference in means for all samples
 df_all <- as.data.frame(rbindlist(lapply(idx, t_test, sample = 'All')))
 df_r <- as.data.frame(rbindlist(lapply(idx, t_test, sample = 'R')))
 df_u <- as.data.frame(rbindlist(lapply(idx, t_test, sample = 'U')))
 
 #-------------------------------------------------------------
-# EXPORT
+# FINAL TABLE
 #-------------------------------------------------------------
 
 # Prepare Tables function
 clean <- function(df) {
   
   # variable labels
-  df$Variable <- c('HH Size', 'Wealth Index', 'Bedrooms per Person', 'Cellphone (=1)',
-                   'Fridge (=1)', 'Car (=1)', 'Sep. Kitchen (=1)', 'Colour TV (=1)', 
-                   'Internet (=1)', 'Washing Machine (=1)', 'Piped Water (=1)', 
-                   'Flush Toilet (=1)')
+  df$Variable <- c('HH Size', 'Cellphone (=1)', 'Fridge (=1)', 'Car (=1)', 
+                   'Sep. Kitchen (=1)', 'Colour TV (=1)',  'Internet (=1)', 
+                   'Washing Machine (=1)', 'Flush Toilet (=1)')
 
   # Columns
-  names(df) <- c('Variable', 'Matched DHS', 'DHS', 'Difference', 'p-value')
+  names(df) <- c('Variable', 'Matched eBird', 'DHS', 'Difference', 'p-value')
 
   # trailing zeros
+  df$Difference <- sprintf("%.3f", df$Difference)
   df$`p-value` <- sprintf("%.3f", df$`p-value`)
 
 # Significance stars
   df <- df %>%
-    mutate(`p-value` = replace(`p-value`, `p-value` <= 0.01, paste(`p-value`, '***', sep='')),
-           `p-value` = replace(`p-value`, `p-value` > 0.01 & `p-value` <= 0.05 , paste(`p-value`, '**', sep='')),
-           `p-value` = replace(`p-value`, `p-value` > 0.05 & `p-value` <= 0.1 , paste(`p-value`, '*', sep='')))
+    mutate(Difference = replace(Difference, `p-value` <= 0.01, paste(Difference, '***', sep='')),
+           Difference = replace(Difference, `p-value` > 0.01 & `p-value` <= 0.05 , paste(Difference, '**', sep='')),
+           Difference = replace(Difference, `p-value` > 0.05 & `p-value` <= 0.1 , paste(Difference, '*', sep='')))
   
   return(df)
 
 }
-dflist <- list(df_all = df_all, df_r = df_r, df_u = df_u)
-df_clean <- lapply(dflist, clean)
 
-# Extract
-df_r <- df_clean$df_r
-df_u <- df_clean$df_u
-df_all <- df_clean$df_all
-rm(list='df_clean')
+# Prep tables
+dflist <- list(df_all = df_all, df_u = df_u, df_r = df_r)
+df_clean <- lapply(dflist, clean)
+df_clean <- lapply(df_clean, function(x) x %>% select(Variable, Difference))
+
+# Merge tables
+table <- df_clean %>% 
+  reduce(full_join, by='Variable')
+names(table) <- c('Variable', 'All', 'Urban', 'Rural')
 
 # Write out
-stargazer(df_all, 
+stargazer(table, 
           summary=F, 
-          rownames=F, 
-          out=paste(SAVE,'docs/jmp/tex_doc/v3/tables/ebd_dhs_all_ttest.tex', sep=''))
+          rownames=F,
+          float=F,
+          column.sep.width = '1.8cm',
+          out=paste(SAVE,'docs/jmp/tex_doc/v3/tables/ebd_dhs_ttest.tex', sep=''))
 

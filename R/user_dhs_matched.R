@@ -7,7 +7,7 @@
 ### SET-UP
 # Directories
 rm(list=ls())
-READ <- '/Volumes/Backup Plus/research/data/'
+READ <- '/Volumes/Backup Plus 1/research/data/'
 SAVE <- '/Users/rmadhok/Dropbox/def_biodiv/'
 SHP <- '/Users/rmadhok/Dropbox/IndiaPowerPlant/data/'
 setwd(READ)
@@ -32,11 +32,11 @@ pop <- crop(pop, extent(india_dist))
 pop <- mask(pop, india_dist)
 
 # User homes
-home <- merge(distinct(read_csv('./def_biodiv/ebird/ebird_trip.csv'), OBSERVER.ID),
-              read_csv('./ebird_wtp/user_home_impute.csv'),
-              by.x = 'OBSERVER.ID', by.y = 'observer_id')
+home <- merge(distinct(read_csv('./def_biodiv/ebird/ebird_trip.csv'), user_id),
+              read_csv(paste(SAVE, 'data/csv/user_home_impute.csv', sep='')),
+              by='user_id')
 
-# DHS clusters
+# DHS clusters (n=28,526)
 dhs <- st_read('./IndiaPowerPlant/data/nfhs/spatial/IAGE71FL/IAGE71FL.shp', 
                stringsAsFactors=F)
 
@@ -57,21 +57,29 @@ dhs <- dhs %>%
 #-------------------------------------------------------------
 # CLASSIFY USERS AS R/U
 #-------------------------------------------------------------
-
+# Construct city shape (buffer+dissolve)
+{
 # Read urban polygons
-city <- st_read('./def_biodiv/grump', 'global_urban_extent_polygons_v1.01', 
+city <- st_read('./def_biodiv/grump/global_urban_extent_polygons_v1.01.shp', 
                 stringsAsFactors = F)
-city <- lwgeom::st_make_valid(city) 
+city <- st_make_valid(city) 
 city <- st_crop(city, india_dist)
 
 ## 3km buffer (i.e. include metro areas)
 # cities w boundaries < 3km apart are dissolved
-metro <- st_as_sf(st_cast(st_union(st_buffer(city, 0.03)), 'POLYGON'))
-metro$metroid <- 1:nrow(metro)
+city_buf <- st_as_sf(st_cast(st_union(st_buffer(city, 0.03)), 'POLYGON'))
+}
+
+# read buffered city polygon
+city_buf <- st_read('./def_biodiv/grump/india_buffer/city_buffer.shp', 
+                    stringsAsFactors = F)
 
 # Match home to metro
-home$ru_home <- st_join(st_as_sf(home, coords=c('lon_home', 'lat_home'),crs=4326),
-                   metro, join = st_intersects)$metroid
+home$ru_home <- st_join(st_as_sf(home, 
+                                 coords=c('lon_home', 'lat_home'), 
+                                 crs=4326),
+                   city_buf, 
+                   join = st_intersects)$FID
 
 # Classify rural/urban
 home <- home %>% mutate(ru_home = ifelse(is.na(ru_home), 'R', 'U'))
@@ -93,23 +101,19 @@ home_buf <- rbind(home_r_buf, home_u_buf)
 rm(list=c('home_u_buf', 'home_r_buf'))
 
 # DHS clusters within buffer
-dhs_match <- st_join(home_buf, st_as_sf(dhs, coords = c('lon', 'lat'), crs=4326), 
+dhs_match <- st_join(st_as_sf(dhs, coords = c('lon', 'lat'), crs=4326), 
+                     home_buf, 
                      join=st_intersects) %>% 
   dplyr::select(!c('lat', 'lon', 'c_code_2011_home')) %>%
   st_drop_geometry()
-
-# 3485 (20%) users without matches
-#dhs_nomatch <- dhs_match %>%
-# filter(is.na(dhsid)) %>% dplyr::select('OBSERVER.ID')
-#dhs_match <- filter(dhs_match, !is.na(dhsid)) # drop users w/ no nearby clusters
 
 #-------------------------------------------------------------
 # KEEP MATCHES WITH SIMILAR POP DENSITY
 #-------------------------------------------------------------
 
 # 5km buffer around home
-home_pd <- merge(distinct(dhs_match, OBSERVER.ID), home, by='OBSERVER.ID') %>%
-  dplyr::select(OBSERVER.ID, lon_home, lat_home)
+home_pd <- merge(distinct(dhs_match, user_id), home, by='user_id') %>%
+  dplyr::select(user_id, lon_home, lat_home)
 home_pd <- st_buffer(st_as_sf(home_pd, 
                               coords = c('lon_home', 'lat_home'), 
                               crs = 4326), dist = 0.05)
@@ -117,7 +121,7 @@ home_pd <- st_buffer(st_as_sf(home_pd,
 # Population density around home
 home_pd$home_pd <- exact_extract(pop, home_pd, 'mean')
 home_pd <- st_drop_geometry(home_pd)
-dhs_match <- left_join(dhs_match, home_pd, by = 'OBSERVER.ID')
+dhs_match <- left_join(dhs_match, home_pd, by = 'user_id')
 
 # 5km buffer around dhs cluster
 clust_pd <- merge(distinct(dhs_match, dhsid), dhs, by='dhsid') %>%
@@ -132,8 +136,6 @@ clust_pd <- st_drop_geometry(clust_pd)
 dhs_match <- left_join(dhs_match, clust_pd, by = 'dhsid')
 
 # Keep matches if pop densities w/n 25%
-# mean pd of matched users = 7541 ppl/km2
-# mean pd of unmatched users = 4310 ppl/km2
 dhs_match <- dhs_match %>%
   mutate(lower = 0.75*home_pd, upper = 1.25*home_pd,
          similar = ifelse(clust_pd >= lower & clust_pd <= upper, 1 ,0),
@@ -144,4 +146,3 @@ final <- dhs_match %>%
   dplyr::select(!c('lower', 'upper', 'home_pd', 'clust_pd'))
 
 write_csv(final, paste(SAVE, 'data/csv/ebd_dhs_match.csv', sep=''))
-

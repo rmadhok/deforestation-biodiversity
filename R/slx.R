@@ -77,7 +77,7 @@ row.names(centroids) <- india_dist$c_code_2011
 # Inverse Distance
 inv_dist <- function(i){
   
-  # distance cutoff
+  # distance cutoff (km)
   W <- st_distance(st_as_sf(centroids, coords = c('lon', 'lat'), crs=4326)) %>% set_units(km)
   if(i == 0) {
     W <- 1/W

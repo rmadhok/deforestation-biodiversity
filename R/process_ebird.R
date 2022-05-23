@@ -18,8 +18,15 @@ require(raster)
 require(lubridate)
 require(stargazer)
 require(exactextractr)
+
+# Load Maps
+india_dist <- st_read(paste(SHP, "maps/india-district", sep=""), 
+                      'SDE_DATA_IN_F7DSTRBND_2011') %>%
+  dplyr::select(c_code_11) %>% 
+  rename(c_code_2011=c_code_11)
+
 #----------------------------------------------------------------
-## 1. LOAD EBIRD + INITIAL CLEANING
+## 1. Load eBird and clean variable names
 #----------------------------------------------------------------
 
 # Read (n=21,870,724)
@@ -66,6 +73,95 @@ ebird <- ebird %>%
          group_size = number_observers,
          complete = all_species_reported,
          group_id = group_identifier)
+
+#-----------------------------------------------------
+## Appendix:  Homes Coordinates
+#-----------------------------------------------------
+# Note: compute home on *all* trips (before filtering)
+# because filtering will affect gravitational center
+{
+
+# Real Home (n=210 users)
+user_home <- ebird %>%
+  filter(str_detect(str_to_lower(locality), 
+                    'my home|my house|my balcony|
+                    my terrace|my backyard|my street|
+                    my yard|my veranda')) %>%
+  group_by(user_id) %>%
+  summarize(lon_home_real = mean(lon, na.rm=T),
+            lat_home_real = mean(lat, na.rm=T))
+
+# Save
+write_csv(user_home, paste(SAVE, 'data/csv/user_home_real.csv', sep=''))
+
+# Imputed Home --------------------------------------
+# 1. Estimate gravitational center of all trips
+# 2. Compute distance from "home" to each trip
+# 3. Remove outliers (e.g. faraway trips - by plane)
+# 4. Recompute "home" from remaining trips
+
+# Center of user's trips
+user <- distinct(ebird, user_id, lon, lat) %>%
+  group_by(user_id) %>%
+  mutate(lon_home = mean(lon, na.rm=T),
+         lat_home = mean(lat, na.rm=T)) %>% 
+  ungroup()
+
+# straight-line distance from center to each site
+user$distance <- st_distance(st_as_sf(user, 
+                                      coords = c('lon_home', 'lat_home'),
+                                      crs=4326), 
+                             st_as_sf(user, 
+                                      coords = c('lon', 'lat'),
+                                      crs=4326), 
+                             by_element = T)
+user$distance <- as.numeric(user$distance)/1000 #km
+
+# Remove outlier trips
+user <- user %>%
+  group_by(user_id) %>%
+  filter(distance <= quantile(distance, 0.75) + 1.5*IQR(distance))
+
+# Recompute home 
+user <- user %>%
+  group_by(user_id) %>%
+  summarize(lon_home=mean(lon, na.rm=T),
+            lat_home=mean(lat, na.rm=T))
+
+# Overlay home districts
+# -------------------------------------
+# Note: If gravit. center is off coast
+# home is the centroid of nearest dist
+#--------------------------------------
+user$c_code_2011_home <- st_join(st_as_sf(user, 
+                                          coords=c('lon_home', 'lat_home'), 
+                                          crs=4326), 
+                                 india_dist, 
+                                 join = st_intersects)$c_code_2011
+
+# Handle Out-of-bounds homes
+# For off-coast homes, assign id of nearest district
+user_na <- filter(user, is.na(c_code_2011_home))
+user_na$c_code_2011_home <- st_join(st_as_sf(user_na, 
+                                             coords=c('lon_home', 'lat_home'), 
+                                             crs=4326), 
+                                    india_dist, 
+                                    join = st_nearest_feature)$c_code_2011
+
+# District centroids
+centroids <- as.data.frame(st_coordinates(st_centroid(india_dist$geometry))) %>%
+  rename(lon_home = X, lat_home = Y)
+centroids$c_code_2011_home <- india_dist$c_code_2011
+user_na <- merge(user_na[, c('user_id', 'c_code_2011_home')], 
+                 centroids, by='c_code_2011_home')
+
+# Bind to main user list 
+user <- rbind(filter(user, !is.na(c_code_2011_home)), user_na)
+rm(list=c('centroids', 'user_na'))
+
+# Save user list
+write_csv(user, paste(SAVE, 'data/csv/user_home_impute.csv', sep=''))
+}
 #----------------------------------------------------------------
 ## 2. FILTERING 
 #----------------------------------------------------------------
@@ -87,7 +183,7 @@ protocol <- ebird %>%
   mutate(Pct. = round((`Num. Trips`/sum(`Num. Trips`)*100),2)) %>%
   rename(Protocol = protocol_type) %>%
   arrange(desc(Pct.))
-stargazer(protocol, summary=F, rownames=F, 
+stargazer(protocol, summary=F, rownames=F, float=F,
           out = paste(SAVE,'docs/jmp/tex_doc/v3/tables/protocol.tex', sep=''))
 
 # Filter Protocol (stationary, travelling) (n=18,458,042)
@@ -96,13 +192,7 @@ ebird <- filter(ebird, protocol_code %in% c('P21', 'P22'))
 ## 3. IDENTIFY DISTRICTS AND COASTAL TRIPS
 #----------------------------------------------------------------  
 
-# District Map
-india_dist <- st_read(paste(SHP, "maps/india-district", sep=""), 
-                      'SDE_DATA_IN_F7DSTRBND_2011') %>%
-  dplyr::select(c_code_11) %>% 
-  rename(c_code_2011=c_code_11)
-
-# Overlay (point-in-poly) - 10 mins
+# Overlay (point-in-poly) 
 ebird$c_code_2011 <- st_join(st_as_sf(ebird, 
                                       coords = c('lon', 'lat'), 
                                       crs = 4326), 
@@ -128,6 +218,24 @@ ebird <- ebird %>%
   group_by(user_id, c_code_2011, yearmonth) %>%
   mutate(sr_udym = n_distinct(species_id))
 
+# Lists with no counts (remove?)
+nocount <- ebird %>%
+  mutate(nocount = ifelse(species_count == 'X', 1, 0),
+         species_count2 = as.numeric(na_if(species_count, 'X')),
+         r10 = ifelse(species_count2 %% 10, 1, 0)) %>%
+  summarize(nocount = mean(nocount, na.rm=T),
+            r10 = mean(r10, na.rm=T))
+
+nocount <- ebird %>%
+  mutate(nocount = ifelse(species_count == 'X', 1, 0)) %>%
+  group_by(trip_id) %>%
+  summarize(nocount = max(nocount)) %>%
+  ungroup() %>%
+  summarize(nocount = mean(nocount, na.rm=T))
+# 8.5% of trips have missing counts
+# 95% of counts divisible by 10
+rm(list='nocount')
+
 # Convert count to numeric
 ebird$species_count[ebird$species_count == 'X'] <- NA
 ebird$species_count <- as.numeric(ebird$species_count)
@@ -140,6 +248,7 @@ ebird <- ebird %>%
                                 log(species_count / sum(species_count, na.rm = T)), na.rm = T),
          si_index = 1 - ((sum(species_count*(species_count - 1), na.rm = T)) /
                                  (sum(species_count, na.rm = T)*(sum(species_count, na.rm = T) - 1))))
+
 #----------------------------------------------------------------
 ## 5. ALLOCATE TRIPS TO GRID CELLS
 #---------------------------------------------------------------- 
@@ -169,6 +278,7 @@ ebird_trip$cell_id <- extract(grid, st_as_sf(ebird_trip, coords = c('lon', 'lat'
 n_cells_dist <- cbind(st_drop_geometry(india_dist), exact_extract(grid, india_dist, 'count'))
 names(n_cells_dist)[2] <- 'n_cells_dist'
 ebird_trip <- left_join(ebird_trip, n_cells_dist, by='c_code_2011')
+
 #----------------------------------------------------------------
 ## 5. EXPORT FINAL DATASETS
 #---------------------------------------------------------------- 

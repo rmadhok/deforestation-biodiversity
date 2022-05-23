@@ -19,8 +19,8 @@ set maxvar 10000
 set matsize 10000
 
 //Set Directory Paths
-gl READ	"/Volumes/Backup Plus 1/research/data/"
-gl DATA "/Users/rmadhok/Dropbox/def_biodiv/data/"
+gl BACKUP	"/Volumes/Backup Plus 1/research/data/"
+gl DATA 	"/Users/rmadhok/Dropbox/def_biodiv/data/"
 
 // Module
 local vil			0
@@ -431,7 +431,7 @@ if `ss_91' == 1 {
 	
 	* Read FC
 	use "${DATA}/dta/fc_dym_s2_v02", clear
-	
+
 	* 1991 borders
 	merge m:1 c_code_2011 using "${DATA}/dta/crosswalk_full", keep(3) nogen // 40 districts cannot traceback
 	
@@ -480,8 +480,8 @@ if `ss_91' == 1 {
 	**# Landlord (Banerjee and Iyer 2005)
 
 	* Read
-	use "${READ}/def_biodiv/banerjee_iyer/yld_sett_aug03", clear
-
+	use "${BACKUP}/def_biodiv/banerjee_iyer/yld_sett_aug03", clear
+	
 	* Sync Names with Census
 	collapse (firstnm) p_nland mahrai state britdum brule1 tot_area=totarea lat alt coastal, by(dist_91)
 	la var mahrai "Inclusive (=1)"

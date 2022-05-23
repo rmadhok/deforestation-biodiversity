@@ -5,7 +5,7 @@
 # ----------- SET-UP -----------------------------------------------------
 # Directories
 rm(list=ls())
-READ.DIR <- '/Volumes/Backup Plus/research/data/def_biodiv/weather/era5_update/'
+READ.DIR <- '/Volumes/Backup Plus 1/research/data/def_biodiv/weather/era5_update'
 SAVE.DIR <- '/Users/rmadhok/Dropbox/def_biodiv/data/csv/'
 SHP <- '/Users/rmadhok/Dropbox/IndiaPowerPlant/data/'
 
@@ -43,7 +43,10 @@ df_long <- df %>%
                names_to = 'yearmonth',
                values_to = 'mean_era',
                names_prefix = 'mean.X') %>%
-  mutate(yearmonth = str_replace(substr(yearmonth,1,7),'\\.', '-'))
+  mutate(yearmonth = str_replace(substr(yearmonth,1,7),'\\.', '-'),
+         mean_era_nat = mean(mean_era, na.rm=T),
+         mean_era = ifelse(is.na(mean_era), mean_era_nat, mean_era)) %>% # Lakshadweep missing; replace with national mean
+  select(-mean_era_nat)
 
 # Save
 setwd(SAVE.DIR)

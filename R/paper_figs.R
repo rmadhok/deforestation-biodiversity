@@ -4,7 +4,7 @@
 
 # Directories
 rm(list=ls())
-READ <- '/Volumes/Backup Plus/research/data/def_biodiv/'
+READ <- '/Volumes/Backup Plus 1/research/data/def_biodiv/'
 SAVE <- '/Users/rmadhok/Dropbox/def_biodiv/'
 SHP <- '/Users/rmadhok/Dropbox/IndiaPowerPlant/data/'
 
@@ -14,8 +14,16 @@ require(sf)
 require(terra)
 require(patchwork)
 require(showtext)
+require(scattermore)
+require(units)
 font_add('latex', 'latinmodern-math.otf')
-showtext_auto() 
+showtext_auto()
+
+# Load maps
+setwd(SHP)
+india_dist <- st_read('./maps/district2011/SDE_DATA_IN_F7DSTRBND_2011.shp') %>% dplyr::select('c_code_11')
+india <- st_read('./maps/district2011/SDE_DATA_IN_F7DSTRBND_2011_NATION.shp') %>% dplyr::select('geometry')
+
 #----------------------------------------------------------------
 ## FUNCTIONS
 #----------------------------------------------------------------
@@ -44,12 +52,6 @@ winsorize <- function(x, num, top=FALSE) {
       x < top ~ x)
   }
 }
-
-# Load maps
-setwd(SHP)
-india_dist <- st_read('./maps/district2011/SDE_DATA_IN_F7DSTRBND_2011.shp') %>% dplyr::select('c_code_11')
-india <- st_read('./maps/district2011/SDE_DATA_IN_F7DSTRBND_2011_NATION.shp') %>% dplyr::select('geometry')
-
 #------------------------------
 # 0. GLOBAL BIODIVERSITY
 #------------------------------
@@ -82,15 +84,15 @@ bd <- ggplot() +
         legend.title=element_text(size=13))
 setwd(SAVE)
 ggsave('./docs/jmp/tex_doc/v3/fig/global_biodiversity.png')
+
 #------------------------------
 # 1. TREE COVER
 #------------------------------
-
 # Read raster
 setwd(READ)
 r <- rast('./forest_cover/MOD44B.006_Percent_Tree_Cover_doy2015065_aid0001.tif')
 
-# Clean
+# Aggregate
 r[r > 100] <- NA
 r_a <- aggregate(r, fact = 10) # aggregate
 r_df <- as.data.frame(r_a, xy = T) # dataframe
@@ -107,7 +109,8 @@ names(r_df)[3] <- 'tree_cover'
 # Plot
 tree <- ggplot() + 
   geom_sf(data=india, alpha = 0.5, size = 0.3) +
-  geom_tile(data=r_df, mapping = aes(x = x, y = y, fill = tree_cover)) + 
+  geom_tile(data=r_df, 
+            mapping = aes(x = x, y = y, fill = tree_cover)) + 
   coord_sf(datum = NA) +
   scale_fill_distiller(palette='Greens', 
                        name='2015 Forest Cover (%)',
@@ -116,7 +119,6 @@ tree <- ggplot() +
                                              reverse = TRUE)) +
   theme_minimal() +
   theme(text = element_text(family = 'latex'),
-        plot.title = element_text(size = 20, face = "bold"),
         axis.line = element_blank(), 
         axis.text = element_blank(),
         axis.ticks = element_blank(), 
@@ -124,20 +126,21 @@ tree <- ggplot() +
         panel.background = element_blank(),
         legend.position='bottom',
         legend.key.width=unit(1.3,'cm'),
-        legend.text=element_text(size=13),
-        legend.title=element_text(size=13))
+        legend.text=element_text(size=15),
+        legend.title=element_text(size=20))
 setwd(SAVE)
-ggsave('./docs/jmp/tex_doc/v3/fig/fcover_plot.png')
+ggsave('./docs/jmp/tex_doc/v3/fig/forest_cover_2015.png')
 
 #------------------------------
 # 2. PROJECTS
 #------------------------------
 
-# Read forest infrastructure
+# Read csv
+setwd(SAVE)
 fi <- read_csv('./data/csv/fc_dym_s2_v02.csv') %>%
   filter(year > 2014)
 
-# Clean
+# Bins
 proj <- fi %>%
   group_by(c_code_2011) %>%
   summarize(n_proj = last(n_proj_cum)) %>%
@@ -161,47 +164,47 @@ proj_plot <- ggplot() +
                        guide=guide_legend(title.position='top')) +
   coord_sf(datum = NA) +
   theme(text = element_text(family='latex'),
-        plot.title = element_text(size = 20, face = "bold"),
         axis.line = element_blank(), 
         axis.text = element_blank(),
         axis.ticks = element_blank(), 
         axis.title = element_blank(),
         panel.background = element_blank(),
         legend.position='bottom',
-        legend.key.width=unit(1.8,'cm'),
-        legend.text=element_text(size=13),
-        legend.title=element_text(size=13)) 
-ggsave('./docs/jmp/tex_doc/v3/fig/proj_plot.png')
+        legend.key.width=unit(1.3,'cm'),
+        legend.text=element_text(size=15),
+        legend.title=element_text(size=20)) 
+ggsave('./docs/jmp/tex_doc/v3/fig/project_map.png')
 
 #------------------------------
 # 3. Birdwatching Activity
 #------------------------------
 
-#------ TRIPS
-
-# Read trips
+## Plot Trip Points
 setwd(READ)
 trips <- read_csv('./ebird/ebird_trip.csv') %>%
-  dplyr::select(lat, lon) %>%
-  st_as_sf(coords = c('lon', 'lat'), crs = 4326)
+  dplyr::select(lat, lon)
 
-# Plot trips
-trip_plot <- ggplot() +
-  geom_sf(data=india, alpha = 0.5, size = 0.3) +
-  geom_sf(data=trips, size=3, color='red') +
+trip_pts <- ggplot() +
+  geom_sf(data=india, fill='black') +
+  geom_scattermore(data=trips, 
+                   aes(x=lon,y=lat, 
+                       fill='Trip Location'), 
+                   color='red1') +
   coord_sf(datum = NA) +
+  labs(fill=' ') +
   theme(text = element_text(family='latex'),
+        panel.background = element_blank(),
         axis.line = element_blank(), 
         axis.text = element_blank(),
         axis.ticks = element_blank(), 
         axis.title = element_blank(),
-        panel.background = element_blank(),
         legend.position='bottom',
-        legend.key.width=unit(1.8,'cm'),
-        legend.text=element_text(size=13),
-        legend.title=element_text(size=13)) 
+        legend.key=element_blank(),
+        legend.text=element_text(size=20))
+setwd(SAVE)
+ggsave('./docs/jmp/tex_doc/v3/fig/trip_map.png')
 
-#------- District wise
+## Plot Trips per District
 
 # Read user data
 setwd(SAVE)
@@ -228,20 +231,66 @@ trip_plot <- ggplot() +
   geom_sf(data=india, alpha = 0.5, size = 0.3) +
   geom_sf(data=bird_map, aes(fill = cut), 
           alpha = 0.8, colour = 'gray69', size = 0.1) +
-  scale_fill_viridis_d(name='eBird Trips\n(2015-2020)', 
+  scale_fill_viridis_d(name='Number of eBird Trips (2015-2020)', 
                        option='inferno', 
                        direction=-1,
                        guide=guide_legend(title.position='top')) +
   coord_sf(datum = NA) +
   theme(text = element_text(family='latex'),
-        plot.title = element_text(size = 20, face = "bold"),
         axis.line = element_blank(), 
         axis.text = element_blank(),
         axis.ticks = element_blank(), 
         axis.title = element_blank(),
         panel.background = element_blank(),
-        #legend.position='bottom',
-        legend.key.width=unit(1.8,'cm'),
-        legend.text=element_text(size=13),
-        legend.title=element_text(size=13)) 
-ggsave('./docs/jmp/tex_doc/v3/fig/trip_plot.png')
+        legend.position='bottom',
+        legend.key.width=unit(1.3,'cm'),
+        legend.text=element_text(size=15),
+        legend.title=element_text(size=20)) 
+ggsave('./docs/jmp/tex_doc/v3/fig/trip_district_map.png')
+
+#-------------
+# FINAL PLOT
+#-------------
+p <- tree + plot_spacer() + proj_plot + plot_spacer() + trip_pts + 
+  plot_layout(widths=c(4,1,4,1,4))
+setwd(SAVE)
+ggsave('./docs/jmp/tex_doc/v3/fig/summary_maps.png')
+
+#-------------------------------------------
+# 4. Distance b/w real and imputed homes
+#-------------------------------------------
+
+setwd(SAVE)
+real_home <- read_csv('./data/csv/user_home_real.csv')
+imputed_home <- read_csv('./data/csv/user_home_impute.csv')
+
+# Construct sample
+homes <- merge(real_home, imputed_home, by='user_id')
+
+# Offset
+homes$offset <- st_distance(st_as_sf(homes, 
+                                     coords = c('lon_home_real', 'lat_home_real'),
+                                     crs=4326), 
+                            st_as_sf(homes, 
+                                     coords = c('lon_home', 'lat_home'),
+                                     crs=4326), 
+                            by_element = T) %>% set_units(km)
+homes$offset <- as.numeric(homes$offset)
+
+# Plot
+ggplot(homes, aes(x=offset)) + 
+  stat_bin(aes(y=..count..), color='black', fill='steelblue3') +
+  ylab('Number of Users\n') +
+  geom_vline(aes(xintercept = median(offset)), col='red') +
+  annotate(x=200,y=90,label="Median = 16.97 km", 
+           vjust=2, family='latex', geom="label") +
+  scale_x_continuous(name='\nDistance Between Actual and Imputed Home (km)', 
+                     breaks = scales::pretty_breaks(n = 15)) +
+  theme_minimal() +
+  theme(text = element_text(family='latex', size=15),
+        axis.line = element_blank(), 
+        axis.ticks = element_blank())
+setwd(SAVE)
+ggsave('./docs/jmp/tex_doc/v3/fig/distance_home_offset.png')
+
+
