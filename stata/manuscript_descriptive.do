@@ -27,8 +27,8 @@ cd "${TABLE}"
 // Modules
 local sumstats			0
 local learning			0
-local verify			0
-local event_study		1
+local verify			1
+local event_study		0
 local valuation			0
 
 set scheme modern
@@ -455,7 +455,7 @@ if `verify' == 1 {
 		g rad_mean_ln = ln(1+rad_mean)
 		encode c_code_2011, gen(c_code_2011_num)
 		encode state_code_2011, gen(state_code_2011_num)
-	
+		
 		**# TWFE
 		* Transform (see https://www.statalist.org/forums/forum/general-stata-discussion/general/1522076-how-do-i-interpret-a-log-level-and-log-log-model-when-my-independent-variable-is-already-a-percentage)
 		foreach v of varlist dist_f_cum_km2* {
@@ -481,8 +481,8 @@ if `verify' == 1 {
 			
 			estadd local dist_fe "$\checkmark$"
 			estadd local st_y_fe "$\checkmark$"
+		
 	}
-	kk
 	esttab using "${TABLE}/tables/deforestation_verify.tex", ///
 		replace stats(dist_fe st_y_fe N, labels(`"District FEs"' ///
 		`"State x Year FEs"' `"N"') fmt(0 0 0)) mgroups("Data: Full Sample" ///

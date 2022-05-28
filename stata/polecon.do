@@ -98,7 +98,7 @@ if `hte' == 1 {
 	collapse (mean) temp rain tree_cover_s duration ///
 					distance exp_idx coverage_udym ///
 					traveling group_size rad_sum sr ///
-			 (sum) n_trips ///
+			 (sum) n_trips tree_cover_base tot_area ///
 			 (first) year month biome, by(uid c_code_1991 year_month) 
 	
 	* Merge to banerjee
@@ -111,17 +111,18 @@ if `hte' == 1 {
 		g ln_`v' = ln(`v')
 	}
 	g ln_distance = asinh(distance)
+	g tree_cover_base_s = tree_cover_base / tot_area
 	local ctrls temp rain tree_cover_s ln_duration ln_distance ///
 		        ln_exp_idx ln_coverage_udym traveling ln_group_size rad_sum
-	
+
 	* HTE
-	eststo: reghdfe sr c.dist_f_cum_km2##c.(mahrai st_share) `ctrls', ///
+	eststo: reghdfe sr c.dist_f_cum_km2##c.(mahrai st_share tree_cover_base_s) `ctrls', ///
 			a(uid#year c_code_1991_num state_code_1991_num#month) vce(cl biome)
 
 			estadd local user_y_fe "$\checkmark$"
 			estadd local dist_fe "$\checkmark$"
 			estadd local st_m_fe "$\checkmark$"
-	
+	ss
 	**# FRA (2006)
 
 	* 2015 FRA Fraction

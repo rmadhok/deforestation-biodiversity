@@ -188,7 +188,7 @@ trip_pts <- ggplot() +
   geom_sf(data=india, fill='black') +
   geom_scattermore(data=trips, 
                    aes(x=lon,y=lat, 
-                       fill='Trip Location'), 
+                       fill='eBird Trip Location'), 
                    color='red1') +
   coord_sf(datum = NA) +
   labs(fill=' ') +
@@ -200,7 +200,7 @@ trip_pts <- ggplot() +
         axis.title = element_blank(),
         legend.position='bottom',
         legend.key=element_blank(),
-        legend.text=element_text(size=20))
+        legend.text=element_text(size=30))
 setwd(SAVE)
 ggsave('./docs/jmp/tex_doc/v3/fig/trip_map.png')
 

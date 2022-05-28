@@ -295,6 +295,7 @@ if `robustness' == 1 {
 	* Extensive margin: Do projects reshuffle users to other districts?
 	eststo: reghdfe ln_n_users_dym dist_f_cum_km2_std *_slx_i_100_std `ctrls', ///
 			a(c_code_2011_num state_code_2011_num#month year) vce(cl biome)
+			
 			estadd local agg "District"
 			estadd local cutoff "100km"
 			estadd local dist_fe "$\checkmark$"
@@ -305,6 +306,7 @@ if `robustness' == 1 {
 	ren dist_f_cum_km2_slx_i_200_std dist_f_cum_km2_slx_i_100_std
 	eststo: reghdfe ln_n_users_dym dist_f_cum_km2_std *_slx_i_100_std `ctrls', ///
 			a(c_code_2011_num state_code_2011_num#month year) vce(cl biome)
+			
 			estadd local agg "District"
 			estadd local cutoff "200km"
 			estadd local dist_fe "$\checkmark$"
@@ -315,6 +317,7 @@ if `robustness' == 1 {
 	ren dist_f_cum_km2_slx_i_500_std dist_f_cum_km2_slx_i_100_std
 	eststo: reghdfe ln_n_users_dym dist_f_cum_km2_std *_slx_i_100_std `ctrls', ///
 			a(c_code_2011_num state_code_2011_num#month year) vce(cl biome)
+			
 			estadd local agg "District"
 			estadd local cutoff "500km"
 			estadd local dist_fe "$\checkmark$"
@@ -335,44 +338,37 @@ if `robustness' == 1 {
 	
 	if `sensitivity' == 1 {
 		
-		**# 1. Stage-I projects -- USE NF ONLY?
-		use "${DATA}/dta/fc_ebd_udt_post_v02", clear
-		drop if year == 2014
-		drop_outliers
-
-		eststo: reg_sat sr dist_f_cum_km2 dist_f_km2_s1 `ctrls'
-			estadd local data "Post-2014"
-			estadd local wt "No"
-			estadd local samp "None"
-ll
-		**# 2. User x Month FE
+		**# 1. User x Month FE
 		use "${DATA}/dta/fc_ebd_udt_v02", clear
 		drop if year == 2014
 		drop_outliers
 		
 		eststo: reghdfe sr dist_f_cum_km2 `ctrls' n_mon_yr, ///
 			a(uid#month c_code_2011_num state_code_2011_num#year) vce(cl biome)
-				estadd local data "All"
-				estadd local wt "No"
+				
+				estadd local data "Full"
+				estadd local wt "None"
 				estadd local samp "None"
+				estadd local clust "Biome"
 				estadd local user_m_fe "$\checkmark$"
 				estadd local dist_fe "$\checkmark$"
 				estadd local st_y_fe "$\checkmark$"
+				
+		// include cubic user-time trend for middle-ground spec? since user-month is restrictive
 		
-		**# 3. Weighted
+		**# 2. Weighted
 		eststo: reghdfe sr dist_f_cum_km2 `ctrls' [aw=n_trips], ///
 			a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
 				
-				sum sr if e(sample)==1
-				estadd scalar ymean = `r(mean)'
+				estadd local data "Full"
+				estadd local wt "Num. Trips"
+				estadd local samp "None"
+				estadd local clust "Biome"
 				estadd local user_y_fe "$\checkmark$"
 				estadd local dist_fe "$\checkmark$"
 				estadd local st_m_fe "$\checkmark$"
-				estadd local data "All"
-				estadd local wt "Yes"
-				estadd local samp "None"
 		
-		**# 4. Truncate - drop 3 largest projects
+		**# 3. Truncate - drop 3 largest projects
 		preserve
 			
 			use "${DATA}/dta/fc_ebd_udt_trunc_v02", clear
@@ -380,85 +376,95 @@ ll
 			drop_outliers
 			
 			eststo: reg_sat sr dist_f_cum_km2 `ctrls'
-				estadd local data "All"
-				estadd local wt "No"
-				estadd local samp "Truncated"
-	
-		restore
-		
-		**# 5. IHS
-		preserve
-			
-			use "${DATA}/dta/fc_ebd_udt_v02", clear
-			drop if year == 2014
-			drop_outliers
-			g dist_f_cum_ihs = asinh(dist_f_cum_km2)
-			la var dist_f_cum_ihs "IHS(Forest Infrastructure)"
-			
-			eststo: reg_sat sr dist_f_cum_ihs `ctrls'
-				estadd local data "All"
-				estadd local wt "No"
-				estadd local samp "None"
 				
+				estadd local data "Full"
+				estadd local wt "None"
+				estadd local samp "Truncated"
+				estadd local clust "Biome"
+	
 		restore
 		
-		* TABLE: ROBUSTNESS
-		esttab using "${TABLE}/tables/robustness1.tex", replace ///
-			keep(dist_f*) stats(data samp wt user_m_fe user_y_fe dist_fe ///
-			st_y_fe st_m_fe N r2, labels(`"Data"' `"Sample Restriction"' ///
-			`"Weighted"' `"User x Month FEs"' `"User x Year FEs"' ///
-			`"District FEs"' `"State x Year FEs"' `"State x Month FEs"' ///
-			`"N"' `"\(R^{2}\)"') fmt(0 0 0 0 0 0 0 0 0 3)) wrap nocons nonotes ///
-			booktabs nomtitles star(* .1 ** .05 *** .01) label se b(%5.3f) ///
-			width(\hsize) varwidth(40)
-		eststo clear
-	
-		**# 6. Shannon Index
-		preserve
+		**# 4. IHS
+		g dist_f_cum_ihs = asinh(dist_f_cum_km2)
+		la var dist_f_cum_ihs "IHS(Forest Infrastructure)"
 			
-			replace dist_f_cum_km2 = dist_f_cum_km2 / 100
-			eststo: reg_sat si_index dist_f_cum_km2 `ctrls'
-				estadd local data "All"
-				estadd local samp "None"
-				estadd local clust "Biome"
+		eststo: reg_sat sr dist_f_cum_ihs `ctrls'
+				
+			estadd local data "Full"
+			estadd local wt "None"
+			estadd local samp "None"
+			estadd local clust "Biome"
+		
+		**# 5/6. Alternative Diversity Metrics
+
+		replace dist_f_cum_km2 = dist_f_cum_km2 / 100
+		eststo: reg_sat sh_index dist_f_cum_km2 `ctrls'
+				
+			sum sh_index if e(sample)==1
+			estadd local data "Full"
+			estadd local samp "None"
+			estadd local clust "Biome"
+			estadd local wt "None"
+
+			
+		eststo: reg_sat si_index dist_f_cum_km2 `ctrls'
+				
+			sum si_index if e(sample)==1
+			estadd local data "Full"
+			estadd local samp "None"
+			estadd local clust "Biome"
+			estadd local wt "None"
 				 
-		restore
+		replace dist_f_cum_km2 = dist_f_cum_km2 * 100
 		
 		**# 7. Share of Baseline Forest Cover
 		g dist_f_cum_km2_s = (dist_f_cum_km2 / tree_cover_base)*100
-		la var dist_f_cum_km2_s "Forest Infrastructure (\%)"
+		la var dist_f_cum_km2_s "Forest Infrastructure (\% of Baseline)"
 		eststo: reg_sat sr dist_f_cum_km2_s `ctrls'
-				estadd local data "All"
+				
+				estadd local data "Full"
 				estadd local samp "None"
-				estadd local clust "Biome"	
+				estadd local clust "Biome"
+				estadd local wt "None"
 		
 		**# 8. Alt Sample: Drop sparse eBird districts
-		preserve
 			
-			* Above median trips per user and users per district
-			egen tag_d = tag(c_code_2011) 
-			egen tag_u = tag(uid)
-			sum n_trips_user if tag_u, d
-			g n_trips_user_med = r(p50)
-			sum n_users_dist if tag_d, d
-			g n_users_dist_med = r(p50)
-			g high_activity = ( (n_users_dist > n_users_dist_med) & (n_trips_user > n_trips_user_med) )
+		* Above median trips per user and users per district
+		egen tag_d = tag(c_code_2011) 
+		egen tag_u = tag(uid)
+		sum n_trips_user if tag_u, d
+		g n_trips_user_med = r(p50)
+		sum n_users_dist if tag_d, d
+		g n_users_dist_med = r(p50)
+		g high_activity = ( (n_users_dist > n_users_dist_med) & (n_trips_user > n_trips_user_med) )
 			
-			eststo: reg_sat sr dist_f_cum_km2 `ctrls' if high_activity
-				estadd local data "All"
-				estadd local samp "High-Activity"
-				estadd local clust "Biome"
-		restore
+		eststo: reg_sat sr dist_f_cum_km2 `ctrls' if high_activity
+				
+			estadd local data "Full"
+			estadd local samp "High-Activity"
+			estadd local clust "Biome"
+			estadd local wt "None"
+		
+		* Drop 2020
+		eststo: reg_sat sr dist_f_cum_km2 `ctrls' if inrange(year, 2015, 2019)
+				
+			estadd local data "Full"
+			estadd local samp "2015-2019"
+			estadd local clust "Biome"
+			estadd local wt "None"
+		
 		
 		**# 9. Clustering
 		eststo: reghdfe sr dist_f_cum_km2 `ctrls', ///
 			a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl c_code_2011_num)
+				
 				estadd local user_y_fe "$\checkmark$"
 				estadd local dist_fe "$\checkmark$"
 				estadd local st_m_fe "$\checkmark$"
-				estadd local data "All"
+				estadd local data "Full"
 				estadd local samp "None"
 				estadd local clust "District"
+				estadd local wt "None"
 		
 		**# 10. Cell FEs
 		preserve
@@ -469,68 +475,30 @@ ll
 			
 			* Cell Fixed Effect (remove coverage control)
 			eststo: reghdfe sr dist_f_cum_km2 temp rain tree_cover_s ln_duration ///
-				ln_distance ln_exp_idx ln_group_size ln_rad_sum traveling, ///
+				ln_distance ln_rad_sum ln_exp_idx ln_group_size traveling, ///
 				a(cell state_code_2011_num#month year) vce(cl biome)
 		
-				estadd local data "All"
-				estadd local samp "None"
-				estadd local clust "Biome"
 				estadd local cell_fe "$\checkmark$"
 				estadd local year_fe "$\checkmark$"
 				estadd local st_m_fe "$\checkmark$"
+				estadd local data "Full"
+				estadd local samp "None"
+				estadd local clust "Biome"
+				estadd local wt "None"
 		
 		restore
 		
-		/*
-		* 13. Wild Bootstrap
-		// Partial out FEs
-		reghdfe sr `ctrls', a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome) residuals(r_sr)
-		reghdfe dist_f_cum_km2 `ctrls', a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome) residuals(r_treat)
-		
-		* Model
-		local reg_wild = "reg_wild"
-		eststo `reg_wild': reg r_sr r_treat, vce(cl biome)
-		
-		* Run boottest to get bootstrapped clustered pvals and CIs
-		local indep_vars r_treat _cons
-		local n_vars 2
-		local indep_hyp
-		foreach var of local indep_vars {
-			local indep_hyp = "`indep_hyp' {`var'}"
-		}
-		boottest `indep_hyp', seed(1234) r(1000) boottype(wild) cluster(biome) nograph // boottest each coeff
-		
-		* Store bootttest output in e() matrices
-		matrix boot_pval = J(1, `n_vars',.)
-		matrix boot_ci_lb = J(1, `n_vars',.)
-		matrix boot_ci_ub = J(1, `n_vars', .)
-		forval k = 1/`n_vars' { // loop through predictors, aka matrix cols
-			matrix boot_pval[1,`k'] = r(p_`k')
-			matrix CI_temp = r(CI_`k')
-			matrix boot_ci_lb[1,`k'] = CI_temp[1,1]
-			matrix boot_ci_ub[1,`k'] = CI_temp[1,2]
-		}
-		foreach mat in "boot_pval" "boot_ci_lb" "boot_ci_ub" {
-			matrix colnames `mat' = `indep_vars'
-			estadd matrix `mat' = `mat': `reg_wild'
-		}
-		
-		esttab `reg_wild' using "${TABLE}/tables/wild.tex", replace ///
-			keep(r_treat) cells(b boot_pval(fmt(2) par) ///
-			boot_ci_lb(fmt(a3) par(`"["' `","')) ///
-			& boot_ci_ub(fmt(a3) par(`""' `"]"')))
-		*/
-		* TABLE: ROBUSTNESS (Continued)
-		esttab using "${TABLE}/tables/robustness2.tex", replace ///
-			keep(dist_f*) stats(data samp user_y_fe dist_fe cell_fe st_m_fe ///
-			year_fe clust N r2, labels(`"Data"' `"Sample Restriction"' ///
-			`"User x Year FEs"' `"District FEs"' `"Cell FEs"' ///
-			`"State x Month FEs"' `"Year FEs"' `"Clustering"' `"N"' ///
-			`"\(R^{2}\)"') fmt(0 0 0 0 0 0 0 0 0 3)) ///
-			mlabel("Simpson" "SR" "SR" "SR" "SR") ///
-			wrap nocons nonotes booktabs nomtitles star(* .1 ** .05 *** .01) ///
-			label se b(%5.3f) width(\hsize) varwidth(40)
-		eststo clear
+		* TABLE: ROBUSTNESS
+		esttab using "${TABLE}/tables/robustness.tex", replace ///
+			keep(dist_f*) stats(samp user_y_fe user_m_fe dist_fe cell_fe ///
+			st_m_fe st_y_fe year_fe wt clust N r2, labels(`"Sample Restriction"' ///
+			`"User x Year FEs"' `"User $\times$ Month FEs"' `"District FEs"' ///
+			`"Cell FEs"' `"State x Month FEs"' `"State $\times$ Year FEs"' ///
+			`"Year FEs"' `"Weights"' `"Clustering"' `"N"' `"\(R^{2}\)"') ///
+			fmt(0 0 0 0 0 0 0 0 0 0 0 3)) mlabel("SR" "SR" "SR" "SR" "Shannon" ///
+			"Simpson" "SR" "SR" "SR" "SR" "SR") wrap nocons nonotes booktabs nomtitles ///
+			star(* .1 ** .05 *** .01) label se b(%5.3f) varwidth(30)
+		*eststo clear
 	}
 
 	if `slx' == 1 {

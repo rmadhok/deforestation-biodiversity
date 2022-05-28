@@ -19,15 +19,15 @@ set maxvar 10000
 set matsize 10000
 
 //Set Directory Paths
-gl BACKUP	"/Volumes/Backup Plus 1/research/data/"
+gl BACKUP	"/Volumes/Backup Plus 1/research/data"
 gl DATA 	"/Users/rmadhok/Dropbox/def_biodiv/data/"
 
 // Module
 local vil			0
 local election		0
-local ss_11			0
+local ss_11			1
 local ss_01			0
-local ss_91			1
+local ss_91			0
 *-------------------------------------------------------------------------------
 * VILLAGE REVENUE FOREST AREA
 *-------------------------------------------------------------------------------
@@ -89,7 +89,7 @@ if `vil' == 1 {
 	}
 
 	* Read villages (n=640,948 villages; no urban)
-	use "${READ}/def_biodiv/census/vil_forest_area.dta", clear
+	use "${BACKUP}/def_biodiv/census/vil_forest_area.dta", clear
 	drop if village_code_2011 == ""
 	ren (sc_pop st_pop) (sc st)
 

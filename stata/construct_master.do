@@ -201,6 +201,8 @@ program define construct_deforest
 	
 	* [option] Drop megaprojects
 	if "`restrict'" == "drop" {
+		*sum proj_area_forest2, d
+		*drop if proj_area_forest2 >= r(p95) & proj_area_forest2 < .
 		sort proj_area_forest2
 		drop if _n > _N - 3 // drops 3 largest megaprojects
 	}
@@ -356,13 +358,13 @@ program define construct_deforest
 end
 
 if `district_forest' == 1 {
-	
+	/*
 	* Full
 	construct_deforest, stage(2) include("pre")
 	drop dist_nf_*_cum_km2 // non-forest for post-2014 submissions only
 	save "${DATA}/dta/fc_dym_s2_v02", replace
 	export delimited "${DATA}/csv/fc_dym_s2_v02.csv", replace
-
+*/
 	* Truncate
 	construct_deforest, stage(2) include("pre") restrict("drop")
 	drop dist_nf_*_cum_km2
@@ -385,7 +387,7 @@ if `district_forest' == 1 {
 *===============================================================================
 if `merge' == 1 {
 
-	local fc_data "" // either "" (main dataset), "trunc_", "post"
+	local fc_data "trunc_" // either "" (main dataset), "trunc_", "post"
 	local level "udt" // udt (user-dist-time) or uct (user-cell-time)
 	
 	if "`fc_data'" == "" | "`fc_data'" == "trunc_" {
