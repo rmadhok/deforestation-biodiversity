@@ -26,10 +26,10 @@ cd "${TABLE}"
 
 // Modules
 local main_analysis		0
-local dynamics			0
-local robustness		1
+local dynamics			1
+local robustness		0
 	local mobility		0
-	local sensitivity	1
+	local sensitivity	0
 	local slx			0
 
 *===============================================================================
@@ -73,13 +73,12 @@ use "${DATA}/dta/fc_ebd_udt_v02", clear
 drop if year == 2014
 drop_outliers
 local ctrls temp rain tree_cover_s ln_duration ln_distance ln_rad_sum ///
-	        ln_exp_idx ln_coverage_udym ln_group_size traveling
+	        ln_exp_idx ln_coverage_udym ln_group_size traveling ln_hour
 *===============================================================================
 * MAIN ANALYSIS
 *===============================================================================
 if `main_analysis' == 1 {
 
-	
 	*--------------------
 	* 1. MAIN RESULTS
 	*--------------------
@@ -225,10 +224,6 @@ if `dynamics' == 1 {
 	* Cumulative Dynamic Lag
 	*----------------------------
 	
-	// No Lag
-	la var dist_f_cum_km2 "No Lag"
-	reg_sat sr dist_f_cum_km2 `ctrls' 
-	eststo nolag: lincomest dist_f_cum_km2
 	
 	// 1 month
 	reg_sat sr dist_f_cum_km2 dist_f_cum_km2_lag1 `ctrls'

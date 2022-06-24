@@ -25,9 +25,9 @@ gl DATA 	"/Users/rmadhok/Dropbox/def_biodiv/data/"
 // Module
 local vil			0
 local election		0
-local ss_11			1
+local ss_11			0
 local ss_01			0
-local ss_91			0
+local ss_91			1
 *-------------------------------------------------------------------------------
 * VILLAGE REVENUE FOREST AREA
 *-------------------------------------------------------------------------------
@@ -322,9 +322,6 @@ if `ss_11' == 1 {
 	g scst = sc + st
 	foreach v of varlist sc st scst {
 		g `v'_share = `v' / tot_pop // district share
-		bys state_code_2011 year_month: egen `v'_state = total(`v'), m
-		g `v'_state_share = `v'/`v'_state // state share
-		drop `v'_state
 	}
 
 	* Save
@@ -429,6 +426,9 @@ if `ss_91' == 1 {
 	*/
 	}
 	
+	
+	**# Deforestation w/ 1991 borders
+
 	* Read FC
 	use "${DATA}/dta/fc_dym_s2_v02", clear
 
@@ -436,44 +436,10 @@ if `ss_91' == 1 {
 	merge m:1 c_code_2011 using "${DATA}/dta/crosswalk_full", keep(3) nogen // 40 districts cannot traceback
 	
 	* Aggregate
-	collapse (sum) dist_f_cum_km2 tree_cover_base ///
-			 (first) year month, by(c_code_1991 year_month)
+	collapse (sum) dist_f_cum_km2 (first) year month, by(c_code_1991 year_month)
 	g state_code_1991 = substr(c_code_1991, 1, 3) 
-	la var dist_f_cum_km2 "Forest Infrastructure"
+	la var dist_f_cum_km2 "Forest Infrastructure (\(km^{2}\))"
 	
-	* State Fractions
-	preserve
-	
-		* Pre-period  
-		keep if year == 2014
-		keep c_code_1991 state_code_1991 year_month dist_f_cum_km2
-		
-		* Cumulatives
-		bys state_code_1991 year_month: egen st_f_cum_km2 = total(dist_f_cum_km2) 
-		bys state_code_1991 year_month: keep if _n == 1 // state-monthly cumulative
-		drop dist_f_cum_km2 c_code_1991
-		bys year_month: egen nat_f_cum_km2 = total(st_f_cum_km2) // national monthly cumulative
-		
-		* Collapse to end-of-year
-		sort state_code_1991 year_month
-		collapse (lastnm) st_f* nat_f*, by(state_code_1991)
-		
-		* Share
-		g st_f_share = st_f_cum_km2 / nat_f_cum_km2
-		keep state_code_1991 *_share
-		tempfile shares 
-		save "`shares'"
-	
-	restore
-	
-	* Merge state shares
-	merge m:1 state_code_1991 using "`shares'", nogen
-	
-	* Predicted state deforestation
-	bys year_month: egen nat_f_cum_km2 = total(dist_f_cum_km2)
-	g st_f_cum_km2_p = st_f_share * nat_f_cum_km2
-	la var st_f_cum_km2_p "State Approvals"
-	sort c_code_1991 year_month
 	tempfile temp
 	save "`temp'"
 	
@@ -483,7 +449,7 @@ if `ss_91' == 1 {
 	use "${BACKUP}/def_biodiv/banerjee_iyer/yld_sett_aug03", clear
 	
 	* Sync Names with Census
-	collapse (firstnm) p_nland mahrai state britdum brule1 tot_area=totarea lat alt coastal, by(dist_91)
+	collapse (firstnm) p_nland mahrai state britdum brule1 lat alt coastal, by(dist_91)
 	la var mahrai "Inclusive (=1)"
 	
 	replace dist_91 = lower(dist_91)
@@ -518,28 +484,37 @@ if `ss_91' == 1 {
 		keepusing(c_code_1991) keep(3) nogen
 	duplicates drop c_code_1991, force
 	
-	* Merge to shift share
+	* Merge to deforestation
 	merge 1:m c_code_1991 using "`temp'", keep(3) nogen
 	save "`temp'", replace
 	
 	**# Covariates
 	
-	* Population (use 1991 PCA?)
-	use "${READ}/shrug/shrug-v1.5.samosa-pop-econ-census-dta/shrug-v1.5.samosa-pop-econ-census-dta/shrug_pc91", clear
+	* Population (use 2011?)
+	use "${BACKUP}/shrug/shrug-v1.5.samosa-pop-econ-census-dta/shrug-v1.5.samosa-pop-econ-census-dta/shrug_pc91", clear
 	keep shrid pc91_pca_tot_p pc91_pca_p_st pc91_pca_p_sc
-	merge 1:1 shrid using "${READ}/shrug/shrug-v1.5.samosa-pop-econ-census-dta/shrug-v1.5.samosa-keys-dta/shrug_pc91_district_key.dta", keep(3) nogen
+	merge 1:1 shrid using "${BACKUP}/shrug/shrug-v1.5.samosa-pop-econ-census-dta/shrug-v1.5.samosa-keys-dta/shrug_pc91_district_key.dta", keep(3) nogen
 	g c_code_1991 = "c" + pc91_state_id + pc91_district_id
 	ren pc91_pca_* *
 	collapse (sum) st=p_st sc=p_sc tot_pop = tot_p, by(c_code_1991)
 	merge 1:m c_code_1991 using "`temp'", keep(3) nogen
-	
 	g scst = sc + st
 	foreach v of varlist sc st scst {
 		g `v'_share = `v' / tot_pop // district share
-		bys state_code_1991 year_month: egen `v'_state = total(`v'), m
-		g `v'_state_share = `v'/`v'_state // state share
-		drop `v'_state
 	}
+	
+	/*
+	* 2011 Census Population Shares
+	use "${DATA}/dta/2011_india_dist", replace
+	merge 1:1 c_code_2011 using "${DATA}/dta/crosswalk_full", keep(3) nogen // 40 districts cannot traceback
+	collapse (sum) tot_st tot_sc tot_pop, by(c_code_1991) // to 1991 borders
+	ren	(tot_st tot_sc) (st sc)
+	g scst = sc + st
+	foreach v of varlist sc st scst {
+		g `v'_share = `v' / tot_pop // district share
+	}
+	merge 1:m c_code_1991 using "`temp'", keep(3) nogen
+	*/
 	
 	* Save
 	encode c_code_1991, gen(c_code_1991_num)

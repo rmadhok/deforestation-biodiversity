@@ -24,8 +24,8 @@ gl DATA 	"${ROOT}/data"
 gl DO		"${ROOT}/scripts/stata"
 
 // Module
-local ebird					0
-local district_forest		1
+local ebird					1
+local district_forest		0
 local merge					0
 *===============================================================================
 * BIODIVERSITY
@@ -95,7 +95,7 @@ if `ebird' == 1 {
 	
 	* Transform
 	g pop_density = tot_pop / tot_area
-	foreach v of varlist exp_idx duration group_size distance rad_* {
+	foreach v of varlist exp_idx duration group_size distance rad_* hour {
 		g ln_`v' = ln(1+`v')
 	}
 	
@@ -137,6 +137,7 @@ if `ebird' == 1 {
 	la var si_index "Simpson Index"
 	la var duration "Duration (min)"
 	la var distance "Distance (km)"
+	la var hour "Hour of day"
 	la var rain "Rainfall (mm)"
 	la var temp "Temperature ($\degree$ C)"
 	la var n_mon_yr "Birding Rate (Months/Year)"
@@ -358,13 +359,13 @@ program define construct_deforest
 end
 
 if `district_forest' == 1 {
-	/*
+	
 	* Full
 	construct_deforest, stage(2) include("pre")
 	drop dist_nf_*_cum_km2 // non-forest for post-2014 submissions only
 	save "${DATA}/dta/fc_dym_s2_v02", replace
 	export delimited "${DATA}/csv/fc_dym_s2_v02.csv", replace
-*/
+
 	* Truncate
 	construct_deforest, stage(2) include("pre") restrict("drop")
 	drop dist_nf_*_cum_km2
@@ -387,8 +388,8 @@ if `district_forest' == 1 {
 *===============================================================================
 if `merge' == 1 {
 
-	local fc_data "trunc_" // either "" (main dataset), "trunc_", "post"
-	local level "udt" // udt (user-dist-time) or uct (user-cell-time)
+	local fc_data "" // either "" (main dataset), "trunc_", "post"
+	local level "uct" // udt (user-dist-time) or uct (user-cell-time)
 	
 	if "`fc_data'" == "" | "`fc_data'" == "trunc_" {
 	

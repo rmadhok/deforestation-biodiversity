@@ -18,6 +18,8 @@ require(raster)
 require(lubridate)
 require(stargazer)
 require(exactextractr)
+require(stringdist)
+require(fastDummies)
 
 # Load Maps
 india_dist <- st_read(paste(SHP, "maps/india-district", sep=""), 
@@ -37,6 +39,7 @@ colnames(ebird) <- gsub('\\.', '_', tolower(make.names(colnames(ebird))))
 ebird$observation_date <- ymd(ebird$observation_date)
 ebird$year <- year(ebird$observation_date)
 ebird$yearmonth <- format(ebird$observation_date, "%Y-%m")
+ebird$hour <- as.numeric(substr(ebird$time_observations_started, 1, 2))
 
 # experience since 2014 (n=134,433)
 experience <- ebird %>%
@@ -53,15 +56,16 @@ experience <- ebird %>%
 # Keep necessary columns
 ebird <- ebird %>%
   dplyr::select('taxonomic_order', 'observation_count', 'state', 'county', 
-                'locality', 'locality_type', 'latitude', 'longitude',
+                'locality', 'locality_type', 'latitude', 'longitude', 
                 'observation_date', 'observer_id', 'sampling_event_identifier', 
-                'protocol_type', 'protocol_code', 'duration_minutes', 
+                'protocol_type', 'protocol_code', 'duration_minutes', 'hour', 
                 'effort_distance_km', 'number_observers', 'all_species_reported', 
-                'group_identifier', 'year', 'yearmonth')
+                'group_identifier', 'year', 'yearmonth', 'common_name', 'scientific_name')
 
 # Clean names
 ebird <- ebird %>%
-  rename(species_id = taxonomic_order,
+  rename(species = common_name,
+         species_id = taxonomic_order,
          species_count = observation_count,
          lat = latitude,
          lon = longitude,
@@ -188,6 +192,7 @@ stargazer(protocol, summary=F, rownames=F, float=F,
 
 # Filter Protocol (stationary, travelling) (n=18,458,042)
 ebird <- filter(ebird, protocol_code %in% c('P21', 'P22'))
+
 #----------------------------------------------------------------
 ## 3. IDENTIFY DISTRICTS AND COASTAL TRIPS
 #----------------------------------------------------------------  
@@ -205,18 +210,54 @@ ebird <- ebird %>% filter(!is.na(c_code_2011))
 rm(list='ebird_oob')
 
 #----------------------------------------------------------------
+## 3. CATEGORIZE SPECIES (IUCN)
+#---------------------------------------------------------------- 
+setwd(SAVE)
+
+# species list
+sp_list <- ebird %>% 
+  ungroup() %>% 
+  distinct(species, .keep_all=T) %>%
+  dplyr::select(species, scientific_name) %>%
+  mutate(scientific_name = tolower(scientific_name))
+write_csv(sp_list, './data/csv/species_list.csv')
+
+# Read IUCN list
+iucn <- read_csv('./data/csv/birdlife_iucn.csv') %>%
+  mutate(scientific_name = tolower(`Scientific name`),
+         iucn = `2021 IUCN Red List category`) %>%
+  dplyr::select(scientific_name, iucn)
+
+# Manual merge
+sp_list <- left_join(sp_list, iucn, by='scientific_name')
+  
+# Export NA's for manual filling
+write_csv(filter(sp_list, is.na(iucn)), './data/csv/ebird_iucn_fill.csv')
+
+# Append filled
+fill <- read_csv('./data/csv/ebird_iucn_filled.csv')
+sp_list <- rbind(filter(sp_list, !is.na(iucn)), fill)
+
+# Merge back to ebird
+ebird <- left_join(ebird, sp_list[, c('species', 'iucn')], by='species')
+ebird <- dummy_cols(ebird, select_columns = 'iucn')
+rm(list=c('fill', 'iucn', 'sp_list'))
+#----------------------------------------------------------------
 ## 4. CONSTRUCT SPECIES DIVERSITY
 #---------------------------------------------------------------- 
 
-# Higher Level Species Richness (~10 mins)
-# add sr/year, sr/user-ym, sr/u-yr, sr/dym
+# Higher Level Species Richness
+# add sr/year, sr/user-ym, sr/u-yr
 ebird <- ebird %>%
   group_by(yearmonth) %>%
   mutate(sr_ym = n_distinct(species_id)) %>% # species richness per year-month (all users)
+  group_by(c_code_2011, yearmonth) %>%
+  mutate(sr_dym = n_distinct(species_id)) %>%
   group_by(user_id, year) %>%
   mutate(n_mon_yr = n_distinct(yearmonth)) %>% # Months per year of birding - 'high ability' users
   group_by(user_id, c_code_2011, yearmonth) %>%
-  mutate(sr_udym = n_distinct(species_id))
+  mutate(sr_udym = n_distinct(species_id)) %>%
+  ungroup()
 
 # Lists with no counts (remove?)
 nocount <- ebird %>%
@@ -244,6 +285,13 @@ ebird$species_count <- as.numeric(ebird$species_count)
 ebird <- ebird %>% 
   group_by(trip_id) %>% 
   mutate(sr = n(),
+         sr_cr = sum(iucn_CR, na.rm=T),
+         sr_dd = sum(iucn_DD, na.rm=T),
+         sr_en = sum(iucn_EN, na.rm=T),
+         sr_lc = sum(iucn_LC, na.rm=T),
+         sr_nt = sum(iucn_NT, na.rm=T),
+         sr_vu = sum(iucn_VU, na.rm=T),
+         sr_na = sum(iucn_NA, na.rm=T),
          sh_index = -sum((species_count / sum(species_count, na.rm = T))*
                                 log(species_count / sum(species_count, na.rm = T)), na.rm = T),
          si_index = 1 - ((sum(species_count*(species_count - 1), na.rm = T)) /
@@ -253,12 +301,13 @@ ebird <- ebird %>%
 ## 5. ALLOCATE TRIPS TO GRID CELLS
 #---------------------------------------------------------------- 
 
-# Trip level (n=1,04,930, 17,634 users)
+# Trip level (n=1,049,930, 17,634 users)
 ebird_trip <- ebird %>% 
   distinct(trip_id, .keep_all = T) %>%
-  dplyr::select(date, user_id, trip_id, group_id, group_size, year,
-                yearmonth, duration, distance, lat, lon, c_code_2011, 
-                protocol_code, n_mon_yr, starts_with('sr'), sh_index, si_index) %>%
+  dplyr::select(date, user_id, trip_id, group_id, group_size, 
+                year, yearmonth, duration, distance, lat, lon, 
+                c_code_2011, protocol_code, n_mon_yr, hour,
+                starts_with('sr'), sh_index, si_index) %>%
   mutate(sr_hr = (sr/duration)*60,
          distance = replace(distance, is.na(distance), 0),
          traveling = ifelse(protocol_code == 'P22', 1, 0)) %>%
@@ -272,7 +321,10 @@ crs(grid) <- crs(india_dist)
 grid <- setValues(grid, 1:ncell(grid))
 
 # Assign cell id of trip
-ebird_trip$cell_id <- extract(grid, st_as_sf(ebird_trip, coords = c('lon', 'lat'), crs = 4326))
+ebird_trip$cell_id <- raster::extract(grid, 
+                                      st_as_sf(ebird_trip, 
+                                               coords = c('lon', 'lat'), 
+                                               crs = 4326))
 
 # Number of cells per district
 n_cells_dist <- cbind(st_drop_geometry(india_dist), exact_extract(grid, india_dist, 'count'))
@@ -282,6 +334,7 @@ ebird_trip <- left_join(ebird_trip, n_cells_dist, by='c_code_2011')
 #----------------------------------------------------------------
 ## 5. EXPORT FINAL DATASETS
 #---------------------------------------------------------------- 
+setwd(READ)
 
 # Trip Level
 write_csv(ebird_trip, 'ebird_trip.csv')
@@ -291,6 +344,13 @@ ebird_user_cell <- ebird_trip %>%
   group_by(user_id, cell_id, yearmonth) %>%
   summarize(n_trips=n(),
             sr=mean(sr, na.rm=T),
+            sr_cr = mean(sr_cr, na.rm=T),
+            sr_dd = mean(sr_dd, na.rm=T),
+            sr_en = mean(sr_en, na.rm=T),
+            sr_lc = mean(sr_lc, na.rm=T),
+            sr_nt = mean(sr_nt, na.rm=T),
+            sr_vu = mean(sr_vu, na.rm=T),
+            sr_na = mean(sr_na, na.rm=T),
             sr_hr=mean(sr_hr, na.rm=T),
             sr_udym=first(sr_udym),
             sr_ym=first(sr_ym),
@@ -298,6 +358,7 @@ ebird_user_cell <- ebird_trip %>%
             si_index=mean(si_index, na.rm=T),
             duration=mean(duration, na.rm=T),
             distance=mean(distance,na.rm=T),
+            hour=mean(hour, na.rm=T),
             traveling=mean(traveling, na.rm=T)*100,
             group_size=mean(group_size, na.rm=T),
             n_mon_yr=first(n_mon_yr),
@@ -317,6 +378,13 @@ ebird_user <- ebird_trip %>%
   group_by(user_id, c_code_2011, yearmonth) %>%
   summarize(n_trips=n(),
             sr=mean(sr, na.rm=T),
+            sr_cr=mean(sr_cr, na.rm=T),
+            sr_dd=mean(sr_dd, na.rm=T),
+            sr_en=mean(sr_en, na.rm=T),
+            sr_lc=mean(sr_lc, na.rm=T),
+            sr_nt=mean(sr_nt, na.rm=T),
+            sr_vu=mean(sr_vu, na.rm=T),
+            sr_na=mean(sr_na, na.rm=T),
             sr_hr=mean(sr_hr, na.rm=T),
             sr_udym=first(sr_udym),
             sr_ym=first(sr_ym),
@@ -324,6 +392,7 @@ ebird_user <- ebird_trip %>%
             si_index=mean(si_index, na.rm=T),
             duration=mean(duration, na.rm=T),
             distance=mean(distance, na.rm=T),
+            hour=mean(hour, na.rm=T),
             traveling=mean(traveling, na.rm=T)*100,
             group_size=mean(group_size, na.rm=T),
             n_mon_yr=first(n_mon_yr),
