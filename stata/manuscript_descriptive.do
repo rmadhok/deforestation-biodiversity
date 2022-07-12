@@ -27,10 +27,10 @@ cd "${TABLE}"
 // Modules
 local sumstats			0
 local learning			0
-local verify			1
+local verify			0
 local event_study		0
 local valuation			0
-
+local fra				1
 set scheme modern
 *===============================================================================
 * PROGRAMS
@@ -87,7 +87,7 @@ if `sumstats' == 1 {
 	
 	* Indent for pretty latex formatting
 	foreach v of varlist dist_f*_cum_km2 tree* pop* rad* ///
-		sr coverage* n_* duration distance temp rain exp_idx group_size { 
+		sr coverage* n_* duration distance temp rain exp_idx group_size hour { 
 	
 			label variable `v' `"\hspace{0.2cm} `: variable label `v''"'	
 	}
@@ -95,7 +95,7 @@ if `sumstats' == 1 {
 	* Collect
 	local dist_vars n_users_dist n_trips_dist
 	local user_vars n_dist_user n_st_user n_ym_user
-	local trip sr coverage_udym duration distance
+	local trip sr coverage_udym duration distance hour
 	local covariates tree_cover_s rain temp rad_mean
 	
 	*---------------------------------------
@@ -527,10 +527,10 @@ if `event_study' == 1 {
 	keep if inrange(year, 2015,2020)
 	drop_outliers
 	local ctrls temp rain tree_cover_s ln_duration ln_distance ln_rad_sum ///
-	        ln_exp_idx ln_coverage_udym ln_group_size traveling
+	        ln_exp_idx ln_coverage_udym ln_group_size traveling ln_hour
 	
 	* Regression
-	reghdfe sr t_1-t_5 t_7-t_19 `ctrls' [aw=n_trips], ///
+	reghdfe sr t_1-t_5 t_7-t_19 `ctrls' dist_f_cum_km2_slx_ib [aw=n_trips], ///
 		a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
 	
 	* Figure
@@ -743,7 +743,7 @@ if `valuation' == 1 {
 		xline(`mean', lcolor(red)) ///
 		text(0.2 6500 "Mean = `mean' Rs.", place(n) color(red)) 
 	graph export "${TABLE}/fig/hist_species_value.png", replace
-	nn
+	
 	*----------------------
 	* Livelihood Loss
 	*----------------------
@@ -782,3 +782,30 @@ if `valuation' == 1 {
 	restore
 		
 }
+
+*===============================================================================
+* FOREST RIGHTS ACT
+*===============================================================================
+if `fra' == 1 {
+	
+	**# Distribution of projects obtaining FRA
+	
+	* Read project level
+	use "${DATA}/dta/fc_pdym_s2_v02", clear
+	
+	g n_proj = 1
+	collapse (sum) fra = proj_fra_num n_proj, by(c_code_2011)
+	g fra_share = fra/n_proj
+	su fra_share, d
+	local mean = round(r(mean),.01)
+	hist fra_share, frac bcolor(navy8) ///
+		title("A: Distribution of Informed Consent") ///
+		xtitle("Share of District Projects Obtaining Gram Sabha Consent", size(medium)) ///
+		ytitle("Share of Districts", size(medium)) ///
+		xlabel(,labsize(medium)) ylabel(,labsize(medium)) ///
+		xline(`mean', lcolor(red)) ///
+		text(0.205 .6 "Mean = `mean'", place(n) color(red))
+	graph export "${TABLE}/fig/hist_fra.png", replace
+	
+}
+

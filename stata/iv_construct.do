@@ -431,14 +431,23 @@ if `ss_91' == 1 {
 
 	* Read FC
 	use "${DATA}/dta/fc_dym_s2_v02", clear
-
+	
 	* 1991 borders
 	merge m:1 c_code_2011 using "${DATA}/dta/crosswalk_full", keep(3) nogen // 40 districts cannot traceback
 	
 	* Aggregate
-	collapse (sum) dist_f_cum_km2 (first) year month, by(c_code_1991 year_month)
+	collapse (sum) dist_f_cum_km2  /// 
+			 (mean) n_ele_cum_s-n_tra_cum_s ///
+			 (first) year month, ///
+			 by(c_code_1991 year_month)
 	g state_code_1991 = substr(c_code_1991, 1, 3) 
 	la var dist_f_cum_km2 "Forest Infrastructure (\(km^{2}\))"
+	
+	* Baseline category shares
+	foreach v of varlist n_ele_cum_s-n_tra_cum_s {
+		bys c_code_1991 (year_month): g `v'_base = `v' if _n == 1
+		bys c_code_1991: carryforward `v'_base, replace
+	}
 	
 	tempfile temp
 	save "`temp'"
@@ -491,6 +500,7 @@ if `ss_91' == 1 {
 	**# Covariates
 	
 	* Population (use 2011?)
+	/*
 	use "${BACKUP}/shrug/shrug-v1.5.samosa-pop-econ-census-dta/shrug-v1.5.samosa-pop-econ-census-dta/shrug_pc91", clear
 	keep shrid pc91_pca_tot_p pc91_pca_p_st pc91_pca_p_sc
 	merge 1:1 shrid using "${BACKUP}/shrug/shrug-v1.5.samosa-pop-econ-census-dta/shrug-v1.5.samosa-keys-dta/shrug_pc91_district_key.dta", keep(3) nogen
@@ -502,8 +512,8 @@ if `ss_91' == 1 {
 	foreach v of varlist sc st scst {
 		g `v'_share = `v' / tot_pop // district share
 	}
+	*/
 	
-	/*
 	* 2011 Census Population Shares
 	use "${DATA}/dta/2011_india_dist", replace
 	merge 1:1 c_code_2011 using "${DATA}/dta/crosswalk_full", keep(3) nogen // 40 districts cannot traceback
@@ -514,7 +524,6 @@ if `ss_91' == 1 {
 		g `v'_share = `v' / tot_pop // district share
 	}
 	merge 1:m c_code_1991 using "`temp'", keep(3) nogen
-	*/
 	
 	* Save
 	encode c_code_1991, gen(c_code_1991_num)

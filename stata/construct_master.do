@@ -24,16 +24,16 @@ gl DATA 	"${ROOT}/data"
 gl DO		"${ROOT}/scripts/stata"
 
 // Module
-local ebird					1
+local ebird					0
 local district_forest		0
-local merge					0
+local merge					1
 *===============================================================================
 * BIODIVERSITY
 *===============================================================================
 
 if `ebird' == 1 {
 	
-	local level "uct" // udt = user-district-yearmonth, uct = user-cell-yearmonth
+	local level "udt" // udt = user-district-yearmonth, uct = user-cell-yearmonth
 	
 	**# Read
 	import delimited using "${DATA}/csv/ebird_`level'.csv", clear
@@ -337,7 +337,7 @@ program define construct_deforest
 	}
 	
 	* Lags
-	foreach i of numlist 1/6 {
+	foreach i of numlist 1/12 {
 		
 		bys c_code_2011 (year_month): gen dist_f_cum_km2_lag`i' = dist_f_cum_km2[_n - `i']
 		la var dist_f_cum_km2_lag`i' "Lag `i'"
@@ -388,14 +388,14 @@ if `district_forest' == 1 {
 *===============================================================================
 if `merge' == 1 {
 
-	local fc_data "" // either "" (main dataset), "trunc_", "post"
-	local level "uct" // udt (user-dist-time) or uct (user-cell-time)
+	local fc_data "post" // either "" (main dataset), "trunc_", "post"
+	local level "udt" // udt (user-dist-time) or uct (user-cell-time)
 	
 	if "`fc_data'" == "" | "`fc_data'" == "trunc_" {
 	
 		* Spatial Spillovers
 		import delimited "${DATA}/csv/slx_v02.csv", clear
-		keep c_code_2011 year_month dist_f_cum_km2_slx_*
+		*keep c_code_2011 year_month dist_f_cum_km2_slx_*
 		ren year_month ym
 		g year_month = ym(year(date(ym, "20YM")), month(date(ym, "20YM")))
 		format year_month %tmCCYY-NN

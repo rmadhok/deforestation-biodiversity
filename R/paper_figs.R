@@ -15,6 +15,9 @@ require(terra)
 require(patchwork)
 require(showtext)
 require(scattermore)
+require(ggridges)
+require(hrbrthemes)
+require(viridis)
 require(units)
 font_add('latex', 'latinmodern-math.otf')
 showtext_auto()
@@ -292,5 +295,65 @@ ggplot(homes, aes(x=offset)) +
         axis.ticks = element_blank())
 setwd(SAVE)
 ggsave('./docs/jmp/tex_doc/v3/fig/distance_home_offset.png')
+
+#-------------------------------------------
+# 5. RIGELINE CHART - FRA COMPLIANCE
+#-------------------------------------------
+setwd(SAVE)
+
+# Prep data
+fc <- read_csv('./data/csv/fc_dym_s2_v02.csv') %>%
+  group_by(c_code_2011) %>%
+  summarize(n_proj = last(n_proj_cum))
+fra <- haven::read_dta('./data/dta/iv_fra.dta') %>%
+  dplyr::select(c_code_2011, st_ha)
+st <- haven::read_dta('./data/dta/2011_india_dist.dta') %>%
+  mutate(st_share = tot_st/tot_pop) %>%
+  dplyr::select(c_code_2011, st_share)
+
+df <- left_join(fc, fra, by='c_code_2011') %>%
+  left_join(st, by='c_code_2011') %>%
+  mutate(decile = as.factor(ntile(n_proj, 10)))
+  
+# Ridgeline
+ggplot(df, aes(x = st_share, y = decile, fill = ..x..)) +
+  geom_density_ridges_gradient(scale = 3, rel_min_height = 0.01) +
+  scale_fill_distiller(palette='Blues', 
+                       trans='reverse') +
+  labs(title = 'B: Project Placement and ST Population\n',
+       y = 'Projects in District (Decile)\n',
+       x = '\nST Population Share') +
+  scale_x_continuous(breaks=c(0, 0.2, 0.4, 0.6, 0.8, 1.0)) +
+  scale_y_discrete(breaks=c(2,4,6,8,10)) +
+  theme_minimal() +
+  theme(legend.position="none",
+        text = element_text(family='latex', size=20),
+        axis.line = element_blank(), 
+        panel.background = element_blank(), 
+        plot.title = element_text(hjust = 0.5))
+ggsave('./docs/jmp/tex_doc/v3/fig/placement_st.png')
+
+# histogram of informed consent
+fra_proj <- haven::read_dta('./data/dta/fc_pdym_s2_v02.dta') %>%
+  group_by(c_code_2011) %>%
+  summarize(fra = sum(proj_fra_num, na.rm=T),
+            n_proj=n()) %>%
+  mutate(fra_share = fra/n_proj)
+
+ggplot(fra_proj, aes(x=fra_share)) + 
+  ggtitle('A: Informed Consent\n') +
+  stat_bin(aes(y=..count../sum(..count..)), color='black', fill='steelblue3') +
+  labs(x = '\nProject Share Obtaining Gram Sabha Consent',
+       y = 'Share of Districts\n') +
+  geom_vline(aes(xintercept = mean(fra_share)), col='red', linetype = 'dashed') +
+  annotate(x=0.6,y=0.2,label="Mean = 0.48", 
+           vjust=2, family='latex', geom="label") +
+  scale_x_continuous(breaks = c(0, .2, .4, .6, .8, 1.0)) +
+  scale_y_continuous(breaks = c(0, .1, .2, .3)) +
+  theme_minimal() +
+  theme(text = element_text(family='latex', size=20),
+        axis.line = element_blank(), 
+        panel.background = element_blank())
+ggsave('./docs/jmp/tex_doc/v3/fig/hist_fra.png')
 
 
