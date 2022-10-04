@@ -25,12 +25,12 @@ gl TABLE	"${ROOT}/docs/jmp/tex_doc/v3"
 cd "${TABLE}"
 
 // Modules
-local sumstats			0
+local sumstats			1
 local learning			0
 local verify			0
 local event_study		0
 local valuation			0
-local fra				1
+local fra				0
 set scheme modern
 *===============================================================================
 * PROGRAMS
@@ -97,7 +97,7 @@ if `sumstats' == 1 {
 	local user_vars n_dist_user n_st_user n_ym_user
 	local trip sr coverage_udym duration distance hour
 	local covariates tree_cover_s rain temp rad_mean
-	
+	/*
 	*---------------------------------------
 	* 1. TABLE: OUTCOMES AND COVARIATES
 	*---------------------------------------
@@ -212,7 +212,7 @@ if `sumstats' == 1 {
 		graph export "${TABLE}/fig/user_variation.png", replace
 	
 	restore
-	
+	*/
 	*-----------------------------------
 	* 4. Table: Forest Clearance
 	*-----------------------------------
@@ -223,13 +223,19 @@ if `sumstats' == 1 {
 	append using "${DATA}/dta/fc_pre2014_clean_v02" // pre-2014 approvals
 	replace proj_cat = "other" if inlist(proj_cat, "underground", "industry")
 	
+	
+	replace proj_type = "state" if proj_type == "central"
+	tab proj_type proj_cat
+	kk
+	
+	
 	* Tabulate
 	replace proj_cat = proper(proj_cat)
 	eststo clear
 	eststo: estpost tabstat proj_area_forest2, by(proj_cat) s(n mean sd sum) c(s)
 	esttab using "${TABLE}/tables/sumstats_fc.tex", replace ///
 		label cells("count(fmt(%12.0fc) label(Num. Projects)) mean(fmt(%12.2fc) label(Mean Size (ha.))) sd(fmt(%12.2fc) label(SD (ha.))) sum(fmt(%12.2fc) label(Total Area (ha.)))") ///
-		nomtitle unstack nonumber noobs booktabs
+		nomtitle unstack nonumber noobs booktabs width(1\hsize)
 	
 	*-----------------------------------
 	* 5. Table: SPATIAL SPAN OF PROJECT
@@ -256,13 +262,13 @@ if `learning' == 1 {
 	drop_outliers
 	
 	**# 1. Seasonality
-
+	
 	* Total species richness by ym across all users/trips
 	preserve
 	
 		collapse (first) sr_ym (sum) n_trips, by(year_month)
 		replace n_trips = n_trips/1000
-		twoway bar n_trips year_month, yscale(alt) bcolor(gs10) ///
+		twoway bar n_trips year_month, yscale(alt) bcolor(dkgreen*0.5) ///
 			ytitle("Num. Trips (thousands)", size(large) axis(alt)) ///
 			ylabel(, angle(hor) labsize(large)) || connected sr_ym year_month, ///
 			yaxis(2) yscale(alt axis(2) titlegap(3)) ///
@@ -352,7 +358,7 @@ if `learning' == 1 {
 		xtile sr_bl_q3 = sr_bl, nquantiles(3)
 		statsby, by(sr_bl_q3) clear noisily: ci means n_trips 
 		
-		twoway bar mean sr_bl_q3, barwidth(0.7) color(gs8) ///
+		twoway bar mean sr_bl_q3, barwidth(0.7) color(dkgreen*0.5) ///
 			|| rcap ub lb sr_bl_q3, lcolor(black) ||, ///
 			xlabel(1 "Low" 2 "Medium"  3 "High", labsize(large)) ///
 			ylabel(3(1)6, angle(hor) labsize(large)) ///
@@ -368,7 +374,7 @@ if `learning' == 1 {
 	graph combine season site_choice, rows(2) name(comb, replace)
 	graph combine comb learn, col(2) imargin(0 0 1)
 	graph export "${TABLE}/fig/bias_plot.png", replace
-	
+	kk
 	*-----------------------------------------
 	* IDENTIFYING VARIATION ACROSS FE SPECS
 	*-----------------------------------------
@@ -376,31 +382,31 @@ if `learning' == 1 {
 	
 	* District
 	reghdfe sr, a(c_code_2011_num) resid(r_dfe)
-	g r2_dfe = e(r2)
+	g r2_dfe = 1-e(r2)
 	egen r_dfe_sd = sd(r_dfe)
 	la var r2_dfe "District FE"
 	la var r_dfe_sd "District FE"
 
 	* District + State-Month
 	reghdfe sr, a(c_code_2011_num state_code_2011_num#month year) resid(r_dsmfe)
-	g r2_dsmfe = e(r2)
+	g r2_dsmfe = 1-e(r2)
 	egen r_dsmfe_sd = sd(r_dsmfe)
 	la var r2_dsmfe "District + State-Month + Year FE"
 	la var r_dsmfe_sd "District + State-Month + Year FE"
 	
 	* User + district + State-Month
 	reghdfe sr, a(uid c_code_2011_num state_code_2011_num#month year) resid(r_udsmfe)
-	g r2_udsmfe = e(r2)
+	g r2_udsmfe = 1-e(r2)
 	egen r_udsmfe_sd = sd(r_udsmfe)
 	la var r2_udsmfe "User + District + State-Month + Year FE"
 	la var r_udsmfe_sd "User + District + State-Month + Year FE"
 	
 	* User-year + district + State-Month
 	reghdfe sr, a(uid#year c_code_2011_num state_code_2011_num#month) resid(r_uydsmfe)
-	g r2_uydsmfe = e(r2)
+	g r2_uydsmfe = 1-e(r2)
 	egen r_uydsmfe_sd = sd(r_uydsmfe)
-	la var r2_uydsmfe "\textbf{User-Year + District + State-Month FE}"
-	la var r_uydsmfe_sd "\textbf{User-Year + District + State-Month FE}"
+	la var r2_uydsmfe "User-Year + District + State-Month FE"
+	la var r_uydsmfe_sd "User-Year + District + State-Month FE"
 
 	* Tabulate
 	eststo A: estpost tabstat r2*, s(mean) c(s) // R2 
@@ -408,7 +414,7 @@ if `learning' == 1 {
 	ren r_*_sd r2_*
 	eststo B: estpost tabstat r2*, s(mean) c(s) // SD of residual
 	esttab using "${TABLE}/tables/id_variation.tex", replace ///
-		mgroups(`"\$R^{2}\$"' `"\$\sigma_{\epsilon}\$"', pattern(1 1) ///
+		mgroups(`"\$1-R^{2}\$"' `"\$\sigma_{\epsilon}\$"', pattern(1 1) ///
 		prefix(\multicolumn{@span}{c}{) suffix(}) span erepeat(\cmidrule(lr){@span})) ///
 		cells("mean(fmt(3))") nomtitles collabel(none) label noobs ///
 		booktabs sub(\_ _) width(\hsize)
@@ -499,9 +505,7 @@ if `verify' == 1 {
 *===============================================================================
 if `event_study' == 1 {
 	
-	** NOTE: biodiversity decline following first event is erratic
-	
-	* First Event (persistent) -- only works w weighted OLS...
+	**# First Event (persistent) -- only works w weighted OLS...
 	
 	* Read
 	use "${DATA}/dta/fc_dym_s2_v02", clear
@@ -530,7 +534,7 @@ if `event_study' == 1 {
 	        ln_exp_idx ln_coverage_udym ln_group_size traveling ln_hour
 	
 	* Regression
-	reghdfe sr t_1-t_5 t_7-t_19 `ctrls' dist_f_cum_km2_slx_ib [aw=n_trips], ///
+	reghdfe sr t_1-t_5 t_7-t_19 `ctrls' [aw=n_trips], ///
 		a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
 	
 	* Figure
@@ -549,10 +553,42 @@ if `event_study' == 1 {
 		   lpattern(solid)) legend(on order(1 "95% CI" 2 "Coefficient")) ///
 		   xtitle("Months Since Approval", size(medium)) ///
 		   ytitle("Species Richness", size(medium)) xlabel(-6(2)12, labsize(med)) ///
-		   ylabel(, labsize(med)) xsize(4.6)
+		   ylabel(, labsize(med))
 	graph export "${TABLE}/fig/event_study_persistent.png", replace
+	kk
+	
+	**# Callaway Sant'anna
+	
+	* Read deforestation
+	use "${DATA}/dta/fc_dym_s2_v02", clear
+	keep *_code_2011* year month year_month dist_f_cum_km2 tree* 
+	
+	* Prep
+	bys c_code_2011 (year_month): gen event = year_month if ///
+		dist_f_cum_km2[_n] != dist_f_cum_km2[_n-1]
+	bys c_code_2011 (year_month): replace event = . if _n == 1 
+	bys c_code_2011: egen first_event = min(event) // first event (0 if never treated)
+	drop event
+	recode first_event (.=0)
+	
+	* Merge to ebird
+	merge 1:m c_code_2011 year_month using "${DATA}/dta/ebird_udt", keep(3) nogen // merge ebird
+	g tree_cover_s = (tree_cover_km2 / tot_area)*100
 
-	* First event only -- doesnt work...
+	* Residualize
+	egen panelid = group(uid c_code_2011 year_month)
+	
+	
+	
+	csdid sr, time(year_month) gvar(first_event) method(dripw) notyet
+	kk
+	
+	
+	
+	
+	
+	
+	**# First event only (OLS) -- doesnt work...
 	
 	* Read Project Panel
 	use "${DATA}/dta/fc_dym_s2_v02", clear
@@ -573,7 +609,7 @@ if `event_study' == 1 {
 	keep if year_month < second_event
 	g running = year_month - first_event // time to treatment
 	replace running = -99 if first_event == 0
-	keep if inrange(running, -6, 12)
+	keep if inrange(running, -12, 24)
 	tab running, gen(t_)
 	
 	* Merge to ebird
@@ -584,10 +620,10 @@ if `event_study' == 1 {
 	keep if inrange(year, 2015, 2020)
 	drop_outliers
 	local ctrls temp rain tree_cover_s ln_duration ln_distance ln_rad_sum ///
-	        ln_exp_idx ln_coverage_udym ln_group_size traveling
+	        ln_exp_idx ln_coverage_udym ln_group_size traveling ln_hour
 	
 	* Regression
-	reghdfe sr t_1-t_5 t_7-t_19 `ctrls', ///
+	reghdfe sr t_1-t_11 t_13-t_37 `ctrls', ///
 		a(uid#year c_code_2011_num state_code_2011_num#month) vce(cl biome)
 	
 	* Figure 
@@ -606,7 +642,8 @@ if `event_study' == 1 {
 		   lpattern(solid)) xline(-1, lcolor(maroon) lpattern(solid)) ///
 		   legend(on order(1 "95% CI" 2 "Coefficient")) ///
 		   xtitle("Months Since Approval", size(medium)) ytitle("Species Richness", ///
-		   size(medium)) xlabel(-6(2)12, labsize(med)) ylabel(, labsize(med)) xsize(4.6)
+		   size(medium)) xlabel(-6(2)12, labsize(med)) ///
+		   ylabel(, labsize(med)) xsize(4.6)
 	graph export "${TABLE}/fig/event_study_first.png", width(1000) replace
 }
 

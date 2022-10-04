@@ -214,7 +214,7 @@ rm(list='ebird_oob')
 #---------------------------------------------------------------- 
 setwd(SAVE)
 
-# species list
+# species list (n=1640 unique species)
 sp_list <- ebird %>% 
   ungroup() %>% 
   distinct(species, .keep_all=T) %>%
@@ -222,13 +222,13 @@ sp_list <- ebird %>%
   mutate(scientific_name = tolower(scientific_name))
 write_csv(sp_list, './data/csv/species_list.csv')
 
-# Read IUCN list
+# Read IUCN list (n=11,162 species)
 iucn <- read_csv('./data/csv/birdlife_iucn.csv') %>%
   mutate(scientific_name = tolower(`Scientific name`),
          iucn = `2021 IUCN Red List category`) %>%
   dplyr::select(scientific_name, iucn)
 
-# Manual merge
+# Manual merge (n=472 species uncategorized)
 sp_list <- left_join(sp_list, iucn, by='scientific_name')
   
 # Export NA's for manual filling
@@ -240,7 +240,7 @@ sp_list <- rbind(filter(sp_list, !is.na(iucn)), fill)
 
 # Merge back to ebird
 ebird <- left_join(ebird, sp_list[, c('species', 'iucn')], by='species')
-ebird <- dummy_cols(ebird, select_columns = 'iucn')
+#ebird <- dummy_cols(ebird, select_columns = 'iucn')
 rm(list=c('fill', 'iucn', 'sp_list'))
 #----------------------------------------------------------------
 ## 4. CONSTRUCT SPECIES DIVERSITY
@@ -285,18 +285,25 @@ ebird$species_count <- as.numeric(ebird$species_count)
 ebird <- ebird %>% 
   group_by(trip_id) %>% 
   mutate(sr = n(),
-         sr_cr = sum(iucn_CR, na.rm=T),
-         sr_dd = sum(iucn_DD, na.rm=T),
-         sr_en = sum(iucn_EN, na.rm=T),
-         sr_lc = sum(iucn_LC, na.rm=T),
-         sr_nt = sum(iucn_NT, na.rm=T),
-         sr_vu = sum(iucn_VU, na.rm=T),
-         sr_na = sum(iucn_NA, na.rm=T),
          sh_index = -sum((species_count / sum(species_count, na.rm = T))*
                                 log(species_count / sum(species_count, na.rm = T)), na.rm = T),
          si_index = 1 - ((sum(species_count*(species_count - 1), na.rm = T)) /
                                  (sum(species_count, na.rm = T)*(sum(species_count, na.rm = T) - 1))))
 
+# red list index
+ebird <- ebird %>%
+  mutate(threat_score_max = ifelse(is.na(iucn), NA, 4),
+    threat_score = case_when(
+    iucn == 'LC' ~ 0,
+    iucn == 'NT' ~ 1,
+    iucn == 'VU' ~ 2,
+    iucn == 'EN' ~ 3,
+    iucn == 'CR' ~ 4,
+    TRUE ~ NA_real_)) %>%
+  group_by(trip_id) %>%
+  mutate(rli = 1 - (sum(threat_score, na.rm=T) /
+                      sum(threat_score_max, na.rm=T)))
+  
 #----------------------------------------------------------------
 ## 5. ALLOCATE TRIPS TO GRID CELLS
 #---------------------------------------------------------------- 
@@ -307,7 +314,7 @@ ebird_trip <- ebird %>%
   dplyr::select(date, user_id, trip_id, group_id, group_size, 
                 year, yearmonth, duration, distance, lat, lon, 
                 c_code_2011, protocol_code, n_mon_yr, hour,
-                starts_with('sr'), sh_index, si_index) %>%
+                starts_with('sr'), sh_index, si_index, rli) %>%
   mutate(sr_hr = (sr/duration)*60,
          distance = replace(distance, is.na(distance), 0),
          traveling = ifelse(protocol_code == 'P22', 1, 0)) %>%
@@ -344,13 +351,7 @@ ebird_user_cell <- ebird_trip %>%
   group_by(user_id, cell_id, yearmonth) %>%
   summarize(n_trips=n(),
             sr=mean(sr, na.rm=T),
-            sr_cr = mean(sr_cr, na.rm=T),
-            sr_dd = mean(sr_dd, na.rm=T),
-            sr_en = mean(sr_en, na.rm=T),
-            sr_lc = mean(sr_lc, na.rm=T),
-            sr_nt = mean(sr_nt, na.rm=T),
-            sr_vu = mean(sr_vu, na.rm=T),
-            sr_na = mean(sr_na, na.rm=T),
+            rli=mean(rli, na.rm=T),
             sr_hr=mean(sr_hr, na.rm=T),
             sr_udym=first(sr_udym),
             sr_ym=first(sr_ym),
@@ -359,7 +360,7 @@ ebird_user_cell <- ebird_trip %>%
             duration=mean(duration, na.rm=T),
             distance=mean(distance,na.rm=T),
             hour=mean(hour, na.rm=T),
-            traveling=mean(traveling, na.rm=T)*100,
+            traveling=mean(traveling, na.rm=T),
             group_size=mean(group_size, na.rm=T),
             n_mon_yr=first(n_mon_yr),
             exp_idx=first(exp_idx),
@@ -378,13 +379,7 @@ ebird_user <- ebird_trip %>%
   group_by(user_id, c_code_2011, yearmonth) %>%
   summarize(n_trips=n(),
             sr=mean(sr, na.rm=T),
-            sr_cr=mean(sr_cr, na.rm=T),
-            sr_dd=mean(sr_dd, na.rm=T),
-            sr_en=mean(sr_en, na.rm=T),
-            sr_lc=mean(sr_lc, na.rm=T),
-            sr_nt=mean(sr_nt, na.rm=T),
-            sr_vu=mean(sr_vu, na.rm=T),
-            sr_na=mean(sr_na, na.rm=T),
+            rli=mean(rli, na.rm=T),
             sr_hr=mean(sr_hr, na.rm=T),
             sr_udym=first(sr_udym),
             sr_ym=first(sr_ym),
@@ -393,7 +388,7 @@ ebird_user <- ebird_trip %>%
             duration=mean(duration, na.rm=T),
             distance=mean(distance, na.rm=T),
             hour=mean(hour, na.rm=T),
-            traveling=mean(traveling, na.rm=T)*100,
+            traveling=mean(traveling, na.rm=T),
             group_size=mean(group_size, na.rm=T),
             n_mon_yr=first(n_mon_yr),
             exp_idx=first(exp_idx),

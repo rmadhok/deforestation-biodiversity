@@ -33,7 +33,7 @@ local merge					1
 
 if `ebird' == 1 {
 	
-	local level "udt" // udt = user-district-yearmonth, uct = user-cell-yearmonth
+	local level "uct" // udt = user-district-yearmonth, uct = user-cell-yearmonth
 	
 	**# Read
 	import delimited using "${DATA}/csv/ebird_`level'.csv", clear
@@ -115,7 +115,7 @@ if `ebird' == 1 {
 	}
 	
 	* Clean
-	destring si_index*, replace force
+	destring si_index rli, replace force
 	ren (temp_era rain_gpm) (temp rain)
 	encode user_id, gen(uid)
 	drop state_code_2011
@@ -135,6 +135,7 @@ if `ebird' == 1 {
 	la var group_size "Group Size"
 	la var sh_index "Shannon Index"
 	la var si_index "Simpson Index"
+	la var rli "Red List Index"
 	la var duration "Duration (min)"
 	la var distance "Distance (km)"
 	la var hour "Hour of day"
@@ -253,19 +254,37 @@ program define construct_deforest
 	}
 	ren proj_fra_num n_fra
 	
+	* Land diversion by public, private, join
+	levelsof proj_type, local(proj_type)
+	foreach type of local proj_type {
+		
+		local abbrev_`type' = substr("`type'", 1, 3) // project abbrevation
+		g dist_f_`abbrev_`type'' = dist_f if proj_type == "`type'"
+		g n_`abbrev_`type'' = (proj_type == "`type'") // number of projects of type
+		g dist_nf_`abbrev_`type'' = dist_nf if proj_type == "`type'"
+	}
+	
 	* Aggregate
 	collapse (sum) dist_f* dist_nf* n_* ///
 		     (count) n_proj = dist_id, ///
 			 by(c_code_2011 year_month)
-
+			 
 	* Label
-	la var dist_f "Forest Infrastructure (\(km^{2}\))"
+	la var dist_f "Infrastructure (\(km^{2}\))"
 	foreach cat of local proj_cat {
 		
 		local lab = proper("`cat'")
 		la var dist_f_`abbrev_`cat'' "`lab'"
 		la var n_`abbrev_`cat'' "`lab'"
 		la var dist_nf_`abbrev_`cat'' "`lab'"
+	}
+	
+	foreach type of local proj_type {
+		
+		local lab = proper("`type'")
+		la var dist_f_`abbrev_`type'' "`lab'"
+		la var n_`abbrev_`type'' "`lab'"
+		la var dist_nf_`abbrev_`type'' "`lab'"
 	}
 
 	* Add control group
@@ -301,7 +320,7 @@ program define construct_deforest
 	la var tree_cover_pct "Tree Cover (\%)"
 
 	* Encroachment Area
-	foreach var of varlist dist_f-dist_nf_tra {
+	foreach var of varlist dist_f-dist_nf_sta {
 		
 		* No deforestation
 		replace `var' = 0 if `var' == .
@@ -388,7 +407,7 @@ if `district_forest' == 1 {
 *===============================================================================
 if `merge' == 1 {
 
-	local fc_data "post" // either "" (main dataset), "trunc_", "post"
+	local fc_data "" // either "" (main dataset), "trunc_", "post"
 	local level "udt" // udt (user-dist-time) or uct (user-cell-time)
 	
 	if "`fc_data'" == "" | "`fc_data'" == "trunc_" {

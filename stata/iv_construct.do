@@ -28,6 +28,7 @@ local election		0
 local ss_11			0
 local ss_01			0
 local ss_91			1
+local protests		0
 *-------------------------------------------------------------------------------
 * VILLAGE REVENUE FOREST AREA
 *-------------------------------------------------------------------------------
@@ -458,7 +459,7 @@ if `ss_91' == 1 {
 	use "${BACKUP}/def_biodiv/banerjee_iyer/yld_sett_aug03", clear
 	
 	* Sync Names with Census
-	collapse (firstnm) p_nland mahrai state britdum brule1 lat alt coastal, by(dist_91)
+	collapse (firstnm) p_nland mahrai state britdum brule1 lat alt coastal so_* totrain nbcluster, by(dist_91)
 	la var mahrai "Inclusive (=1)"
 	
 	replace dist_91 = lower(dist_91)
@@ -499,25 +500,10 @@ if `ss_91' == 1 {
 	
 	**# Covariates
 	
-	* Population (use 2011?)
-	/*
-	use "${BACKUP}/shrug/shrug-v1.5.samosa-pop-econ-census-dta/shrug-v1.5.samosa-pop-econ-census-dta/shrug_pc91", clear
-	keep shrid pc91_pca_tot_p pc91_pca_p_st pc91_pca_p_sc
-	merge 1:1 shrid using "${BACKUP}/shrug/shrug-v1.5.samosa-pop-econ-census-dta/shrug-v1.5.samosa-keys-dta/shrug_pc91_district_key.dta", keep(3) nogen
-	g c_code_1991 = "c" + pc91_state_id + pc91_district_id
-	ren pc91_pca_* *
-	collapse (sum) st=p_st sc=p_sc tot_pop = tot_p, by(c_code_1991)
-	merge 1:m c_code_1991 using "`temp'", keep(3) nogen
-	g scst = sc + st
-	foreach v of varlist sc st scst {
-		g `v'_share = `v' / tot_pop // district share
-	}
-	*/
-	
 	* 2011 Census Population Shares
 	use "${DATA}/dta/2011_india_dist", replace
 	merge 1:1 c_code_2011 using "${DATA}/dta/crosswalk_full", keep(3) nogen // 40 districts cannot traceback
-	collapse (sum) tot_st tot_sc tot_pop, by(c_code_1991) // to 1991 borders
+	collapse (sum) tot_st tot_sc tot_pop, by(c_code_1991) // 1991 borders
 	ren	(tot_st tot_sc) (st sc)
 	g scst = sc + st
 	foreach v of varlist sc st scst {
@@ -532,5 +518,53 @@ if `ss_91' == 1 {
 	order c_code_1991 year_month dist_f_*
 	save "${DATA}/dta/polecon_91_v02", replace
 	
+}
+
+if `protests' == 1 {
+	
+	* Read Protests
+	import delimited "${DATA}/csv/india_protests_code.csv", clear
+	
+	* Clean
+	drop if c_code_2011 == "NA"
+	foreach v of varlist event_type-assoc_actor_2 source notes {
+		replace `v' = lower(`v')
+	}
+	*gen date = date(event_date, "DM20Y")
+	*g year_month = ym(year(date), month(date))
+	*format year_month %tmCCYY-NN
+	
+	* Keywords
+	g peaceful = (interaction == 60)
+	*g peaceful = sub_event_type == "peaceful protest"
+	g tribal = regexm(notes, "tribe") | regexm(notes, "tribal") | regexm(notes, "ST") | regexm(notes, "forest dwel")
+	*g forest = regexm(notes, "forest") | regexm(notes, "forestland") | regexm(notes, "forest diversion")
+	*g project = regexm(notes, "project")
+	*g displaced = regexm(notes, "displace")
+	*g project_displaced = (project | displaced) & sub_event_type == "Peaceful protest"
+	g tribal_peaceful = tribal & peaceful
+	
+	* district-level
+	g count = 1
+	collapse (sum) n_peaceful = peaceful n_tribal = tribal_peaceful ///
+				   n_protests=count, by(c_code_2011 year)
+	
+	* Balance panel
+	merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist", keepus(c_code_2011)
+	replace year = 2016 if year == .
+	encode c_code_2011, gen(c_code_2011_num)
+	tsset c_code_2011_num year 
+	tsfill, full
+	foreach v of varlist n_* {
+		replace `v' = 0 if `v' == .
+	}
+	drop c_code_2011 _merge
+	decode c_code_2011_num, gen(c_code_2011)
+	
+	* Save 
+	save "${DATA}/dta/protests_2011.dta", replace
+	
+	
+
 }
 

@@ -9,6 +9,14 @@ DATA <- '/Users/rmadhok/Dropbox/def_biodiv/'
 SHP <- '/Users/rmadhok/Dropbox/IndiaPowerPlant/data/'
 setwd(DATA)
 
+# Load packages
+require(tidyverse)
+require(sf)
+
+#-----------------------------------------------
+# Process
+#-----------------------------------------------
+
 # Read Protests
 df <- read_csv('./data/raw/india_protests.csv')
 
@@ -28,6 +36,7 @@ df$c_code_2011 <- st_join(st_as_sf(df,
 # clean
 df_clean <- df %>%
   select(event_date, year, event_type, sub_event_type, 
+         contains('actor'), contains('inter'),
          source, notes, c_code_2011)
 
 # Save
