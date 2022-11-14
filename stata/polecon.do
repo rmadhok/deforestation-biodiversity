@@ -22,13 +22,13 @@ set matsize 10000
 gl BACKUP 	"/Volumes/Backup Plus 1/research/data/def_biodiv/parivesh/"
 gl ROOT 	"/Users/rmadhok/Dropbox/def_biodiv"
 gl DATA 	"${ROOT}/data"
-gl TABLE	"${ROOT}/docs/jmp/tex_doc/v3"
+gl TABLE	"${ROOT}/docs/jmp/tex_doc/v4"
 cd "${TABLE}"
 
 // Modules
 local bartik	0
-local hte		1
-local project	0
+local hte		0
+local project	1
 
 *------------------
 * PROGRAM
@@ -199,6 +199,14 @@ if `hte' == 1 {
 	eststo clear
 */
 	**# Heterogeneity
+	replace dist_f_nei_cum_km2 = dist_f_nei_cum_km2 + dist_f_joi_cum_km2
+	eststo: reghdfe sr c.(dist_f_pub_cum_km2 dist_f_pri_cum_km2 dist_f_nei_cum_km2)##c.(mahrai) `ctrls', ///
+		a(uid#year c_code_1991_num state_code_1991_num#month) vce(cl biome)
+			
+	kk
+	
+	
+	
 	
 	* 1. Control for ST share
 	eststo: reghdfe sr c.dist_f_cum_km2##c.(mahrai st_share) `ctrls', ///
@@ -283,31 +291,6 @@ if `hte' == 1 {
 *-------------------------------------------------------------------------------
 if `project' == 1 {
 	
-	** Mechanism: Scheduled Area (doesn't work)
-	/*
-	* Read
-	import delimited "${DATA}/csv/india_scheduled_areas.csv", clear
-	
-	ren (c_code_11 fifth_schedule) (c_code_2011 schedule)
-	replace schedule = 1 if inlist(state_ut, "Assam", "Meghalaya", "Mizoram", "Tripura") // 6th schedule
-	keep c_code_2011 schedule
-	
-	* Aggregate to 1991
-	merge m:1 c_code_2011 using "${DATA}/dta/crosswalk_full", keepusing(c_code_1991) keep(3) nogen
-	collapse (mean) schedule, by(c_code_1991)
-	replace schedule = round(schedule)
-	
-	* Merge to polecon
-	merge 1:m c_code_1991 using "${DATA}/dta/polecon_91_v02", keep(3) nogen
-	
-	* Aggregate
-	collapse (first) schedule mahrai state_code_1991_num lat alt coastal s*_share so_* totrain nbcluster, by(c_code_1991)
-	
-	reghdfe schedule mahrai lat alt coastal st_share so_* totrain, a(nbcluster) vce(cl state_code_1991_num)
-	*/
-	
-	**# Mechanism: Project Review
-	
 	* Read project level
 	use "${DATA}/dta/fc_pdym_s2_v02", clear
 	
@@ -317,8 +300,8 @@ if `project' == 1 {
 	g tree_cover_base_s = (tree_cover_base / tot_area)*100
 	
 	* Prep
-	keep c_code_2011 prop_no proj_fra_num dist_f dist_nf cba_num year_month ///
-		 proj_in_pa_esz proj_sched* tree_cover_base_s tot_area patches
+	keep c_code_2011 prop_no proj_fra_num proj_cat dist_f dist_nf cba_num ///
+		year_month proj_in_pa_esz proj_sched* tree_cover_base_s tot_area patches
 	g year = year(dofm(year_month))
 	g month = month(dofm(year_month))
 	g log_patches = log(patches)
@@ -326,11 +309,11 @@ if `project' == 1 {
 	merge m:1 c_code_2011 using "${DATA}/dta/crosswalk_full", keepusing(c_code_1991) keep(3) nogen
 	merge m:1 c_code_1991 year_month using "${DATA}/dta/polecon_91_v02", keep(3) nogen
 
-	* Mechanisms
+	**# Mechanisms: All Projects
 	local controls st_share tree_cover_base_s tot_area dist_f lat alt coastal
-	foreach v of varlist proj_fra_num cba_num proj_in_pa_esz { // proj_sched*
+	foreach v of varlist proj_fra_num cba_num proj_in_pa_esz_num {
 
-		eststo: reghdfe `v' mahrai `controls' if britdum, ///
+		eststo `v': reghdfe `v' mahrai `controls' if britdum == 1, ///
 			a(state_code_1991_num#year_month) vce(cl state_code_1991_num)
 			
 			sum `v' if e(sample)==1
@@ -338,6 +321,21 @@ if `project' == 1 {
 			estadd local st_ym_fe "$\checkmark$"		
 	}
 	
+	* Bar Plot
+	coefplot (proj_fra_num, rename(mahrai="Informed Consent") \ ///
+		cba_num, rename(mahrai="Cost-Benefit") \ ///
+		proj_in_pa_esz_num, rename(mahrai="Protected Area")), ///
+		keep(mahrai) vertical recast(bar) bcolor(dkgreen*0.7) barwidth(0.5) ///
+		fcolor(*.7) ciopts(recast(rcap) color(black) lcolor(*.7) ///
+		lpattern(dash)) citop format(%9.2f) yline(0, lcolor(black*0.8) ///
+		lpattern(solid)) coeflabels(, labsize(large)) ///
+		addplot(scatter @b @at, ms(i) mlabel(@b) mlabpos(2) mlabcolor(black) ///
+		mlabsize(large)) ylabel(, labsize(large)) ///
+		ytitle("Coefficient (Share of projects" "in inclusive districts)", ///
+		size(large)) ysize(2.7)
+	graph export  "${TABLE}/fig/mech_polecon.png", replace
+	
+	* Table
 	esttab using "${TABLE}/tables/mech_polecon.tex", replace ///
 		keep(mahrai) stats(ymean st_ym_fe N r2, labels(`"Outcome Mean"' ///
 		`"State $\times$ Time FEs"' `"N"' `"\(R^{2}\)"') fmt(3 0 0 3)) ///
@@ -345,50 +343,68 @@ if `project' == 1 {
 		indicate("Controls=st_share") wrap nocons nonotes booktabs ///
 		nomtitles star(* .1 ** .05 *** .01) label se b(%5.3f) width(1\hsize)
 	eststo clear
-
-	/*
-	**# Mechanism: Protests
 	
-	* Read protest panel
-	use "${DATA}/dta/protests_2011.dta", clear
-
-	* controls
-	merge 1:m c_code_2011 year using "${DATA}/dta/fc_dym_s2_v02", keepus(tree_cover_base) keep(3) nogen
-	merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist", keepus(tot_area tot_pop) nogen
-	merge m:1 c_code_2011 using "${DATA}/dta/crosswalk_full", keep(3) nogen // 40 districts untracked
 	
-	* 1991 borders
-	collapse (sum) tree_cover_base tot_pop tot_area n_*, ///
-		by(c_code_1991 year) 
-
-	* Merge to banerjee
-	tempfile temp
-	save "`temp'"
+	**# Mechanisms: By Category -- NOTE ENOUGH OBSERVATIONS
+	levelsof proj_cat, local(cat)
 	
-	use "${DATA}/dta/polecon_91_v02", clear
-	collapse (lastnm) dist_f_cum_km2 tot_pop *_share mahrai *_num lat alt britdum, by(c_code_1991 year)
-	merge 1:1 c_code_1991 year using "`temp'", nogen
+	* FRA (2006)
+	foreach l of local cat {
 	
-	la var mahrai "Inclusive (=1)"
-	g tree_cover_base_s = (tree_cover_base / tot_area)*100
-	foreach v of varlist n_* {
-		g ln_`v' = log(1+`v')
+		eststo `v': reghdfe proj_fra_num mahrai `controls' if britdum == 1 & proj_cat == "`l'", ///
+			a(state_code_1991_num#year_month) vce(cl state_code_1991_num)
+			
+			sum `v' if e(sample)==1
+			estadd scalar ymean = `r(mean)'
+			estadd local st_ym_fe "$\checkmark$"		
 	}
-	local controls n_protest st_share tree_cover_base_s tot_area dist_f_cum_km2 lat
+	esttab using "${TABLE}/tables/mech_polecon_cat.tex", replace f ///
+		keep(mahrai) stats(ymean st_ym_fe N r2, labels(`"Outcome Mean"' ///
+		`"State $\times$ Time FEs"' `"N"' `"\(R^{2}\)"') fmt(3 0 0 3)) ///
+		mlabels("Electricity" "Irrigation" "Mining" "Other" "Resettlement" "Transport") ///
+		indicate("Controls=st_share") wrap nocons nonotes booktabs ///
+		refcat(mahrai "\underline{\emph{Panel A: FRA}}", nolabel) nomtitles ///
+		star(* .1 ** .05 *** .01) label se b(%5.3f) width(1\hsize)
+	eststo clear
 	
-	* Mechanisms
-	* district clustering works without alt
-	foreach v of varlist n_peaceful n_tribal {
-	eststo: reghdfe ln_`v' mahrai `controls', ///
-		a(state_code_1991_num#year) vce(cl state_code_1991_num)
-		
-		*sum `v' if e(sample)==1
-		*estadd scalar ymean = `r(mean)'
-		estadd local st_ym_fe "$\checkmark$"
+	* CBA
+	foreach l of local cat {
+	
+		eststo `v': reghdfe cba_num mahrai `controls' if britdum == 1 & proj_cat == "`l'", ///
+			a(state_code_1991_num#year_month) vce(cl state_code_1991_num)
+			
+			sum `v' if e(sample)==1
+			estadd scalar ymean = `r(mean)'
+			estadd local st_ym_fe "$\checkmark$"		
 	}
-	*/
+	esttab using "${TABLE}/tables/mech_polecon_cat.tex", append f ///
+		keep(mahrai) stats(ymean st_ym_fe N r2, labels(`"Outcome Mean"' ///
+		`"State $\times$ Time FEs"' `"N"' `"\(R^{2}\)"') fmt(3 0 0 3)) ///
+		indicate("Controls=st_share") wrap nocons nonotes booktabs ///
+		refcat(mahrai "\underline{\emph{Panel B: CBA}}", nolabel) nomtitles ///
+		nonumber star(* .1 ** .05 *** .01) label se b(%5.3f) width(1\hsize)
+	eststo clear
 	
-}
+	* Protected Area
+	foreach l of local cat {
+	
+		eststo `v': reghdfe proj_in_pa_esz mahrai `controls' if britdum == 1 & proj_cat == "`l'", ///
+			a(state_code_1991_num#year_month) vce(cl state_code_1991_num)
+			
+			sum `v' if e(sample)==1
+			estadd scalar ymean = `r(mean)'
+			estadd local st_ym_fe "$\checkmark$"		
+	}
+	esttab using "${TABLE}/tables/mech_polecon_cat.tex", append f ///
+		keep(mahrai) stats(ymean st_ym_fe N r2, labels(`"Outcome Mean"' ///
+		`"State $\times$ Time FEs"' `"N"' `"\(R^{2}\)"') fmt(3 0 0 3)) ///
+		indicate("Controls=st_share") wrap nocons nonotes booktabs ///
+		refcat(mahrai "\underline{\emph{Panel C: Protected Area}}", nolabel) ///
+		nonumber nomtitles star(* .1 ** .05 *** .01) label se b(%5.3f) width(1\hsize)
+	eststo clear
+	
+	}
+
 
 
 

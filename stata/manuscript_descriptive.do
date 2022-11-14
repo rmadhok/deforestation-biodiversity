@@ -21,14 +21,14 @@ set matsize 10000
 //Set Directory Paths
 gl ROOT 	"/Users/rmadhok/Dropbox/def_biodiv"
 gl DATA 	"${ROOT}/data"
-gl TABLE	"${ROOT}/docs/jmp/tex_doc/v3"
+gl TABLE	"${ROOT}/docs/jmp/tex_doc/v4"
 cd "${TABLE}"
 
 // Modules
-local sumstats			1
+local sumstats			0
 local learning			0
 local verify			0
-local event_study		0
+local event_study		1
 local valuation			0
 local fra				0
 set scheme modern
@@ -97,11 +97,11 @@ if `sumstats' == 1 {
 	local user_vars n_dist_user n_st_user n_ym_user
 	local trip sr coverage_udym duration distance hour
 	local covariates tree_cover_s rain temp rad_mean
-	/*
+	
 	*---------------------------------------
 	* 1. TABLE: OUTCOMES AND COVARIATES
 	*---------------------------------------
-
+	
 	**# Split by Treatment / Control
 	
 	* District Variables
@@ -212,24 +212,18 @@ if `sumstats' == 1 {
 		graph export "${TABLE}/fig/user_variation.png", replace
 	
 	restore
-	*/
+	
 	*-----------------------------------
 	* 4. Table: Forest Clearance
 	*-----------------------------------
 	
-	* Project-level
+	* Read project-level data
 	use "${DATA}/dta/fc_clean_v02", clear // post-2014 approvals
 	keep if prop_status == "approved"
 	append using "${DATA}/dta/fc_pre2014_clean_v02" // pre-2014 approvals
 	replace proj_cat = "other" if inlist(proj_cat, "underground", "industry")
 	
-	
-	replace proj_type = "state" if proj_type == "central"
-	tab proj_type proj_cat
-	kk
-	
-	
-	* Tabulate
+	**# Category-wise (electricity, transport, etc) stats
 	replace proj_cat = proper(proj_cat)
 	eststo clear
 	eststo: estpost tabstat proj_area_forest2, by(proj_cat) s(n mean sd sum) c(s)
@@ -237,6 +231,45 @@ if `sumstats' == 1 {
 		label cells("count(fmt(%12.0fc) label(Num. Projects)) mean(fmt(%12.2fc) label(Mean Size (ha.))) sd(fmt(%12.2fc) label(SD (ha.))) sum(fmt(%12.2fc) label(Total Area (ha.)))") ///
 		nomtitle unstack nonumber noobs booktabs width(1\hsize)
 	
+	**# Type and Shape stats
+	
+	replace proj_type = "public" if inlist(proj_type, "state", "central")
+	replace proj_type = "neither" if proj_type == "joint"
+	replace proj_type = proper(proj_type)
+	label define order_type  1 "Public"   2 "Private"  3 "Neither"
+	encode proj_type, gen(proj_type2) label(order_type)
+	
+	* Type (pub/private)
+	eststo clear
+	eststo: estpost tabstat proj_area_forest2, by(proj_type2) s(n mean sd sum) c(s) nototal
+	esttab using "${TABLE}/tables/sumstats_fc_decomp.tex", replace f ///
+		label cells("count(fmt(%12.0fc) label(Num. Projects)) mean(fmt(%12.2fc) label(Mean Size (ha.))) sd(fmt(%12.2fc) label(SD (ha.))) sum(fmt(%12.2fc) label(Total Area (ha.)))") ///
+		nomtitle unstack nonumber noobs booktabs width(1\hsize) ///
+		posthead("\midrule \underline{\emph{Panel A: Ownership}} \\")
+		
+	* Shape (linear/nonlinear)
+	replace proj_shape = "nonlinear" if proj_shape == "hybrid"
+	replace proj_shape = proper(proj_shape)
+	eststo clear
+	eststo: estpost tabstat proj_area_forest2, by(proj_shape) s(n mean sd sum) c(s) nototal
+	
+	esttab using "${TABLE}/tables/sumstats_fc_decomp.tex", append f ///
+		label cells("count(fmt(%12.0fc)) mean(fmt(%12.2fc)) sd(fmt(%12.2fc)) sum(fmt(%12.2fc))") ///
+		nomtitle unstack nonumber noobs booktabs width(1\hsize) collabel(none) ///
+		posthead("\\ \underline{\emph{Panel B: Shape}} \\ ")
+	
+	* Type and Shape by Category
+	eststo clear
+	eststo: estpost tabulate proj_cat proj_type2, nototal
+	eststo: estpost tabulate proj_cat proj_shape, nototal
+	
+	local num "& (1) & (2) & (3) & (4) & (5) \\ \midrule"
+	esttab using "${TABLE}/tables/sumstats_fc_twoway.tex", replace ///
+		label cell(rowpct(fmt(2))) mgroups("Ownership (\%)" "Shape (\%)", pattern(1 1) ///
+		prefix(\multicolumn{@span}{c}{) suffix(}) span erepeat(\cmidrule(lr){@span})) ///
+		nomtitle collabels(none) unstack nonumber noobs booktabs width(1\hsize) ///
+		posthead(`num')
+
 	*-----------------------------------
 	* 5. Table: SPATIAL SPAN OF PROJECT
 	*-----------------------------------
@@ -374,7 +407,7 @@ if `learning' == 1 {
 	graph combine season site_choice, rows(2) name(comb, replace)
 	graph combine comb learn, col(2) imargin(0 0 1)
 	graph export "${TABLE}/fig/bias_plot.png", replace
-	kk
+	
 	*-----------------------------------------
 	* IDENTIFYING VARIATION ACROSS FE SPECS
 	*-----------------------------------------
@@ -433,13 +466,9 @@ if `verify' == 1 {
 		* Post-2014 only (for stage 1 placebo)
 		if "`file'" == "post_" {
 			
-			* Merge stage 1
-			*merge 1:1 c_code_2011 year_month using "${DATA}/dta/fc_dym_s1_post_v02", keep(3) nogen // merge stage 1
-			*drop dist_f_cum_km2_s1
-			*bys c_code_2011 year: egen dist_f_cum_km2_s1 = mean(dist_f_km2_s1) // for collapse
 			ren dist_nf_cum_km2 dist_f_cum_km2_nf
 		}
-		keep *_code_2011 year_month year month dist_f_cum_km2* tree*
+		keep *_code_2011 year_month year month dist_f*cum_km2* tree*
 		drop *_lag* *_lead*
 	
 		* Add Controls
@@ -456,7 +485,7 @@ if `verify' == 1 {
 	
 		* Collapse to Annual
 		sort c_code_2011 year_month
-		collapse (lastnm) dist_f_cum_km2* tree* state_code_2011 ///
+		collapse (lastnm) dist_f*cum_km2* tree* state_code_2011 ///
 			     (mean) rain_gpm temp_era rad_*, by(c_code_2011 year)
 		g rad_mean_ln = ln(1+rad_mean)
 		encode c_code_2011, gen(c_code_2011_num)
@@ -471,6 +500,20 @@ if `verify' == 1 {
 		g ln_tree_cover_pct = ln(tree_cover_pct)
 		g ln_tree_cover_km2 = ln(tree_cover_km2)
 		local controls temp_era rain_gpm rad_mean
+		
+		
+		**** DOUBLE CHECK THIS. SHOW THAT PUBLIC CLEARS MORE THAN APPROVED??
+		g dist_f_pub_cum_km2 = dist_f_cen_cum_km2 + dist_f_sta_cum_km2
+		replace dist_f_nei_cum_km2 = dist_f_nei_cum_km2 + dist_f_joi_cum_km2
+		g ln_dist_f_pub_cum_km2 = log(1+dist_f_pub_cum_km2)
+		g ln_dist_f_pri_cum_km2 = log(1+dist_f_pri_cum_km2)
+		g ln_dist_f_nei_cum_km2 = log(1+dist_f_nei_cum_km2)
+		eststo: reghdfe tree_cover_pct dist_f_pub_cum_km2 dist_f_pri_cum_km2 dist_f_nei_cum_km2 `controls', ///
+			a(c_code_2011_num state_code_2011_num#year) vce(cl c_code_2011_num)
+			
+			estadd local dist_fe "$\checkmark$"
+			estadd local st_y_fe "$\checkmark$"
+	
 		
 		* lin-lin
 		eststo: reghdfe tree_cover_pct dist_f_cum_km2* `controls', ///
@@ -550,12 +593,12 @@ if `event_study' == 1 {
 	twoway (rarea min95 max95 parm, sort color(dkgreen*0.5) lpattern(shortdash)) ///
 		   (connected  estimate parm, sort mcolor(black) mfcolor(white) ///
 		   lpattern(solid) lcolor(black) msymbol(D)), yline(0, lcolor(maroon) ///
-		   lpattern(solid)) legend(on order(1 "95% CI" 2 "Coefficient")) ///
-		   xtitle("Months Since Approval", size(medium)) ///
-		   ytitle("Species Richness", size(medium)) xlabel(-6(2)12, labsize(med)) ///
-		   ylabel(, labsize(med))
+		   lpattern(solid)) legend(on order(1 "95% CI" 2 "Coefficient") size(med)) ///
+		   xtitle("Months Since Approval", size(large)) ///
+		   ytitle("Species Richness", size(large)) xlabel(-6(2)12, labsize(large)) ///
+		   ylabel(, labsize(large)) ysize(3.5)
 	graph export "${TABLE}/fig/event_study_persistent.png", replace
-	kk
+	kkk
 	
 	**# Callaway Sant'anna
 	
@@ -835,13 +878,12 @@ if `fra' == 1 {
 	g fra_share = fra/n_proj
 	su fra_share, d
 	local mean = round(r(mean),.01)
-	hist fra_share, frac bcolor(navy8) ///
-		title("A: Distribution of Informed Consent") ///
-		xtitle("Share of District Projects Obtaining Gram Sabha Consent", size(medium)) ///
-		ytitle("Share of Districts", size(medium)) ///
-		xlabel(,labsize(medium)) ylabel(,labsize(medium)) ///
+	hist fra_share, frac bcolor(dkgreen*0.5) ///
+		xtitle("Share of District Projects Obtaining Gram Sabha Consent", size(large)) ///
+		ytitle("Share of Districts", size(large)) ///
+		xlabel(,labsize(medium)) ylabel(,labsize(large)) ///
 		xline(`mean', lcolor(red)) ///
-		text(0.205 .6 "Mean = `mean'", place(n) color(red))
+		text(0.205 .6 "Mean = `mean'", place(n) size(large)) ysize(3)
 	graph export "${TABLE}/fig/hist_fra.png", replace
 	
 }

@@ -25,8 +25,8 @@ gl DO		"${ROOT}/scripts/stata"
 
 // Module
 local ebird					0
-local district_forest		0
-local merge					1
+local district_forest		1
+local merge					0
 *===============================================================================
 * BIODIVERSITY
 *===============================================================================
@@ -213,7 +213,7 @@ program define construct_deforest
 	
 	* Condense categories
 	replace proj_cat = "other" if inlist(proj_cat, "underground", "industry") // n=1468 pipelines, 89 small industry
-	
+
 	* Reshape project-district level
 	reshape long district_ dist_f_ dist_nf_, i(prop_no) j(dist_id)
 	ren (district_ dist_f_ dist_nf_) (district dist_f dist_nf)
@@ -249,7 +249,7 @@ program define construct_deforest
 		
 		local abbrev_`cat' = substr("`cat'", 1, 3) // project abbrevation
 		g dist_f_`abbrev_`cat'' = dist_f if proj_cat == "`cat'"
-		g n_`abbrev_`cat'' = (proj_cat == "`cat'") // number of projects of type
+		g n_`abbrev_`cat'' = (proj_cat == "`cat'") // number of projects of category
 		g dist_nf_`abbrev_`cat'' = dist_nf if proj_cat == "`cat'"
 	}
 	ren proj_fra_num n_fra
@@ -264,29 +264,45 @@ program define construct_deforest
 		g dist_nf_`abbrev_`type'' = dist_nf if proj_type == "`type'"
 	}
 	
+	* Land diversion by linear, nonlinear, hybrid
+	levelsof proj_shape, local(proj_shape)
+	foreach shape of local proj_shape {
+		
+		local abbrev_`shape' = substr("`shape'", 1, 3) // project abbrevation
+		g dist_f_`abbrev_`shape'' = dist_f if proj_shape == "`shape'"
+		g n_`abbrev_`shape'' = (proj_shape == "`shape'") // number of projects of shape
+		g dist_nf_`abbrev_`shape'' = dist_nf if proj_shape == "`shape'"
+	}
+	
 	* Aggregate
 	collapse (sum) dist_f* dist_nf* n_* ///
 		     (count) n_proj = dist_id, ///
 			 by(c_code_2011 year_month)
-			 
+	
 	* Label
 	la var dist_f "Infrastructure (\(km^{2}\))"
-	foreach cat of local proj_cat {
+	foreach cat of local proj_cat { // category
 		
 		local lab = proper("`cat'")
 		la var dist_f_`abbrev_`cat'' "`lab'"
 		la var n_`abbrev_`cat'' "`lab'"
 		la var dist_nf_`abbrev_`cat'' "`lab'"
 	}
-	
-	foreach type of local proj_type {
+	foreach type of local proj_type { // type
 		
 		local lab = proper("`type'")
 		la var dist_f_`abbrev_`type'' "`lab'"
 		la var n_`abbrev_`type'' "`lab'"
 		la var dist_nf_`abbrev_`type'' "`lab'"
 	}
-
+	foreach shape of local proj_shape { // shape
+		
+		local lab = proper("`shape'")
+		la var dist_f_`abbrev_`shape'' "`lab'"
+		la var n_`abbrev_`shape'' "`lab'"
+		la var dist_nf_`abbrev_`shape'' "`lab'"
+	}
+	
 	* Add control group
 	merge m:1 c_code_2011 using "${DATA}/dta/2011_india_dist", keepus(c_code_2011)
 	
@@ -320,7 +336,7 @@ program define construct_deforest
 	la var tree_cover_pct "Tree Cover (\%)"
 
 	* Encroachment Area
-	foreach var of varlist dist_f-dist_nf_sta {
+	foreach var of varlist dist_f-dist_nf_non {
 		
 		* No deforestation
 		replace `var' = 0 if `var' == .
@@ -346,7 +362,7 @@ program define construct_deforest
 	}
 
 	* Share of total projects
-	foreach var of varlist n_fra_cum - n_tra_cum {
+	foreach var of varlist n_fra_cum - n_non_cum {
 		
 		local vlab : var lab `var'
 		g `var'_s = 0 

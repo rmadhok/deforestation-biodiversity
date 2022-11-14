@@ -437,15 +437,15 @@ if `ss_91' == 1 {
 	merge m:1 c_code_2011 using "${DATA}/dta/crosswalk_full", keep(3) nogen // 40 districts cannot traceback
 	
 	* Aggregate
-	collapse (sum) dist_f_cum_km2  /// 
-			 (mean) n_ele_cum_s-n_tra_cum_s ///
+	collapse (sum) dist_f_cum_km2-dist_f_pub_cum_km2  /// 
+			 (mean) n_ele_cum_s-n_pub_cum_s ///
 			 (first) year month, ///
 			 by(c_code_1991 year_month)
 	g state_code_1991 = substr(c_code_1991, 1, 3) 
 	la var dist_f_cum_km2 "Forest Infrastructure (\(km^{2}\))"
 	
 	* Baseline category shares
-	foreach v of varlist n_ele_cum_s-n_tra_cum_s {
+	foreach v of varlist n_ele_cum_s-n_pub_cum_s {
 		bys c_code_1991 (year_month): g `v'_base = `v' if _n == 1
 		bys c_code_1991: carryforward `v'_base, replace
 	}
