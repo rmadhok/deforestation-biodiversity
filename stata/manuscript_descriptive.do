@@ -27,8 +27,8 @@ cd "${TABLE}"
 // Modules
 local sumstats			0
 local learning			0
-local verify			0
-local event_study		1
+local verify			1
+local event_study		0
 local valuation			0
 local fra				0
 set scheme modern
