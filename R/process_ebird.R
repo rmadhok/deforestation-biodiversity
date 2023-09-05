@@ -282,13 +282,34 @@ ebird$species_count[ebird$species_count == 'X'] <- NA
 ebird$species_count <- as.numeric(ebird$species_count)
 
 # Species diversity per trip
+ebird <- fastDummies::dummy_cols(ebird, select_columns = 'iucn') # for species richness by IUCN status
 ebird <- ebird %>% 
   group_by(trip_id) %>% 
   mutate(sr = n(),
          sh_index = -sum((species_count / sum(species_count, na.rm = T))*
                                 log(species_count / sum(species_count, na.rm = T)), na.rm = T),
          si_index = 1 - ((sum(species_count*(species_count - 1), na.rm = T)) /
-                                 (sum(species_count, na.rm = T)*(sum(species_count, na.rm = T) - 1))))
+                                 (sum(species_count, na.rm = T)*(sum(species_count, na.rm = T) - 1))),
+         sr_cr = sum(iucn_CR, na.rm=T),
+         sr_en = sum(iucn_EN, na.rm=T),
+         sr_lc = sum(iucn_EN, na.rm=T),
+         sr_nt = sum(iucn_NT, na.rm=T),
+         sr_vu = sum(iucn_VU, na.rm=T))
+
+# Jaccard Index
+jaccard <- function(a, b) {
+  intersection = length(intersect(a, b))
+  union = length(a) + length(b) - intersection
+  return (intersection/union)
+}
+
+ebird_jaccard <- ebird %>%
+  group_by(state) %>%
+  mutate(sp_state = list(unique(species_id))) %>%
+  group_by(trip_id) %>%
+  summarise(sp_state = first(sp_state),
+            sp_trip = list(species_id)) %>%
+  mutate(jaccard = jaccard(sp_state, sp_trip))
 
 # red list index
 ebird <- ebird %>%

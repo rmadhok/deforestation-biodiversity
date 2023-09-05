@@ -12,6 +12,11 @@ SHP <- '/Users/rmadhok/Dropbox/IndiaPowerPlant/data/'
 require(tidyverse)
 require(sf)
 require(terra)
+require(raster)
+require(rgdal)
+require(sp)
+require(rnaturalearth)
+require(rnaturalearthdata)
 require(patchwork)
 require(showtext)
 require(scattermore)
@@ -59,8 +64,16 @@ winsorize <- function(x, num, top=FALSE) {
 # 0. GLOBAL BIODIVERSITY
 #------------------------------
 setwd(READ)
-r <- rast('./biomes/BiodiversityMapping/Birds/Richness_10km_Birds_v7_EckertIV_no_seabirds.tif')
+
+# reproject raster
+r <- raster('./biomes/BiodiversityMapping/Birds/Richness_10km_Birds_v7_EckertIV_no_seabirds.tif')
+r <- projectRaster(r, crs='+init=epsg:4326')
+
+# extract over asia
+asia <- ne_countries(scale = "medium", continent='asia', returnclass = "sp")
 r_df <- as.data.frame(r, xy=T)
+r_df$country <- over(SpatialPoints(r_df[,1:2], proj4string=crs(r)), asia)$name_long
+r_df <- filter(r_df, !is.na(country))
 names(r_df)[3] <- 'biodiversity'
 
 # plot
@@ -86,7 +99,7 @@ bd <- ggplot() +
         legend.text=element_text(size=13),
         legend.title=element_text(size=13))
 setwd(SAVE)
-ggsave('./docs/jmp/tex_doc/v3/fig/global_biodiversity.png')
+ggsave('./docs/jmp/tex_doc/v4/fig/asian_biodiversity.png')
 
 #------------------------------
 # 1. TREE COVER

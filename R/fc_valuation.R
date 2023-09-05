@@ -82,7 +82,6 @@ write_csv(df, paste(SAVE, '/dist_forest_value_wt.csv', sep=''))
 df <- read_csv(paste(SAVE, '/dist_forest_value_wt.csv', sep=''))
 # Multiply weights by matrix of 
 # forest-class-specific values
-# we use: carbon sequestration, 
 
 # Value matrices
 # index =[ltf,of,mdf,vdf ]

@@ -27,10 +27,10 @@ cd "${TABLE}"
 // Modules
 local sumstats			0
 local learning			0
-local verify			1
+local verify			0
 local event_study		0
 local valuation			0
-local fra				0
+local fra				1
 set scheme modern
 *===============================================================================
 * PROGRAMS
@@ -228,7 +228,7 @@ if `sumstats' == 1 {
 	eststo clear
 	eststo: estpost tabstat proj_area_forest2, by(proj_cat) s(n mean sd sum) c(s)
 	esttab using "${TABLE}/tables/sumstats_fc.tex", replace ///
-		label cells("count(fmt(%12.0fc) label(Num. Projects)) mean(fmt(%12.2fc) label(Mean Size (ha.))) sd(fmt(%12.2fc) label(SD (ha.))) sum(fmt(%12.2fc) label(Total Area (ha.)))") ///
+		label cells("count(fmt(%12.0fc) label(Num. Projects)) mean(fmt(%12.1fc) label(Mean Size (ha.))) sd(fmt(%12.1fc) label(SD (ha.))) sum(fmt(%12.1fc) label(Total Area (ha.)))") ///
 		nomtitle unstack nonumber noobs booktabs width(1\hsize)
 	
 	**# Type and Shape stats
@@ -243,7 +243,7 @@ if `sumstats' == 1 {
 	eststo clear
 	eststo: estpost tabstat proj_area_forest2, by(proj_type2) s(n mean sd sum) c(s) nototal
 	esttab using "${TABLE}/tables/sumstats_fc_decomp.tex", replace f ///
-		label cells("count(fmt(%12.0fc) label(Num. Projects)) mean(fmt(%12.2fc) label(Mean Size (ha.))) sd(fmt(%12.2fc) label(SD (ha.))) sum(fmt(%12.2fc) label(Total Area (ha.)))") ///
+		label cells("count(fmt(%12.0fc) label(Num. Projects)) mean(fmt(%12.1fc) label(Mean Size (ha.))) sd(fmt(%12.1fc) label(SD (ha.))) sum(fmt(%12.1fc) label(Total Area (ha.)))") ///
 		nomtitle unstack nonumber noobs booktabs width(1\hsize) ///
 		posthead("\midrule \underline{\emph{Panel A: Ownership}} \\")
 		
@@ -254,7 +254,7 @@ if `sumstats' == 1 {
 	eststo: estpost tabstat proj_area_forest2, by(proj_shape) s(n mean sd sum) c(s) nototal
 	
 	esttab using "${TABLE}/tables/sumstats_fc_decomp.tex", append f ///
-		label cells("count(fmt(%12.0fc)) mean(fmt(%12.2fc)) sd(fmt(%12.2fc)) sum(fmt(%12.2fc))") ///
+		label cells("count(fmt(%12.0fc)) mean(fmt(%12.1fc)) sd(fmt(%12.1fc)) sum(fmt(%12.1fc))") ///
 		nomtitle unstack nonumber noobs booktabs width(1\hsize) collabel(none) ///
 		posthead("\\ \underline{\emph{Panel B: Shape}} \\ ")
 	
@@ -269,7 +269,7 @@ if `sumstats' == 1 {
 		prefix(\multicolumn{@span}{c}{) suffix(}) span erepeat(\cmidrule(lr){@span})) ///
 		nomtitle collabels(none) unstack nonumber noobs booktabs width(1\hsize) ///
 		posthead(`num')
-
+kk
 	*-----------------------------------
 	* 5. Table: SPATIAL SPAN OF PROJECT
 	*-----------------------------------
@@ -458,17 +458,15 @@ if `learning' == 1 {
 *===============================================================================
 if `verify' == 1 {
 	
-	foreach file in "" "post_" {
-	
 		* Read
-		use "${DATA}/dta/fc_dym_s2_`file'v02", clear
+		use "${DATA}/dta/fc_dym_s2_v02", clear
 
-		* Post-2014 only (for stage 1 placebo)
-		if "`file'" == "post_" {
-			
-			ren dist_nf_cum_km2 dist_f_cum_km2_nf
-		}
-		keep *_code_2011 year_month year month dist_f*cum_km2* tree*
+		* Post-2014 only (for placebo)
+		*if "`file'" == "post_" {
+		
+		*	ren dist_nf_cum_km2 dist_f_cum_km2_nf
+		*}
+		keep *_code_2011 year_month year month dist_f*cum_km2* tree* n_proj_cum
 		drop *_lag* *_lead*
 	
 		* Add Controls
@@ -485,62 +483,58 @@ if `verify' == 1 {
 	
 		* Collapse to Annual
 		sort c_code_2011 year_month
-		collapse (lastnm) dist_f*cum_km2* tree* state_code_2011 ///
+		collapse (lastnm) dist_f*cum_km2* n_proj_cum tree* state_code_2011 ///
 			     (mean) rain_gpm temp_era rad_*, by(c_code_2011 year)
-		g rad_mean_ln = ln(1+rad_mean)
 		encode c_code_2011, gen(c_code_2011_num)
 		encode state_code_2011, gen(state_code_2011_num)
 		
 		**# TWFE
 		* Transform (see https://www.statalist.org/forums/forum/general-stata-discussion/general/1522076-how-do-i-interpret-a-log-level-and-log-log-model-when-my-independent-variable-is-already-a-percentage)
-		foreach v of varlist dist_f_cum_km2* {
+		foreach v of varlist dist_f_cum_km2* tree_cover_pct tree_cover_km2 {
 			g ln_`v' = log(1+`v')
 		}
-		la var ln_dist_f_cum_km2 "Forest Infrastructure (Stage-II)"
-		g ln_tree_cover_pct = ln(tree_cover_pct)
-		g ln_tree_cover_km2 = ln(tree_cover_km2)
-		local controls temp_era rain_gpm rad_mean
-		
-		
-		**** DOUBLE CHECK THIS. SHOW THAT PUBLIC CLEARS MORE THAN APPROVED??
-		g dist_f_pub_cum_km2 = dist_f_cen_cum_km2 + dist_f_sta_cum_km2
-		replace dist_f_nei_cum_km2 = dist_f_nei_cum_km2 + dist_f_joi_cum_km2
-		g ln_dist_f_pub_cum_km2 = log(1+dist_f_pub_cum_km2)
-		g ln_dist_f_pri_cum_km2 = log(1+dist_f_pri_cum_km2)
-		g ln_dist_f_nei_cum_km2 = log(1+dist_f_nei_cum_km2)
-		eststo: reghdfe tree_cover_pct dist_f_pub_cum_km2 dist_f_pri_cum_km2 dist_f_nei_cum_km2 `controls', ///
-			a(c_code_2011_num state_code_2011_num#year) vce(cl c_code_2011_num)
-			
-			estadd local dist_fe "$\checkmark$"
-			estadd local st_y_fe "$\checkmark$"
 	
+		la var ln_dist_f_cum_km2 "Forest Infrastructure"
+		local controls temp_era rain_gpm rad_sum
+		replace n_proj = n_proj_cum if n_proj == .
+		g proj_size = dist_f_cum_km2 / (n_proj_cum+1)
+		g n_proj_cum_s = 1/(n_proj_cum+1) // weights
 		
+
 		* lin-lin
-		eststo: reghdfe tree_cover_pct dist_f_cum_km2* `controls', ///
-			a(c_code_2011_num state_code_2011_num#year) vce(cl c_code_2011_num)
+		eststo: reghdfe tree_cover_km2 dist_f_cum_km2 rad_sum, ///
+			a(c_code_2011_num year) vce(cl c_code_2011_num)
 			
 			estadd local dist_fe "$\checkmark$"
-			estadd local st_y_fe "$\checkmark$"
-
+			estadd local year_fe "$\checkmark$"
+		
+		* lin-lin (weights: project size, number of projects)
+		eststo: reghdfe tree_cover_km2 dist_f_cum_km2 rad_sum [aw=n_proj_cum_s], ///
+			a(c_code_2011_num year) vce(cl c_code_2011_num)
+			
+			estadd local dist_fe "$\checkmark$"
+			estadd local year_fe "$\checkmark$"	
+		
 		* log-log
 		drop dist_f_cum_km2* tree_cover*
 		ren *ln_* **
-		eststo: reghdfe tree_cover_pct dist_f_cum_km2* `controls', ///
-			a(c_code_2011_num state_code_2011_num#year) vce(cl c_code_2011_num) 
+			
+		eststo: reghdfe tree_cover_km2 dist_f_cum_km2 rad_sum, ///
+			a(c_code_2011_num year) vce(cl c_code_2011_num)
 			
 			estadd local dist_fe "$\checkmark$"
-			estadd local st_y_fe "$\checkmark$"
-		
-	}
+			estadd local year_fe "$\checkmark$"
+	
 	esttab using "${TABLE}/tables/deforestation_verify.tex", ///
-		replace stats(dist_fe st_y_fe N, labels(`"District FEs"' ///
-		`"State x Year FEs"' `"N"') fmt(0 0 0)) mgroups("Data: Full Sample" ///
-		"Data: Digital Subsample", pattern(1 0 1 0) prefix(\multicolumn{@span}{c}{) ///
-		suffix(}) span erepeat(\cmidrule(lr){@span})) mlabels("Linear" "Log" ///
-		"Linear" "Log") wrap nocons nonotes indicate("Controls=`controls'") ///
-		booktabs nomtitles star(* .1 ** .05 *** .01) label se b(%5.3f) ///
-		width(1\hsize) varwidth(40)
+		replace stats(dist_fe year_fe N r2, labels(`"District FEs"' ///
+		`"Year FEs"' `"N"'`"\$R^{2}\$"') fmt(0 0 0 3)) ///
+		mgroups("Linear" "Weighted" "Log", pattern(1 1 1) ///
+		prefix(\multicolumn{@span}{c}{) suffix(}) span ///
+		erepeat(\cmidrule(lr){@span})) wrap nocons nonotes ///
+		indicate("Controls=rad_sum") booktabs nomtitles ///
+		star(* .1 ** .05 *** .01) label se b(%5.3f) width(1\hsize) varwidth(40)
 	eststo clear
+	kk
 }
 
 *===============================================================================
@@ -879,12 +873,12 @@ if `fra' == 1 {
 	su fra_share, d
 	local mean = round(r(mean),.01)
 	hist fra_share, frac bcolor(dkgreen*0.5) ///
-		xtitle("Share of District Projects Obtaining Gram Sabha Consent", size(large)) ///
+		xtitle("Share of District Projects Obtaining Consent", size(large)) ///
 		ytitle("Share of Districts", size(large)) ///
 		xlabel(,labsize(medium)) ylabel(,labsize(large)) ///
 		xline(`mean', lcolor(red)) ///
 		text(0.205 .6 "Mean = `mean'", place(n) size(large)) ysize(3)
-	graph export "${TABLE}/fig/hist_fra.png", replace
+	graph export "${TABLE}/fig/hist_fra2.png", replace
 	
 }
 

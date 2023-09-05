@@ -24,8 +24,8 @@ gl DATA 	"${ROOT}/data"
 gl DO		"${ROOT}/scripts/stata"
 
 // Module
-local ebird					0
-local district_forest		1
+local ebird					1
+local district_forest		0
 local merge					0
 *===============================================================================
 * BIODIVERSITY
@@ -33,7 +33,7 @@ local merge					0
 
 if `ebird' == 1 {
 	
-	local level "uct" // udt = user-district-yearmonth, uct = user-cell-yearmonth
+	local level "udt" // udt = user-district-yearmonth, uct = user-cell-yearmonth
 	
 	**# Read
 	import delimited using "${DATA}/csv/ebird_`level'.csv", clear
@@ -113,9 +113,10 @@ if `ebird' == 1 {
 		la var ln_coverage_dym "Coverage (\%)"
 		la var ln_coverage_udym "Coverage (\%)"
 	}
-	
+
 	* Clean
 	destring si_index rli, replace force
+	kk
 	ren (temp_era rain_gpm) (temp rain)
 	encode user_id, gen(uid)
 	drop state_code_2011
@@ -278,7 +279,7 @@ program define construct_deforest
 	collapse (sum) dist_f* dist_nf* n_* ///
 		     (count) n_proj = dist_id, ///
 			 by(c_code_2011 year_month)
-	
+			 
 	* Label
 	la var dist_f "Infrastructure (\(km^{2}\))"
 	foreach cat of local proj_cat { // category

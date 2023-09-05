@@ -5,7 +5,7 @@
 # ----------- SET-UP -----------------------------------------------------
 # Directories
 rm(list=ls())
-READ.DIR <- '/Volumes/Backup Plus/research/data/def_biodiv/forest_cover/'
+READ.DIR <- '/Volumes/Backup Plus 1/research/data/def_biodiv/forest_cover/'
 SAVE.DIR <- '/Users/rmadhok/Dropbox/def_biodiv/data/csv/'
 SHP <- '/Users/rmadhok/Dropbox/IndiaPowerPlant/data/'
 setwd(READ.DIR)

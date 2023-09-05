@@ -25,7 +25,7 @@ gl TABLE	"${ROOT}/docs/jmp/tex_doc/v4"
 cd "${TABLE}"
 
 // Modules
-local main_analysis		1
+local main_analysis		0
 local dynamics			0
 local robustness		0
 	local mobility		0
@@ -75,8 +75,9 @@ drop if year == 2014
 drop_outliers
 
 * Prep
-local ctrls temp rain ln_duration ln_distance  ln_exp_idx ///
+local ctrls temp rain ln_duration ln_distance ln_exp_idx ///
 	ln_coverage_udym ln_group_size traveling ln_hour ln_rad_sum
+	
 g dist_f_pub_cum_km2 = dist_f_cen_cum_km2 + dist_f_sta_cum_km2
 replace dist_f_nei_cum_km2 = dist_f_nei_cum_km2 + dist_f_joi_cum_km2
 replace dist_f_non_cum_km2 = dist_f_non_cum_km2 + dist_f_hyb_cum_km2
@@ -97,7 +98,6 @@ if `main_analysis' == 1 {
 	*-----------------------------
 	* 1. MAIN RESULTS
 	*-----------------------------
-	/*
 	eststo clear
 	eststo m1: reghdfe sr dist_f_cum_km2 `ctrls' *_flag, ///
 		a(uid c_code_2011_num state_code_2011_num#month year) vce(cl biome)
@@ -134,14 +134,13 @@ if `main_analysis' == 1 {
 		rename(dist_f_cum_km2 = `" "(3) SLX" "')), ///
 		keep(dist_f_cum_km2) xline(0, lcolor(black*0.8) lpattern(dash)) ///
 		coeflabels(, labsize(large)) mlabsize(med) mlabcolor(black) ///
-		levels(99 95 90) ciopts(recast(rcap) lwidth(*1 *3 *4) ///
-		color(dkgreen dkgreen dkgreen) lcolor(*.3 *.5 *.8)) ///
-		legend(order(1 "99" 2 "95" 3 "90") size(med)) msize(med) ///
+		levels(95 90) ciopts(recast(rcap) lwidth(*1 *3) ///
+		color(dkgreen dkgreen) lcolor(*.4 *.7)) ///
+		legend(order(1 "95" 2 "90") size(med)) msize(med) ///
 		mfcolor(white) msymbol(D) mlcolor(black) mlabel format(%9.2g) ///
 		mlabposition(12) mlabgap(*2) xlabel(-0.3(.1)0.1, labsize(large)) ///
 		ylabel(, labsize(large)) title("A", size(large)) xsize(4.6)
 	graph export "${TABLE}/fig/main_results.png", replace
-	
 	
 	*-----------------------------
 	* 2. MAIN RESULTS (SENSITIVITY)
@@ -172,10 +171,9 @@ if `main_analysis' == 1 {
 		indicate("Weather Controls=temp" "Behaviour Controls=ln_duration" ///
 		"General Economic Trends=ln_rad_sum") wrap nocons nonotes booktabs nomtitles ///
 	star(* .1 ** .05 *** .01) label se b(%5.3f) width(1\hsize) varwidth(40)
-	*/
 	
 	**# User Fixed Effects
-	/*
+	
 	* No controls
 	eststo clear
 	eststo: reghdfe sr dist_f_cum_km2 temp rain temp_flag rain_flag, ///
@@ -244,13 +242,11 @@ if `main_analysis' == 1 {
 		fmt(3 0 0 0 0 0 3)) indicate("Weather Controls=temp" "Behaviour Controls=ln_duration" ///
 		"General Economic Trends=ln_rad_sum") wrap nocons nonotes booktabs nomtitles ///
 		star(* .1 ** .05 *** .01) label se b(%5.3f) width(1\hsize) varwidth(40)
-	*/
-	
 	
 	*--------------------------
 	* 3. DECOMPOSED ESTIMATES
 	*--------------------------
-	/*
+	
 	**# Decomposed by Project Category
 	
 	* Only Weather Controls
@@ -266,9 +262,9 @@ if `main_analysis' == 1 {
 	
 	* Plot main specification
 	coefplot m3, keep(dist_f_*_cum_km2) sort xline(0, lcolor(black*0.8) lpattern(dash)) ///
-		msize(med) mfcolor(white) msymbol(D) levels(99 95 90) ///
-		ciopts(recast(rcap) lwidth(*1 *3 *4) color(dkgreen dkgreen dkgreen) ///
-		lcolor(*.3 *.5 *.8)) legend(order(1 "99" 2 "95" 3 "90") size(med)) ///
+		msize(med) mfcolor(white) msymbol(D) levels(95 90) ///
+		ciopts(recast(rcap) lwidth(*1 *3) color(dkgreen dkgreen) ///
+		lcolor(*.4 *.7)) legend(order(1 "95" 2 "90") size(med)) ///
 		mlabel format(%9.2g) mlabposition(1) mlabcolor(black) /// 
 		coeflabels(, labsize(large)) mlabsize(med) mcolor(black) ///
 		xlabel(, labsize(large)) ylabel(, labsize(large)) mlabgap(*2) ///
@@ -287,8 +283,19 @@ if `main_analysis' == 1 {
 	g subsample = ( (n_users_dist > n_users_dist_med) & (n_trips_user > n_trips_user_med) ) // high-activity districts and users
 	tab mine if tag_d == 1 & subsample == 1
 	
-	eststo: reg_sat sr dist_f_ele_cum_km2-dist_f_tra_cum_km2 `ctrls' *_flag if subsample == 1
+	eststo m4: reg_sat sr dist_f_ele_cum_km2-dist_f_tra_cum_km2 `ctrls' *_flag if subsample == 1
 	estadd local data "High-Activity"
+	
+	* Plot decomposed (High activity) - for presentation
+	coefplot m4, keep(dist_f_*_cum_km2) sort xline(0, lcolor(black*0.8) lpattern(dash)) ///
+		msize(med) mfcolor(white) msymbol(D) levels(95 90) ///
+		ciopts(recast(rcap) lwidth(*1 *3) color(dkgreen dkgreen) ///
+		lcolor(*.4 *.7)) legend(order(1 "95" 2 "90") size(med)) ///
+		mlabel format(%9.2g) mlabposition(1) mlabcolor(black) /// 
+		coeflabels(, labsize(large)) mlabsize(med) mcolor(black) ///
+		xlabel(, labsize(large)) ylabel(, labsize(large)) mlabgap(*2) ///
+		title("B", size(large)) xsize(4.6)
+	graph export "${TABLE}/fig/decomposed_cat_highactivity.png", replace
 	
 	* Full Table
 	esttab using "${TABLE}/tables/decomposed_cat_tab.tex", keep(dist_*_cum_km2*) replace ///
@@ -298,11 +305,11 @@ if `main_analysis' == 1 {
 		fmt(3 0 0 0 0 0 3)) indicate("Weather Controls=temp" "Behaviour Controls=ln_duration" ///
 		"General Economic Trends=ln_rad_sum") wrap nocons nonotes booktabs nomtitles ///
 		star(* .1 ** .05 *** .01) label se b(%5.3f) width(1\hsize) varwidth(40)
+	
 	/*-----------------------------------------------------------------
 	mining impact doubles in high-activity districts but others unchanged
 	i.e. mining coeff driven by low-activity users but others are not.
 	------------------------------------------------------------------*/
-	*/
 	
 	**# Decomposed by Public/Private/Etc
 	eststo clear
@@ -331,8 +338,7 @@ if `main_analysis' == 1 {
 		"\underline{\emph{Panel B: Shape}}", nolabel) wrap nocons nonotes ///
 		booktabs nonumbers nomtitles noobs star(* .1 ** .05 *** .01) label se ///
 		b(%5.3f) width(1\hsize) varwidth(40)
-	
-	kk
+
 	*--------------------------
 	* 4. HETEROGENEITY
 	*--------------------------
@@ -393,9 +399,9 @@ if `dynamics' == 1 {
 		lag_12, rename((1) = "Sum L0-L12")), ///
 		vertical ytitle("Cumulative Effect of Development" "on Species Richness", ///
 		size(large)) yline(0, lcolor(black*0.8) lpattern(dash)) msymbol(D) msize(small) ///
-		mfcolor(white) levels(99 95 90) ciopts(recast(rcap) lwidth(*1 *3 *4) /// 
-		color(dkgreen dkgreen dkgreen) lcolor(*.3 *.5 *.8)) ylabel(, labsize(large)) ///
-		legend(order(1 "99" 2 "95" 3 "90") size(medlarge)) coeflabels(, labsize(large)) ///
+		mfcolor(white) levels(95 90) ciopts(recast(rcap) lwidth(*1 *3) /// 
+		color(dkgreen dkgreen) lcolor(*.4 *.7)) ylabel(, labsize(large)) ///
+		legend(order(1 "95" 2 "90") size(medlarge)) coeflabels(, labsize(large)) ///
 		mlabel format(%9.2g) mlcolor(black) mlabposition(1) mlabgap(*2) ///
 		mlabsize(large) mlabcolor(black) xlabel(, labsize(large)) ysize(2.5)
 	graph export "${TABLE}/fig/cumulative_lag.png", replace

@@ -77,7 +77,7 @@ replace area_f_mining_lease = area_f_mining_lease2 if area_f_mining_lease == ""
 drop area_f_mining_lease2
 replace ca_nfl_area = ca_nfl_area2 if ca_nfl_area == ""
 drop ca_nfl_area2
-
+kk
 * District-wise breakup
 foreach v of varlist districtwisebreakupdistrict-districtwisebreakupnonforest ///
 	ad-af ax-az bc-bw cc-ch {
