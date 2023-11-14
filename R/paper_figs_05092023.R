@@ -11,8 +11,8 @@ SHP <- '/Users/rmadhok/Dropbox/IndiaPowerPlant/data/'
 # Load Packages
 require(tidyverse)
 require(sf)
-require(raster)
 require(terra)
+require(raster)
 require(rgdal)
 require(sp)
 require(rnaturalearth)
@@ -20,6 +20,7 @@ require(rnaturalearthdata)
 require(patchwork)
 require(showtext)
 require(scattermore)
+require(ggridges)
 require(hrbrthemes)
 require(viridis)
 require(units)
@@ -31,12 +32,34 @@ setwd(SHP)
 india_dist <- st_read('./maps/district2011/SDE_DATA_IN_F7DSTRBND_2011.shp') %>% dplyr::select('c_code_11')
 india <- st_read('./maps/district2011/SDE_DATA_IN_F7DSTRBND_2011_NATION.shp') %>% dplyr::select('geometry')
 
-# export district centroids (for conlet std errors)
-dist_coord <- india_dist %>%
-  mutate(lon = st_coordinates(st_centroid(.))[,1],
-         lat = st_coordinates(st_centroid(.))[,2]) %>%
-  st_drop_geometry()
-write_csv(dist_coord, paste(SAVE,'data/csv/dist_coords.csv', sep=''))
+#----------------------------------------------------------------
+## FUNCTIONS
+#----------------------------------------------------------------
+# Truncate
+truncate <- function(x, num, top=FALSE) {
+  if(isFALSE(top)){
+    x = ifelse(x == Inf | x>quantile(x,1-num, na.rm=T) | 
+                 x<quantile(x, num, na.rm=T), NA, x)
+  }else{
+    x = ifelse(x == Inf | x>quantile(x,1-num, na.rm=T), NA, x)
+  }
+}
+
+# Winsorize
+winsorize <- function(x, num, top=FALSE) {
+  top <- quantile(x, 1-num, na.rm=T)
+  bottom <- quantile(x, num, na.rm=T)
+  if(isFALSE(top)){
+    x = case_when(
+      x > bottom & x < top ~x,
+      x >=top ~ top,
+      x <= bottom ~ bottom)
+  } else{
+    x = case_when(
+      x >=top ~ top,
+      x < top ~ x)
+  }
+}
 #------------------------------
 # 0. GLOBAL BIODIVERSITY
 #------------------------------
@@ -76,7 +99,7 @@ bd <- ggplot() +
         legend.text=element_text(size=13),
         legend.title=element_text(size=13))
 setwd(SAVE)
-ggsave('./docs/jmp/tex_doc/v5/fig/asian_biodiversity.png', width = 10, height = 8, dpi = 150, units = "in")
+ggsave('./docs/jmp/tex_doc/v4/fig/asian_biodiversity.png')
 
 #------------------------------
 # 1. TREE COVER
@@ -122,7 +145,7 @@ tree <- ggplot() +
         legend.text=element_text(size=15),
         legend.title=element_text(size=20))
 setwd(SAVE)
-ggsave('./docs/jmp/tex_doc/v5/fig/forest_cover_2015.png', width = 10, height = 8, dpi = 150, units = "in")
+ggsave('./docs/jmp/tex_doc/v3/fig/forest_cover_2015.png')
 
 #------------------------------
 # 2. PROJECTS
@@ -149,7 +172,8 @@ proj_map <- left_join(india_dist, proj, by='c_code_11')
 # Plot
 proj_plot <- ggplot() +
   geom_sf(data=india, alpha = 0.5, size = 0.3) +
-  geom_sf(data=proj_map, aes(fill = cut), lwd=0) +
+  geom_sf(data=proj_map, aes(fill = cut), 
+          alpha = 0.8, colour = 'gray69', size = 0.1) +
   scale_fill_viridis_d(name='Number of Projects (2015-2020)', 
                        option='inferno', 
                        direction=-1,
@@ -165,7 +189,7 @@ proj_plot <- ggplot() +
         legend.key.width=unit(1.3,'cm'),
         legend.text=element_text(size=15),
         legend.title=element_text(size=20)) 
-ggsave('./docs/jmp/tex_doc/v5/fig/project_map.png', width = 10, height = 8, dpi = 150, units = "in")
+ggsave('./docs/jmp/tex_doc/v3/fig/project_map.png')
 
 #------------------------------
 # 3. Birdwatching Activity
@@ -194,38 +218,37 @@ trip_pts <- ggplot() +
         legend.key=element_blank(),
         legend.text=element_text(size=30))
 setwd(SAVE)
-ggsave('./docs/jmp/tex_doc/v5/fig/trip_map.png', width = 10, height = 8, dpi = 150, units = "in")
+ggsave('./docs/jmp/tex_doc/v3/fig/trip_map.png')
 
-#------------------------------
-# 4. Biome Map
-#------------------------------
-setwd(READ)
+## Plot Trips per District
 
-# read biome map
-biomes <- st_read('./biomes/wwf_terr_ecos_oRn/wwf_terr_ecos_oRn.shp')
-biomes <- st_make_valid(biomes)
-biomes <- st_intersection(biomes, india) # Crop to india
+# Read user data
+setwd(SAVE)
+bird <- read_csv('./data/csv/ebird_udt.csv') %>%
+  filter(between(year, 2015, 2020))
 
-# Prep for plot
-biomes <- biomes %>%
-  group_by(BIOME) %>%
-  summarize(geometry = st_union(geometry),
-            eco_name = first(ECO_NAME)) %>%
-  mutate(BIOME = as.factor(BIOME))
+# Z-score of trips
+n_trips <- bird %>%
+  group_by(c_code_2011) %>%
+  summarize(n_trips = sum(n_trips, na.rm=T)) %>%
+  rename(c_code_11=c_code_2011)
 
-# ordered labels from eco_name column
-labels <- c('Orissa semi-evergreen', 'South deccan plateau dry deciduous forests',
-            'Northeast India-Myanmar pine forests', 'Western Himalayan broadleaf forests',
-            'Eastern Himalayan subalpine conifer forests', 'Terai-Duar savanna and grasslands',
-            'Gissaro-Alai open woodlands', 'Rann of Kutch seasonal salt marsh',
-            'Eastern Himalayan alpine shrub and meadows', 'Northwestern thorn scrub forests',
-            'Myanmar Coast mangroves', 'Rock and Ice')
-levels(biomes$BIOME) <- labels
+# Map Join
+bird_map <- left_join(india_dist, n_trips, by='c_code_11')
+bird_map$n_trips[is.na(bird_map$n_trips) & !is.na(bird_map$c_code_11)] <- 0
+bird_map <- bird_map %>%
+  mutate(cut = cut(n_trips, breaks=c(0, 1, 100, 200, 500, 1000, 5000, 65000), 
+                   labels=c('0', '1-100', '100-200', '200-500', '500-1000','1000-5000', '5000+'),
+                   right=F,
+                   include.lowest=T))
 
-# plot
-biome_plot <- ggplot() +
-  geom_sf(data=biomes, aes(fill = BIOME), lwd=0) +
-  scale_fill_viridis_d(name='Biomes',
+# Plot
+trip_plot <- ggplot() +
+  geom_sf(data=india, alpha = 0.5, size = 0.3) +
+  geom_sf(data=bird_map, aes(fill = cut), 
+          alpha = 0.8, colour = 'gray69', size = 0.1) +
+  scale_fill_viridis_d(name='Number of eBird Trips (2015-2020)', 
+                       option='inferno', 
                        direction=-1,
                        guide=guide_legend(title.position='top')) +
   coord_sf(datum = NA) +
@@ -235,15 +258,22 @@ biome_plot <- ggplot() +
         axis.ticks = element_blank(), 
         axis.title = element_blank(),
         panel.background = element_blank(),
-        legend.position='right',
+        legend.position='bottom',
         legend.key.width=unit(1.3,'cm'),
         legend.text=element_text(size=15),
-        legend.title=element_text(size=20))
+        legend.title=element_text(size=20)) 
+ggsave('./docs/jmp/tex_doc/v3/fig/trip_district_map.png')
 
+#-------------
+# FINAL PLOT
+#-------------
+p <- tree + plot_spacer() + proj_plot + plot_spacer() + trip_pts + 
+  plot_layout(widths=c(4,1,4,1,4))
 setwd(SAVE)
-ggsave('./docs/jmp/tex_doc/v5/fig/biome_map.png', width = 10, height = 8, dpi = 150, units = "in")
+ggsave('./docs/jmp/tex_doc/v3/fig/summary_maps.png')
+
 #-------------------------------------------
-# 5. Distance b/w real and imputed homes
+# 4. Distance b/w real and imputed homes
 #-------------------------------------------
 
 setwd(SAVE)
@@ -277,4 +307,64 @@ ggplot(homes, aes(x=offset)) +
         axis.line = element_blank(), 
         axis.ticks = element_blank())
 setwd(SAVE)
-ggsave('./docs/jmp/tex_doc/v5/fig/distance_home_offset.png')
+ggsave('./docs/jmp/tex_doc/v3/fig/distance_home_offset.png')
+
+#-------------------------------------------
+# 5. RIGELINE CHART - FRA COMPLIANCE
+#-------------------------------------------
+setwd(SAVE)
+
+# Prep data
+fc <- read_csv('./data/csv/fc_dym_s2_v02.csv') %>%
+  group_by(c_code_2011) %>%
+  summarize(n_proj = last(n_proj_cum))
+fra <- haven::read_dta('./data/dta/iv_fra.dta') %>%
+  dplyr::select(c_code_2011, st_ha)
+st <- haven::read_dta('./data/dta/2011_india_dist.dta') %>%
+  mutate(st_share = tot_st/tot_pop) %>%
+  dplyr::select(c_code_2011, st_share)
+
+df <- left_join(fc, fra, by='c_code_2011') %>%
+  left_join(st, by='c_code_2011') %>%
+  mutate(decile = as.factor(ntile(n_proj, 10)))
+  
+# Ridgeline
+ggplot(df, aes(x = st_share, y = decile, fill = ..x..)) +
+  geom_density_ridges_gradient(scale = 3, rel_min_height = 0.01) +
+  scale_fill_distiller(palette='Blues', 
+                       trans='reverse') +
+  labs(title = 'B: Project Placement and ST Population\n',
+       y = 'Projects in District (Decile)\n',
+       x = '\nST Population Share') +
+  scale_x_continuous(breaks=c(0, 0.2, 0.4, 0.6, 0.8, 1.0)) +
+  scale_y_discrete(breaks=c(2,4,6,8,10)) +
+  theme_minimal() +
+  theme(legend.position="none",
+        text = element_text(family='latex', size=20),
+        axis.line = element_blank(), 
+        panel.background = element_blank(), 
+        plot.title = element_text(hjust = 0.5))
+ggsave('./docs/jmp/tex_doc/v3/fig/placement_st.png')
+
+# histogram of informed consent
+fra_proj <- haven::read_dta('./data/dta/fc_pdym_s2_v02.dta') %>%
+  group_by(c_code_2011) %>%
+  summarize(fra = sum(proj_fra_num, na.rm=T),
+            n_proj=n()) %>%
+  mutate(fra_share = fra/n_proj)
+
+ggplot(fra_proj, aes(x=fra_share)) + 
+  ggtitle('A: Informed Consent\n') +
+  stat_bin(aes(y=..count../sum(..count..)), color='black', fill='steelblue3') +
+  labs(x = '\nProject Share Obtaining Gram Sabha Consent',
+       y = 'Share of Districts\n') +
+  geom_vline(aes(xintercept = mean(fra_share)), col='red', linetype = 'dashed') +
+  annotate(x=0.6,y=0.2,label="Mean = 0.48", 
+           vjust=2, family='latex', geom="label") +
+  scale_x_continuous(breaks = c(0, .2, .4, .6, .8, 1.0)) +
+  scale_y_continuous(breaks = c(0, .1, .2, .3)) +
+  theme_minimal() +
+  theme(text = element_text(family='latex', size=20),
+        axis.line = element_blank(), 
+        panel.background = element_blank())
+ggsave('./docs/jmp/tex_doc/v3/fig/hist_fra.png')

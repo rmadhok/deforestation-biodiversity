@@ -23,7 +23,7 @@ from scrape_functions import *
 
 ## Set Parameters
 # Set Directory for Writing Data
-dir = '/Users/rmadhok/Documents/ubc/research/consecon/data'
+dir = '/Users/rmadhok/Documents/'
 # Set top URL to follow and scrape
 url = 'http://forestsclearance.nic.in/'            
 

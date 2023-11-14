@@ -21,7 +21,7 @@ set matsize 10000
 //Set Directory Paths
 gl ROOT 	"/Users/rmadhok/Dropbox/def_biodiv"
 gl DATA 	"${ROOT}/data"
-gl TABLE	"${ROOT}/docs/jmp/tex_doc/v4"
+gl TABLE	"${ROOT}/docs/jmp/tex_doc/v5"
 cd "${TABLE}"
 
 // Modules
@@ -269,7 +269,7 @@ if `sumstats' == 1 {
 		prefix(\multicolumn{@span}{c}{) suffix(}) span erepeat(\cmidrule(lr){@span})) ///
 		nomtitle collabels(none) unstack nonumber noobs booktabs width(1\hsize) ///
 		posthead(`num')
-kk
+
 	*-----------------------------------
 	* 5. Table: SPATIAL SPAN OF PROJECT
 	*-----------------------------------
@@ -460,12 +460,6 @@ if `verify' == 1 {
 	
 		* Read
 		use "${DATA}/dta/fc_dym_s2_v02", clear
-
-		* Post-2014 only (for placebo)
-		*if "`file'" == "post_" {
-		
-		*	ren dist_nf_cum_km2 dist_f_cum_km2_nf
-		*}
 		keep *_code_2011 year_month year month dist_f*cum_km2* tree* n_proj_cum
 		drop *_lag* *_lead*
 	
@@ -490,16 +484,13 @@ if `verify' == 1 {
 		
 		**# TWFE
 		* Transform (see https://www.statalist.org/forums/forum/general-stata-discussion/general/1522076-how-do-i-interpret-a-log-level-and-log-log-model-when-my-independent-variable-is-already-a-percentage)
-		foreach v of varlist dist_f_cum_km2* tree_cover_pct tree_cover_km2 {
+		foreach v of varlist dist_f_cum_km2* tree_cover_pct tree_cover_km2 rad_sum rad_mean {
 			g ln_`v' = log(1+`v')
 		}
-	
 		la var ln_dist_f_cum_km2 "Forest Infrastructure"
 		local controls temp_era rain_gpm rad_sum
-		replace n_proj = n_proj_cum if n_proj == .
 		g proj_size = dist_f_cum_km2 / (n_proj_cum+1)
 		g n_proj_cum_s = 1/(n_proj_cum+1) // weights
-		
 
 		* lin-lin
 		eststo: reghdfe tree_cover_km2 dist_f_cum_km2 rad_sum, ///
@@ -509,14 +500,14 @@ if `verify' == 1 {
 			estadd local year_fe "$\checkmark$"
 		
 		* lin-lin (weights: project size, number of projects)
-		eststo: reghdfe tree_cover_km2 dist_f_cum_km2 rad_sum [aw=n_proj_cum_s], ///
+		eststo: reghdfe tree_cover_km2 dist_f_cum_km2 rad_sum [aw=proj_size], ///
 			a(c_code_2011_num year) vce(cl c_code_2011_num)
-			
+
 			estadd local dist_fe "$\checkmark$"
 			estadd local year_fe "$\checkmark$"	
 		
 		* log-log
-		drop dist_f_cum_km2* tree_cover*
+		drop dist_f_cum_km2* tree_cover* rad_*
 		ren *ln_* **
 			
 		eststo: reghdfe tree_cover_km2 dist_f_cum_km2 rad_sum, ///
@@ -527,14 +518,13 @@ if `verify' == 1 {
 	
 	esttab using "${TABLE}/tables/deforestation_verify.tex", ///
 		replace stats(dist_fe year_fe N r2, labels(`"District FEs"' ///
-		`"Year FEs"' `"N"'`"\$R^{2}\$"') fmt(0 0 0 3)) ///
+		`"Year FEs"' `"Observations"'`"\$R^{2}\$"') fmt(0 0 0 3)) ///
 		mgroups("Linear" "Weighted" "Log", pattern(1 1 1) ///
 		prefix(\multicolumn{@span}{c}{) suffix(}) span ///
 		erepeat(\cmidrule(lr){@span})) wrap nocons nonotes ///
 		indicate("Controls=rad_sum") booktabs nomtitles ///
 		star(* .1 ** .05 *** .01) label se b(%5.3f) width(1\hsize) varwidth(40)
 	eststo clear
-	kk
 }
 
 *===============================================================================
@@ -863,22 +853,48 @@ if `valuation' == 1 {
 if `fra' == 1 {
 	
 	**# Distribution of projects obtaining FRA
-	
+	/*
 	* Read project level
 	use "${DATA}/dta/fc_pdym_s2_v02", clear
-	
 	g n_proj = 1
 	collapse (sum) fra = proj_fra_num n_proj, by(c_code_2011)
 	g fra_share = fra/n_proj
 	su fra_share, d
 	local mean = round(r(mean),.01)
+	
 	hist fra_share, frac bcolor(dkgreen*0.5) ///
-		xtitle("Share of District Projects Obtaining Consent", size(large)) ///
+		xtitle("Share of District Projects Obtaining Tribal Consent", size(large)) ///
 		ytitle("Share of Districts", size(large)) ///
 		xlabel(,labsize(medium)) ylabel(,labsize(large)) ///
 		xline(`mean', lcolor(red)) ///
 		text(0.205 .6 "Mean = `mean'", place(n) size(large)) ysize(3)
 	graph export "${TABLE}/fig/hist_fra2.png", replace
+	*/
+	
+	
+	**# Distribution of Projects by Institutional Type
+	use "${DATA}/dta/fc_pdym_s2_v02", clear
+	merge m:1 c_code_2011 using "${DATA}/dta/crosswalk_full", keepusing(c_code_1991) keep(3) nogen
+	tempfile temp
+	save "`temp'"
+	use "${DATA}/dta/polecon_91_v02", clear
+	collapse (first) mahrai, by(c_code_1991)
+	merge 1:m c_code_1991 using "`temp'", keep(3) nogen
+	
+	tab proj_cat, gen(cat_)
+	recode mahrai (1 = 0) (0 = 1), gen(extractive)
+	eststo m1: estpost summarize cat_* if mahrai == 1
+	eststo m2: estpost summarize cat_* if mahrai == 0
+	eststo m3: estpost ttest cat_*, by(extractive) unequal
+	
+	esttab m1 m2 m3 using "${TABLE}/tables/polecon_cat.tex", replace ///
+	cells("sum(pattern(1 1 0) fmt(0)) mean(pattern(1 1 0) fmt(3)) b(star pattern(0 0 1) fmt(3))") ///
+	mgroups("Inclusive" "Extractive" "Difference", pattern(1 0 1 0) ///
+		prefix(\multicolumn{@span}{c}{) suffix(}) span erepeat(\cmidrule(lr){@span})) ///
+		mlabels("N" "Mean" "Diff.") ///
+		label booktabs nomtitle noobs collabels(none) ///
+	
+	
 	
 }
 
